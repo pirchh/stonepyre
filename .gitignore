@@ -5,6 +5,7 @@
 *.jpeg
 *.gif
 *.svg
+*.xcf
 
 # Build/output
 target/
