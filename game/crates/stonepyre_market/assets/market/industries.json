@@ -1,0 +1,25 @@
+[
+  { "code": "forestry", "name": "Forestry & Timber", "cap": 34, "weight": 1.25 },
+  { "code": "extractives", "name": "Mining & Extractives", "cap": 28, "weight": 1.05 },
+  { "code": "metallurgy", "name": "Metallurgy & Smithing", "cap": 24, "weight": 0.95 },
+  { "code": "stoneworks", "name": "Stoneworks & Masonry", "cap": 18, "weight": 0.75 },
+
+  { "code": "maritime", "name": "Maritime & Fisheries", "cap": 26, "weight": 1.05 },
+  { "code": "agriculture", "name": "Agriculture & Food", "cap": 36, "weight": 1.35 },
+  { "code": "textiles", "name": "Textiles & Tailoring", "cap": 18, "weight": 0.70 },
+  { "code": "leatherwork", "name": "Leatherwork & Outfitters", "cap": 16, "weight": 0.65 },
+
+  { "code": "trade", "name": "Trade & Mercantile", "cap": 30, "weight": 1.20 },
+  { "code": "transport", "name": "Transport & Caravans", "cap": 16, "weight": 0.60 },
+  { "code": "finance", "name": "Finance & Banking", "cap": 14, "weight": 0.45 },
+
+  { "code": "arcana", "name": "Arcana & Enchanting", "cap": 18, "weight": 0.75 },
+  { "code": "alchemy", "name": "Alchemy & Remedies", "cap": 16, "weight": 0.70 },
+  { "code": "scribe", "name": "Scribing & Scrollworks", "cap": 12, "weight": 0.45 },
+
+  { "code": "engineering", "name": "Mechanisms & Engineering", "cap": 16, "weight": 0.55 },
+  { "code": "construction", "name": "Construction & Works", "cap": 18, "weight": 0.65 },
+
+  { "code": "hospitality", "name": "Hospitality & Inns", "cap": 14, "weight": 0.55 },
+  { "code": "security", "name": "Security & Contracts", "cap": 10, "weight": 0.35 }
+]

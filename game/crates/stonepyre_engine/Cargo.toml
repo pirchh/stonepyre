@@ -1,0 +1,12 @@
+[package]
+name = "stonepyre_engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+stonepyre_world = { path = "../stonepyre_world" }
+stonepyre_content = { path = "../stonepyre_content" }
+rand = "0.8"
+uuid = { version = "1", features = ["v4", "serde"] }

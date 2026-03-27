@@ -1,0 +1,23 @@
+@"
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Build/output
+target/
+build/
+dist/
+out/
+
+# Logs
+*.log
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+"@ | Out-File -Encoding ascii .gitignore

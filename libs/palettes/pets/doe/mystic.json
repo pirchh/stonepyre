@@ -1,0 +1,11 @@
+{
+  "name": "mystic",
+  "replace": {
+    "#1E1E1E": "#5B4A6B",
+    "#3A3A3A": "#7A6C8F",
+    "#555555": "#B8AFCB",
+    "#707070": "#E3DDF0",
+    "#8C8C8C": "#F8F4FF",
+    "#A8A8A8": "#FFFFFF"
+  }
+}

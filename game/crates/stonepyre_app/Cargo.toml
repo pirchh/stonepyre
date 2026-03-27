@@ -1,0 +1,18 @@
+[package]
+name = "stonepyre_app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["bevy_ui", "bevy_text", "bevy_winit"] }
+stonepyre_engine = { path = "../stonepyre_engine" }
+stonepyre_content = { path = "../stonepyre_content" }
+stonepyre_ui = { path = "../stonepyre_ui" }
+
+# NEW (client → server API)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }

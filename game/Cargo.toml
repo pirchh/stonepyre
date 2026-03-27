@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/stonepyre_app",
+  "crates/stonepyre_engine",
+  "crates/stonepyre_world",
+  "crates/stonepyre_content",
+  "crates/stonepyre_ui",
+  "crates/stonepyre_market", "crates/stonepyre_server",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+bevy = { version = "0.18", default-features = true, features = [
+  "bevy_winit",
+  "bevy_render",
+  "bevy_sprite",
+  "bevy_ui",
+  "bevy_text",
+  "png",
+] }

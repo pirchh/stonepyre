@@ -1,0 +1,11 @@
+[package]
+name = "stonepyre_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["bevy_ui", "bevy_text"] }
+
+stonepyre_engine = { path = "../stonepyre_engine" }
+stonepyre_content = { path = "../stonepyre_content" }

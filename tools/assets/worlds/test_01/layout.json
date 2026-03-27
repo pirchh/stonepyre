@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "min_cx": -64,
+  "max_cx": 63,
+  "min_cy": -64,
+  "max_cy": 63,
+  "active_chunks": []
+}

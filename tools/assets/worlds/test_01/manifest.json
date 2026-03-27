@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "chunk_size": 256,
+  "tiles": [
+    {
+      "id": 0,
+      "name": "grass",
+      "color": "#4caf50",
+      "walkable": true
+    },
+    {
+      "id": 1,
+      "name": "dirt",
+      "color": "#795548",
+      "walkable": true
+    },
+    {
+      "id": 2,
+      "name": "sand",
+      "color": "#e6c27a",
+      "walkable": true
+    },
+    {
+      "id": 3,
+      "name": "water",
+      "color": "#2196f3",
+      "walkable": false
+    },
+    {
+      "id": 4,
+      "name": "stone",
+      "color": "#9e9e9e",
+      "walkable": true
+    },
+    {
+      "id": 5,
+      "name": "cliff",
+      "color": "#555555",
+      "walkable": false
+    },
+    {
+      "id": 6,
+      "name": "snow",
+      "color": "#ffffff",
+      "walkable": true
+    },
+    {
+      "id": 7,
+      "name": "swamp",
+      "color": "#3f6f3f",
+      "walkable": true
+    },
+    {
+      "id": 8,
+      "name": "road",
+      "color": "#bba27a",
+      "walkable": true
+    },
+    {
+      "id": 9,
+      "name": "lava",
+      "color": "#ff4500",
+      "walkable": false
+    }
+  ]
+}
