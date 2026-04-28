@@ -78,7 +78,6 @@ pub struct ActionResolvedMsg {
 
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
-const CHOP_ANIM_SECS: f32 = 0.60;   // how long the oneshot anim plays
 
 // ------------------------------------------------------------
 // 1) Click -> candidates -> intent
