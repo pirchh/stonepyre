@@ -155,4 +155,4 @@ pub struct PlayerState {
 
     /// Used to rate-limit repathing attempts
     pub last_repath_tick: u64,
-}\
+}

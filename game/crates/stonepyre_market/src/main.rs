@@ -7,7 +7,7 @@ mod db;
 mod sim;
 
 use axum::Router;
-use sqlx::Row;
+use sqlx::{Connection, Row};
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{info, warn};

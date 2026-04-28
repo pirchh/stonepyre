@@ -1,5 +1,4 @@
-@"
-# Images
+# Images / source art
 *.png
 *.jpg
 *.jpeg
@@ -7,8 +6,10 @@
 *.svg
 *.xcf
 
-# Build/output
+# Rust build output
 target/
+
+# Build/output
 build/
 dist/
 out/
@@ -21,4 +22,7 @@ out/
 Thumbs.db
 .vscode/
 .idea/
-"@ | Out-File -Encoding ascii .gitignore
+
+# Env / secrets
+.env
+.env.*
