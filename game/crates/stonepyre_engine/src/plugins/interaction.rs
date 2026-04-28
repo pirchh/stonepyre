@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use stonepyre_world::{world_to_tile, TilePos, WorldGrid};
 
 use crate::plugins::input::ClickMsg;
-use crate::plugins::skills::{AnimClip, RequestedAnim, RequestedAnimMode};
+use crate::plugins::skills::{AnimClip, RequestedAnim};
 use crate::plugins::ui::{ContextMenuState, MenuSelectMsg};
 use crate::plugins::world::*;
 
@@ -86,7 +86,7 @@ const CHOP_ANIM_SECS: f32 = 0.60;   // how long the oneshot anim plays
 
 pub fn handle_clicks_build_candidates(
     mut click_reader: MessageReader<ClickMsg>,
-    mut menu: Option<ResMut<ContextMenuState>>,
+    menu: Option<ResMut<ContextMenuState>>,
     mut intent_writer: MessageWriter<IntentMsg>,
     player_q: Query<Entity, With<Player>>,
     interactables: Query<(Entity, &GridPos, &InteractableKind)>,
@@ -176,7 +176,7 @@ pub fn handle_clicks_build_candidates(
 
 pub fn handle_menu_selection_emit_intent(
     mut sel_reader: MessageReader<MenuSelectMsg>,
-    mut menu: Option<ResMut<ContextMenuState>>,
+    menu: Option<ResMut<ContextMenuState>>,
     mut intent_writer: MessageWriter<IntentMsg>,
     player_q: Query<Entity, With<Player>>,
 ) {

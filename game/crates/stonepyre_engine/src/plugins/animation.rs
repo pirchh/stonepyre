@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use crate::plugins::movement::StepTo;
-use crate::plugins::skills::{AnimClip, RequestedAnim, RequestedAnimMode};
+use crate::plugins::skills::{AnimClip, RequestedAnim};
 use crate::plugins::world::{Facing, Player, TilePath, BASE_DIR, WALK_FRAMES, WALK_FPS};
 
 /// Insert this when you want to HARD snap the player back to idle *this frame*
