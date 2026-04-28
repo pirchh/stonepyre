@@ -30,9 +30,7 @@ pub(crate) struct SlotSquareButton;
 
 /// Gear slot button marker
 #[derive(Component)]
-pub(crate) struct EquipSlotButton {
-    pub(crate) slot_id: &'static str,
-}
+pub(crate) struct EquipSlotButton;
 
 /// Tool slot value text tag
 #[derive(Component)]
@@ -42,9 +40,7 @@ pub(crate) struct ToolSlotLabel {
 
 /// Tool slot button marker
 #[derive(Component)]
-pub(crate) struct ToolSlotButton {
-    pub(crate) tool_id: &'static str,
-}
+pub(crate) struct ToolSlotButton;
 
 #[derive(Component)]
 pub(crate) struct PaperdollLayer {
@@ -150,7 +146,7 @@ const FONT_MICRO: f32 = 11.0;
 // Hover system (gear + tool squares)
 // ------------------------------------------------------------
 
-pub fn equip_slot_hover_system(
+pub(crate) fn equip_slot_hover_system(
     mut q: Query<
         (&Interaction, &mut BackgroundColor, &Children),
         (Changed<Interaction>, With<SlotSquareButton>),
@@ -194,7 +190,7 @@ pub fn equip_slot_hover_system(
 // Sync System
 // ------------------------------------------------------------
 
-pub fn character_panel_sync_system(
+pub(crate) fn character_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut state: ResMut<CharacterUiState>,
@@ -737,7 +733,7 @@ fn spawn_gear_slot_column(
                 BackgroundColor(SLOT_BG),
                 Interaction::default(),
                 SlotSquareButton,
-                EquipSlotButton { slot_id: slot_name },
+                EquipSlotButton,
             ))
             .id();
 
@@ -942,7 +938,7 @@ fn spawn_tool_slot_column(
                 BackgroundColor(SLOT_BG),
                 Interaction::default(),
                 SlotSquareButton,
-                ToolSlotButton { tool_id },
+                ToolSlotButton,
             ))
             .id();
 

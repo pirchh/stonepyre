@@ -31,7 +31,7 @@ pub fn inventory_toggle_system(
     }
 }
 
-pub fn inventory_panel_sync_system(
+pub(crate) fn inventory_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut state: ResMut<InventoryUiState>,
@@ -71,7 +71,6 @@ fn spawn_inventory_panel(
         ))
         .id();
 
-    // Centered panel (Minecraft-ish)
     let panel = commands
         .spawn((
             Node {

@@ -48,8 +48,8 @@ pub struct HudState {
     pub tooltip_text: Option<Entity>,
 }
 
-/// ✅ Bevy-version-proof UI tree despawn (no extension traits).
-/// Collect all descendants via `Children` and despawn bottom-up.
+/// Bevy-version-proof UI tree despawn without extension traits.
+/// Collects all descendants through `Children`, then despawns bottom-up.
 fn despawn_ui_tree(root: Entity, children_q: &Query<&Children>, commands: &mut Commands) {
     let mut stack = vec![root];
     let mut all: Vec<Entity> = Vec::new();
@@ -58,23 +58,19 @@ fn despawn_ui_tree(root: Entity, children_q: &Query<&Children>, commands: &mut C
         all.push(e);
 
         if let Ok(children) = children_q.get(e) {
-            // ✅ In your Bevy, this yields Entity by value (not &Entity)
             for c in children.iter() {
                 stack.push(c);
             }
         }
     }
 
-    // Despawn children first, then parents
     for e in all.into_iter().rev() {
         commands.entity(e).despawn();
     }
 }
 
-/// Ensures the HUD exists only when GameUiEnabled(true).
-/// - When enabled becomes true, spawns HUD once.
-/// - When enabled becomes false, despawns the HUD tree cleanly.
-pub fn ensure_hud_bar_system(
+/// Ensures the HUD exists only when `GameUiEnabled(true)`.
+pub(crate) fn ensure_hud_bar_system(
     mut commands: Commands,
     enabled: Res<GameUiEnabled>,
     asset_server: Res<AssetServer>,
@@ -94,9 +90,7 @@ pub fn ensure_hud_bar_system(
     }
 }
 
-/// Build the bottom-right HUD button row (RuneScape-ish).
-/// - Exactly one row
-/// - Up to 8 buttons in a row
+/// Build the bottom-right HUD button row.
 fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mut HudState) {
     let buttons: Vec<HudButton> = vec![
         HudButton {
@@ -149,10 +143,8 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
         },
     ];
 
-    // --- layout constants ---
     let icon_render_px: f32 = 52.0;
     let pad: f32 = 6.0;
-
     let margin_r: f32 = 10.0;
     let margin_b: f32 = 10.0;
 
@@ -273,8 +265,8 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
 }
 
 /// Handle clicking HUD buttons.
-/// Inventory and Character are mutually exclusive (RuneScape-ish).
-pub fn hud_interactions_system(
+/// Inventory and Character are mutually exclusive.
+pub(crate) fn hud_interactions_system(
     mut q: Query<(&Interaction, &HudButton), Changed<Interaction>>,
     mut inv_state: ResMut<InventoryUiState>,
     mut char_state: ResMut<CharacterUiState>,
@@ -292,8 +284,8 @@ pub fn hud_interactions_system(
     }
 }
 
-/// Tooltip on hover: shows name + description. Follows cursor.
-pub fn hud_tooltip_system(
+/// Tooltip on hover: shows name + description and follows cursor.
+pub(crate) fn hud_tooltip_system(
     windows: Query<&Window>,
     hovered: Query<(&Interaction, &HudButton)>,
     state: Res<HudState>,
@@ -336,7 +328,7 @@ pub fn hud_tooltip_system(
 }
 
 /// Keyboard toggles mirror HUD clicks.
-pub fn hud_keyboard_toggles(
+pub(crate) fn hud_keyboard_toggles(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<UiBindings>,
     mut inv_state: ResMut<InventoryUiState>,
