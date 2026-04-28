@@ -52,6 +52,7 @@ pub struct BootState {
     pub selected_slot: usize,
     pub new_character_name: String,
     pub new_character_skin: String,
+    pub creating_character: bool,
 
     // Boot -> world handoff (no Bevy Events needed)
     pub pending_start_world: Option<Uuid>,
@@ -75,6 +76,7 @@ impl Default for BootState {
             selected_slot: 0,
             new_character_name: String::new(),
             new_character_skin: "base_greyscale".to_string(),
+            creating_character: false,
 
             pending_start_world: None,
         }

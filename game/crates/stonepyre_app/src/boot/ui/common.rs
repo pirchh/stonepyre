@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use bevy::text::LineHeight;
-use uuid::Uuid;
 
 use super::super::fonts::UiFonts;
 use super::super::state::{BootState, FocusField};
@@ -29,11 +28,6 @@ pub(crate) struct InputValueText {
 }
 
 #[derive(Component)]
-pub(crate) struct SlotText {
-    pub(crate) idx: usize,
-}
-
-#[derive(Component)]
 pub(crate) enum ButtonAction {
     // Main Menu
     GoAccountLogin,
@@ -50,16 +44,17 @@ pub(crate) enum ButtonAction {
 
     // Character Select
     RefreshCharacters,
+    BeginCharacterCreate,
+    CancelCharacterCreate,
     CreateCharacter,
-    DeleteCharacter(Uuid),
-    PlayCharacter(Uuid),
+    DeleteSelectedCharacter,
+    PlaySelectedCharacter,
 
     PrevSkin,
     NextSkin,
 
     BackToMainMenuFromCharSelect,
 
-    // NEW: click a pedestal slot
     SelectSlot(usize),
 
     Focus(InputFieldKind),
