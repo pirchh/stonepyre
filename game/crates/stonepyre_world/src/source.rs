@@ -1,4 +1,4 @@
-use crate::{chunk::{Chunk, ChunkPos, Tile}, TILE_SIZE};
+use crate::chunk::{Chunk, ChunkPos, Tile};
 use crate::chunk::TileId;
 
 pub trait WorldSource: Send + Sync {
