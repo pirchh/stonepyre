@@ -29,6 +29,12 @@ pub struct CreateCharacterReq {
     pub name: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ActiveSessionStatus {
+    pub active: bool,
+    pub message: Option<String>,
+}
+
 pub async fn list_slots(
     State(state): State<AppState>,
     ctx: AuthContext,
@@ -87,6 +93,48 @@ pub async fn create(
     .await?;
 
     Ok((axum::http::StatusCode::CREATED, Json(created)))
+}
+
+pub async fn active_session(
+    State(state): State<AppState>,
+    ctx: AuthContext,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let owns: bool = sqlx::query_scalar(
+        r#"
+        SELECT game.account_owns_character($1::uuid, $2::uuid)
+        "#,
+    )
+    .bind(ctx.account_id)
+    .bind(id)
+    .fetch_one(&state.db)
+    .await?;
+
+    if !owns {
+        return Err(ApiError::Forbidden);
+    }
+
+    let active_player_id = {
+        let sessions = state.game.sessions.read().await;
+        sessions.player_for_character(id)
+    };
+
+    let status = if let Some(player_id) = active_player_id {
+        ActiveSessionStatus {
+            active: true,
+            message: Some(format!(
+                "This character is already in world as player {}.",
+                player_id
+            )),
+        }
+    } else {
+        ActiveSessionStatus {
+            active: false,
+            message: None,
+        }
+    };
+
+    Ok(Json(status))
 }
 
 pub async fn delete(

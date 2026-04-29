@@ -9,7 +9,7 @@ use std::sync::{
 };
 use uuid::Uuid;
 
-use super::state::{BootState, Character, Session};
+use super::state::{BootState, Character, Screen, Session};
 
 pub fn init_server_base_url(mut st: ResMut<BootState>) {
     // dev default; override with STONEPYRE_SERVER_URL if you want
@@ -25,6 +25,8 @@ pub enum NetResult {
     Characters([Option<Character>; 5]),
     CharacterCreated(Character),
     CharacterDeleted(Uuid),
+    CharacterWorldJoinAllowed(Uuid),
+    CharacterWorldJoinRejected(String),
     Err(String),
 }
 
@@ -44,7 +46,11 @@ impl Default for NetRuntime {
     }
 }
 
-pub fn pump_net_results(mut st: ResMut<BootState>, net: Res<NetRuntime>) {
+pub fn pump_net_results(
+    mut st: ResMut<BootState>,
+    mut next: ResMut<NextState<Screen>>,
+    net: Res<NetRuntime>,
+) {
     loop {
         // avoid holding the lock across our whole match handler
         let msg = {
@@ -87,6 +93,17 @@ pub fn pump_net_results(mut st: ResMut<BootState>, net: Res<NetRuntime>) {
                         }
                     }
                 }
+                st.busy = false;
+            }
+            NetResult::CharacterWorldJoinAllowed(id) => {
+                st.pending_start_world = Some(id);
+                st.busy = false;
+                st.error_banner = None;
+                next.set(Screen::InWorld);
+            }
+            NetResult::CharacterWorldJoinRejected(msg) => {
+                st.pending_start_world = None;
+                st.error_banner = Some(msg);
                 st.busy = false;
             }
             NetResult::Err(msg) => {
@@ -148,6 +165,12 @@ struct CreateCharacterReq {
     // ✅ Send this now; backend can ignore for now, or store later.
     // If/when you add skin_id column + API, you’re already wired.
     skin_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ActiveSessionStatusDto {
+    active: bool,
+    message: Option<String>,
 }
 
 pub fn spawn_register(
@@ -397,6 +420,61 @@ pub fn spawn_create_character(
                 }
                 Err(e) => {
                     let _ = tx.send(NetResult::Err(format!("create character error: {e}")));
+                }
+            }
+        })
+        .detach();
+}
+
+pub fn spawn_check_character_world_status(
+    st: &BootState,
+    net: &NetRuntime,
+    token: String,
+    id: Uuid,
+) {
+    let base = st.server_base_url.clone();
+    let tx = net.tx.clone();
+
+    IoTaskPool::get()
+        .spawn(async move {
+            let c = client();
+            let res = c
+                .get(format!("{}/v1/game/characters/{}/active-session", base, id))
+                .header("Authorization", bearer(&token))
+                .send();
+
+            match res {
+                Ok(r) => {
+                    let status = r.status();
+                    if !status.is_success() {
+                        let _ = tx.send(NetResult::CharacterWorldJoinRejected(format!(
+                            "enter world failed: {status}"
+                        )));
+                        return;
+                    }
+
+                    match r.json::<ActiveSessionStatusDto>() {
+                        Ok(dto) => {
+                            if dto.active {
+                                let message = dto.message.unwrap_or_else(|| {
+                                    "This character is already in world.".to_string()
+                                });
+                                let _ = tx.send(NetResult::CharacterWorldJoinRejected(message));
+                            } else {
+                                let _ = tx.send(NetResult::CharacterWorldJoinAllowed(id));
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(NetResult::CharacterWorldJoinRejected(format!(
+                                "enter world status parse error: {e}"
+                            )));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(NetResult::CharacterWorldJoinRejected(format!(
+                        "enter world status error: {e}"
+                    )));
                 }
             }
         })
