@@ -37,17 +37,10 @@ async fn main() -> anyhow::Result<()> {
     info!("bind={}", cfg.bind_addr);
     info!("db={}", cfg.database_url);
 
-    // Server-owned pool
     let pool = sqlx::PgPool::connect(&cfg.database_url).await?;
-
-    // In-memory game runtime
     let game = game::GameRuntime::new(tick_hz);
-
     let state = AppState::new(cfg.clone(), pool.clone(), game.clone());
 
-    // ---------------------------------------------------------
-    // Prevent double ticks: market sim lock held on a dedicated connection
-    // ---------------------------------------------------------
     let mut market_lock_conn = sqlx::PgConnection::connect(&cfg.database_url).await?;
     let market_got_lock: bool = sqlx::query("SELECT pg_try_advisory_lock($1) AS ok")
         .bind(MARKET_SIM_LOCK_KEY)
@@ -78,13 +71,8 @@ async fn main() -> anyhow::Result<()> {
         warn!("market sim lock NOT acquired; another process is running the sim loop. server will NOT tick the market.");
     }
 
-    // Keep lock conn alive
     let _keep_market_lock_conn_alive = market_lock_conn;
-    // ---------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // Prevent double ticks: game sim lock held on a dedicated connection
-    // ---------------------------------------------------------
     let mut game_lock_conn = sqlx::PgConnection::connect(&cfg.database_url).await?;
     let game_got_lock: bool = sqlx::query("SELECT pg_try_advisory_lock($1) AS ok")
         .bind(GAME_SIM_LOCK_KEY)
@@ -104,7 +92,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let _keep_game_lock_conn_alive = game_lock_conn;
-    // ---------------------------------------------------------
 
     let app: Router = http::router(state);
 
@@ -121,7 +108,6 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
-    // 1) Sim tick loop
     tokio::spawn({
         let game = game.clone();
         async move {
@@ -130,13 +116,18 @@ fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
 
             loop {
                 interval.tick().await;
-                let mut sim = game.sim.write().await;
-                sim.step();
+                let events = {
+                    let mut sim = game.sim.write().await;
+                    sim.step()
+                };
+
+                for event in events {
+                    game.hub.broadcast(event);
+                }
             }
         }
     });
 
-    // 2) Snapshot broadcast loop (slower)
     tokio::spawn({
         let game = game.clone();
         async move {

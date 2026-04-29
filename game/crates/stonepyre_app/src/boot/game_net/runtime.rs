@@ -5,9 +5,17 @@ use tungstenite::{client::IntoClientRequest, connect, Error as WsError, Message}
 use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
+use stonepyre_engine::plugins::world::GridPos;
 use stonepyre_world::TilePos;
 
-use super::protocol::{ClientMsg, InteractionAction, InteractionTarget, NetPlayerSnapshot, ServerMsg};
+use super::protocol::{
+    ActionState,
+    ClientMsg,
+    InteractionAction,
+    InteractionTarget,
+    NetPlayerSnapshot,
+    ServerMsg,
+};
 use super::status::{GameNetCommand, GameNetEvent, GameNetRuntime, GameNetStatus};
 
 pub fn spawn_game_ws(
@@ -34,9 +42,11 @@ pub fn spawn_game_ws(
     status.server_next_tile = None;
     status.server_goal = None;
     status.server_moving = false;
+    status.server_action = None;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
+    status.action_marker_target = None;
     status.last_error = None;
     status.remote_player_count = 0;
 
@@ -190,6 +200,7 @@ fn run_game_ws(
                                 next_tile: p.next_tile,
                                 goal: p.goal,
                                 moving: p.moving,
+                                action: p.action.clone(),
                             })
                             .collect();
 
@@ -200,6 +211,7 @@ fn run_game_ws(
                         let server_next_tile = local_player.and_then(|p| p.next_tile);
                         let server_goal = local_player.and_then(|p| p.goal);
                         let server_moving = local_player.map(|p| p.moving).unwrap_or(false);
+                        let server_action = local_player.and_then(|p| p.action.clone());
 
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
@@ -208,6 +220,7 @@ fn run_game_ws(
                             server_next_tile,
                             server_goal,
                             server_moving,
+                            server_action,
                         });
                     }
                     Ok(ServerMsg::InteractionAck {
@@ -216,14 +229,28 @@ fn run_game_ws(
                         target,
                         message,
                     }) => {
-                        if accepted {
-                            info!(
-                                "game ws interaction accepted action={:?} target={:?}: {}",
-                                action, target, message
-                            );
-                        } else {
-                            let _ = tx.send(GameNetEvent::Error(message));
-                        }
+                        let _ = tx.send(GameNetEvent::InteractionAck {
+                            accepted,
+                            action,
+                            target,
+                            message,
+                        });
+                    }
+
+                    Ok(ServerMsg::ActionState {
+                        player_id,
+                        action,
+                        target,
+                        state,
+                        message,
+                    }) => {
+                        let _ = tx.send(GameNetEvent::ActionState {
+                            player_id,
+                            action,
+                            target,
+                            state,
+                            message,
+                        });
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -302,6 +329,7 @@ pub fn pump_game_net_results(
                 server_next_tile,
                 server_goal,
                 server_moving,
+                server_action,
             } => {
                 status.server_tick = Some(server_tick);
                 status.snapshot_players = players.len();
@@ -309,6 +337,7 @@ pub fn pump_game_net_results(
                 status.server_moving = server_moving;
                 status.server_next_tile = server_next_tile;
                 status.server_goal = server_goal;
+                status.server_action = server_action;
                 if let Some(tile) = server_tile {
                     status.server_tile = Some(tile);
                 }
@@ -324,7 +353,58 @@ pub fn pump_game_net_results(
             }
             GameNetEvent::MoveSent { tile } => {
                 status.last_move_sent = Some(tile);
+                status.action_marker_target = None;
+                status.server_action = None;
                 info!("game net sent move target tile={},{}", tile.x, tile.y);
+            }
+            GameNetEvent::InteractionAck {
+                accepted,
+                action,
+                target,
+                message,
+            } => {
+                if accepted {
+                    info!(
+                        "game ws interaction accepted action={:?} target={:?}: {}",
+                        action, target, message
+                    );
+
+                    if action == InteractionAction::ChopDown {
+                        if let InteractionTarget::Tile(tile) = target {
+                            status.action_marker_target = Some(tile);
+                            status.last_error = None;
+                        }
+                    }
+                } else {
+                    status.last_error = Some(message.clone());
+                    warn!("game net interaction rejected action={:?} target={:?}: {}", action, target, message);
+                }
+            }
+            GameNetEvent::ActionState {
+                player_id,
+                action,
+                target,
+                state,
+                message,
+            } => {
+                info!(
+                    "game net action state player_id={} action={:?} target={:?} state={:?}: {}",
+                    player_id, action, target, state, message
+                );
+
+                if status.player_id == Some(player_id) {
+                    match state {
+                        ActionState::Queued | ActionState::MovingToRange | ActionState::Active => {
+                            if let InteractionTarget::Tile(tile) = target {
+                                status.action_marker_target = Some(tile);
+                            }
+                        }
+                        ActionState::Cancelled | ActionState::Complete | ActionState::Rejected => {
+                            status.server_action = None;
+                            status.action_marker_target = None;
+                        }
+                    }
+                }
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
@@ -337,6 +417,8 @@ pub fn pump_game_net_results(
                 status.server_next_tile = None;
                 status.server_goal = None;
                 status.server_moving = false;
+                status.server_action = None;
+                status.action_marker_target = None;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
             }
@@ -344,30 +426,54 @@ pub fn pump_game_net_results(
     }
 }
 
-/// Send authoritative movement commands only after the actual WalkHere intent is chosen.
-/// Right-click still only opens the context menu.
+/// Send authoritative runtime commands after the actual menu/intent choice is made.
+///
+/// Right-click still only opens the context menu. This system only runs after the
+/// engine has emitted a concrete `IntentMsg` from left-click/default action or an
+/// explicit context-menu selection.
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    grid_pos_q: Query<&GridPos>,
 ) {
     for ev in intents.read() {
-        if ev.intent.verb != Verb::WalkHere {
-            continue;
-        }
+        match ev.intent.verb {
+            Verb::WalkHere => {
+                let Target::Tile(tile) = ev.intent.target else {
+                    continue;
+                };
 
-        let Target::Tile(tile) = ev.intent.target else {
-            continue;
-        };
+                // Keep WalkHere on MoveTo. Movement has its own server-authoritative
+                // snapshot loop and reconciliation behavior.
+                if !send_move_to_server(&game_net, tile) {
+                    warn!("game net move target dropped; websocket is not ready");
+                }
+            }
+            Verb::ChopDown => {
+                let Some(tile) = intent_target_tile(ev.intent.target, &grid_pos_q) else {
+                    warn!("game net chopdown target dropped; target tile could not be resolved");
+                    continue;
+                };
 
-        // Keep WalkHere on the proven MoveTo path for now.
-        //
-        // Phase 5 adds the shared interaction protocol and server-side routing, but we do
-        // not want to change the live movement transport in the same pass. Movement and
-        // reconciliation were already tuned around MoveTo; switching WalkHere to
-        // ClientMsg::Interact exposed rubber-banding while local prediction is still
-        // tile-path based. ChopDown/server actions can use Interact in the next phase.
-        if !send_move_to_server(&game_net, tile) {
-            warn!("game net move target dropped; websocket is not ready");
+                if !send_interaction_to_server(
+                    &game_net,
+                    InteractionAction::ChopDown,
+                    InteractionTarget::Tile(tile),
+                ) {
+                    warn!("game net chopdown target dropped; websocket is not ready");
+                }
+            }
+            Verb::TalkTo | Verb::Examine => {
+                // These stay local-only for now. They will route through the same
+                // interaction path once the server owns NPCs/examine data.
+            }
         }
+    }
+}
+
+fn intent_target_tile(target: Target, grid_pos_q: &Query<&GridPos>) -> Option<TilePos> {
+    match target {
+        Target::Tile(tile) => Some(tile),
+        Target::Entity(entity) => grid_pos_q.get(entity).ok().map(|gp| gp.0),
     }
 }

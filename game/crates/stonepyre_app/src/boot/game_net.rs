@@ -1,3 +1,4 @@
+mod action_visuals;
 mod overlay;
 mod protocol;
 mod reconciliation;
@@ -6,6 +7,7 @@ mod runtime;
 mod status;
 mod target_marker;
 
+pub use action_visuals::play_server_authoritative_action_visuals;
 pub use overlay::{
     despawn_game_net_overlay,
     spawn_game_net_overlay,

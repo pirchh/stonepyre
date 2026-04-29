@@ -27,10 +27,26 @@ pub enum ServerMsg {
 
     Snapshot(WorldSnapshot),
 
+    /// Immediate response to a submitted interaction intent.
+    ///
+    /// Accepted means the server recognized and stored/started the request. It
+    /// does not necessarily mean the action is actively resolving this tick.
+    /// Clients should use `PlayerActionSnapshot.state` from snapshots as the
+    /// authoritative action lifecycle for presentation.
     InteractionAck {
         accepted: bool,
         action: InteractionAction,
         target: InteractionTarget,
+        message: String,
+    },
+
+    /// Optional direct lifecycle event for client logs/UI. Snapshots remain the
+    /// durable source of truth for active action state.
+    ActionState {
+        player_id: Uuid,
+        action: InteractionAction,
+        target: InteractionTarget,
+        state: ActionState,
         message: String,
     },
 
@@ -54,17 +70,23 @@ pub struct PlayerSnapshot {
     pub tile: TilePos,
 
     /// Next tile the server is currently moving this player toward, if any.
-    ///
-    /// Clients should use this for presentation so local visuals move forward
-    /// along the server-approved route instead of chasing the previous server
-    /// tile and occasionally bouncing backward.
     pub next_tile: Option<TilePos>,
 
-    /// Current server-approved goal, if the player is moving.
+    /// Current server-approved movement goal, if the player is moving.
     pub goal: Option<TilePos>,
 
     /// True while the server has an active movement goal/path for this player.
     pub moving: bool,
+
+    /// Current server-owned non-movement action state for this player.
+    pub action: Option<PlayerActionSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerActionSnapshot {
+    pub action: InteractionAction,
+    pub target: InteractionTarget,
+    pub state: ActionState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,4 +98,14 @@ pub enum InteractionAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InteractionTarget {
     Tile(TilePos),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionState {
+    Queued,
+    MovingToRange,
+    Active,
+    Cancelled,
+    Complete,
+    Rejected,
 }

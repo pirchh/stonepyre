@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use stonepyre_world::TilePos;
 
-use super::protocol::{InteractionAction, InteractionTarget, NetPlayerSnapshot};
+use super::protocol::{ActionState, InteractionAction, InteractionTarget, NetPlayerSnapshot, PlayerActionSnapshot};
 
 #[derive(Debug)]
 pub enum GameNetEvent {
@@ -25,8 +25,22 @@ pub enum GameNetEvent {
         server_next_tile: Option<TilePos>,
         server_goal: Option<TilePos>,
         server_moving: bool,
+        server_action: Option<PlayerActionSnapshot>,
     },
     MoveSent { tile: TilePos },
+    InteractionAck {
+        accepted: bool,
+        action: InteractionAction,
+        target: InteractionTarget,
+        message: String,
+    },
+    ActionState {
+        player_id: Uuid,
+        action: InteractionAction,
+        target: InteractionTarget,
+        state: ActionState,
+        message: String,
+    },
     Error(String),
     Disconnected,
 }
@@ -54,9 +68,11 @@ pub struct GameNetStatus {
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
     pub server_moving: bool,
+    pub server_action: Option<PlayerActionSnapshot>,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
+    pub action_marker_target: Option<TilePos>,
     pub last_error: Option<String>,
     pub correction_count: u64,
     pub remote_player_count: usize,
@@ -77,9 +93,11 @@ impl Default for GameNetStatus {
             server_next_tile: None,
             server_goal: None,
             server_moving: false,
+            server_action: None,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,
+            action_marker_target: None,
             last_error: None,
             correction_count: 0,
             remote_player_count: 0,

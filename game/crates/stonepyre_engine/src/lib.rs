@@ -21,6 +21,7 @@ impl Plugin for StonepyreEnginePlugin {
             // REQUIRED RESOURCES (exist before any Update systems)
             // ------------------------------------------------------------
             .insert_resource(plugins::ui::ContextMenuState::default())
+            .insert_resource(plugins::interaction::ServerAuthoritativeInteractions::default())
             .insert_resource(stonepyre_world::WorldGrid::new(
                 64,
                 Box::new(stonepyre_world::FlatWorldSource::new(1337, 0)),
@@ -55,15 +56,18 @@ impl Plugin for StonepyreEnginePlugin {
                 // ---- World maintenance ----
                 plugins::world::sync_world_grid_blocked,
                 plugins::world::debug_draw_target_marker,
-                // ---- Input ----
-                plugins::input::emit_click_messages,
-                // ---- Context menu overlay (NO bevy_ui) ----
-                plugins::ui::context_menu_overlay_system,
-                plugins::ui::handle_context_menu_overlay_clicks,
-                // ---- Interaction pipeline ----
-                plugins::interaction::handle_clicks_build_candidates,
-                plugins::interaction::handle_menu_selection_emit_intent,
-                plugins::interaction::plan_intents_to_actions,
+                // ---- Input + context menu + interaction intent planning ----
+                (
+                    plugins::input::emit_click_messages,
+                    plugins::ui::context_menu_overlay_system,
+                    plugins::ui::handle_context_menu_overlay_clicks,
+                    plugins::interaction::handle_clicks_build_candidates,
+                    plugins::interaction::handle_menu_selection_emit_intent,
+                    plugins::ui::clear_context_menu_consumed_click,
+                    plugins::interaction::plan_intents_to_actions,
+                )
+                    .chain(),
+                // ---- Action execution/resolution ----
                 (
                     plugins::interaction::advance_action_to_impact_when_ready,
                     plugins::interaction::drive_action_clip_on_impact,

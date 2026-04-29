@@ -13,8 +13,18 @@ pub struct ContextMenuState {
     pub open: bool,
     pub screen_pos: Vec2,
     pub candidates: Vec<InteractionCandidate>,
+
+    /// Parent/root menu entities that should be despawned when the menu closes/rebuilds.
+    /// Child text entities are intentionally not tracked here because despawning the parent row
+    /// also despawns its children. Tracking both causes double-despawn warnings in Bevy.
     pub spawned: Vec<Entity>,
+
     pub dirty: bool,
+
+    /// Set when the context menu consumes a left click this frame.
+    /// The world interaction planner uses this to avoid also treating the same click
+    /// as a WalkHere/cell click behind the menu.
+    pub consumed_left_click: bool,
 }
 
 #[derive(Component)]
@@ -44,6 +54,14 @@ fn screen_to_world_2d(
         .ok()
 }
 
+fn despawn_context_menu_entities(commands: &mut Commands, menu: &mut ContextMenuState) {
+    for e in menu.spawned.drain(..) {
+        if let Ok(mut ec) = commands.get_entity(e) {
+            ec.despawn();
+        }
+    }
+}
+
 pub(crate) fn context_menu_overlay_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -53,31 +71,23 @@ pub(crate) fn context_menu_overlay_system(
 ) {
     let Some(mut menu) = menu else { return; };
 
-    // Close: despawn once
+    // Close: despawn once.
     if !menu.open {
         if !menu.spawned.is_empty() {
-            for e in menu.spawned.drain(..) {
-                if let Ok(mut ec) = commands.get_entity(e) {
-                    ec.despawn();
-                }
-            }
+            despawn_context_menu_entities(&mut commands, &mut menu);
         }
         menu.dirty = false;
         return;
     }
 
-    // Open: only rebuild when dirty
+    // Open: only rebuild when dirty.
     if !menu.dirty && !menu.spawned.is_empty() {
         return;
     }
 
-    // Clear old overlay before rebuild
+    // Clear old overlay before rebuild.
     if !menu.spawned.is_empty() {
-        for e in menu.spawned.drain(..) {
-            if let Ok(mut ec) = commands.get_entity(e) {
-                ec.despawn();
-            }
-        }
+        despawn_context_menu_entities(&mut commands, &mut menu);
     }
     menu.dirty = false;
 
@@ -96,14 +106,14 @@ pub(crate) fn context_menu_overlay_system(
     let panel_w = ITEM_W + PAD * 2.0;
     let panel_h = count * ITEM_H + PAD * 2.0;
 
-    // Slightly offset from cursor
+    // Slightly offset from cursor.
     let cursor_offset = Vec2::new(10.0, -10.0);
 
-    // Panel center and top-left
+    // Panel center and top-left.
     let panel_center = cursor_world + cursor_offset + Vec2::new(panel_w * 0.5, -panel_h * 0.5);
     let panel_top_left = Vec2::new(panel_center.x - panel_w * 0.5, panel_center.y + panel_h * 0.5);
 
-    // Root panel (world)
+    // Root panel (world).
     let panel = commands
         .spawn((
             Sprite::from_color(Color::srgba(0.08, 0.08, 0.10, 0.92), Vec2::new(panel_w, panel_h)),
@@ -112,7 +122,7 @@ pub(crate) fn context_menu_overlay_system(
         .id();
     menu.spawned.push(panel);
 
-    // Rows (world), with TEXT as a CHILD in local space
+    // Rows (world), with text as a child in local space.
     for (i, cand) in candidates.iter().enumerate() {
         let row_top = panel_top_left.y - PAD - (i as f32) * ITEM_H;
         let row_bottom = row_top - ITEM_H;
@@ -121,7 +131,6 @@ pub(crate) fn context_menu_overlay_system(
         let row_left = panel_top_left.x + PAD;
         let row_right = row_left + ITEM_W;
 
-        // Row entity (world)
         let row_ent = commands
             .spawn((
                 Sprite::from_color(
@@ -138,8 +147,8 @@ pub(crate) fn context_menu_overlay_system(
             .id();
         menu.spawned.push(row_ent);
 
-        // Text as CHILD: local offset inside row
-        // Row sprite is centered, so left edge is -ITEM_W/2.
+        // Text is a child of the row and is intentionally NOT pushed to menu.spawned.
+        // Despawning the row will despawn this child too.
         let label = format!("{:?}", cand.verb);
         let text_ent = commands
             .spawn((
@@ -150,13 +159,10 @@ pub(crate) fn context_menu_overlay_system(
                     ..default()
                 },
                 TextColor(Color::srgba(0.92, 0.92, 0.95, 1.0)),
-                // local position inside the row (left padding, vertical tweak)
                 Transform::from_xyz(0.0, -7.0, 1.0),
             ))
             .id();
-        menu.spawned.push(text_ent);
 
-        // Parent text to row (NOT to panel)
         commands.entity(row_ent).add_child(text_ent);
     }
 }
@@ -187,7 +193,13 @@ pub(crate) fn handle_context_menu_overlay_clicks(
             continue;
         }
 
+        // The context menu owns this left click while open, even if it lands outside
+        // a menu row. This prevents the same click from falling through into the world.
+        menu.consumed_left_click = true;
+
         let Some(world) = screen_to_world_2d(cam, cam_xform, wnd, ev.cursor_screen) else {
+            menu.open = false;
+            menu.dirty = true;
             continue;
         };
 
@@ -210,4 +222,11 @@ pub(crate) fn handle_context_menu_overlay_clicks(
         menu.open = false;
         menu.dirty = true;
     }
+}
+
+/// Clears one-frame menu input consumption after world/input systems have had a chance
+/// to observe it.
+pub(crate) fn clear_context_menu_consumed_click(menu: Option<ResMut<ContextMenuState>>) {
+    let Some(mut menu) = menu else { return; };
+    menu.consumed_left_click = false;
 }

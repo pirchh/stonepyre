@@ -1,7 +1,9 @@
 pub(super) use stonepyre_protocol::{
+    ActionState,
     ClientMsg,
     InteractionAction,
     InteractionTarget,
+    PlayerActionSnapshot,
     PlayerSnapshot,
     ServerMsg,
     WorldSnapshot,
@@ -18,4 +20,5 @@ pub struct NetPlayerSnapshot {
     pub next_tile: Option<TilePos>,
     pub goal: Option<TilePos>,
     pub moving: bool,
+    pub action: Option<PlayerActionSnapshot>,
 }

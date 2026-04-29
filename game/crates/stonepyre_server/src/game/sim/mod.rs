@@ -1,14 +1,18 @@
 pub mod world;
 
-use self::world::{PlayerState, WorldState, SERVER_MOVE_TILES_PER_SEC};
-use crate::game::protocol::{PlayerSnapshot, WorldSnapshot};
+use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
+use crate::game::protocol::{
+    ActionState,
+    InteractionAction,
+    InteractionTarget,
+    PlayerSnapshot,
+    ServerMsg,
+    WorldSnapshot,
+};
 use stonepyre_world::TilePos;
 use uuid::Uuid;
 
 const MAX_BFS_ITERS: usize = 50_000;
-
-// If a step becomes blocked, we re-path — but not more than once every N ticks
-// (prevents spamming BFS if destination is impossible).
 const REPATH_COOLDOWN_TICKS: u64 = 3;
 
 pub struct GameSim {
@@ -40,6 +44,7 @@ impl GameSim {
                 path: Default::default(),
                 last_repath_tick: 0,
                 move_progress_tiles: 0.0,
+                action: None,
             },
         );
     }
@@ -49,11 +54,12 @@ impl GameSim {
     }
 
     /// Client asks to move somewhere.
-    /// Server adjusts goal if blocked, computes path, stores it.
-    pub fn set_move_target(&mut self, player_id: Uuid, requested: TilePos) {
+    ///
+    /// Any manual movement cancels the current queued/active non-movement action.
+    pub fn set_move_target(&mut self, player_id: Uuid, requested: TilePos) -> Option<ServerMsg> {
         let start_tile = match self.world.players.get(&player_id) {
             Some(p) => p.tile,
-            None => return,
+            None => return None,
         };
 
         let goal = if self.world.is_blocked(requested) {
@@ -62,13 +68,14 @@ impl GameSim {
                 .pick_best_adjacent_unblocked(start_tile, requested, 1)
             {
                 Some(g) => g,
-                None => return,
+                None => return None,
             }
         } else {
             requested
         };
 
         let path = self.world.find_path_bfs(start_tile, goal, MAX_BFS_ITERS);
+        let cancelled = self.clear_action(player_id, ActionState::Cancelled, "movement cancelled action");
 
         if let Some(p) = self.world.players.get_mut(&player_id) {
             p.goal = Some(goal);
@@ -76,21 +83,85 @@ impl GameSim {
             p.last_repath_tick = self.tick;
             p.move_progress_tiles = 0.0;
         }
+
+        cancelled
     }
 
-    pub fn step(&mut self) {
-        self.tick += 1;
+    /// Queue a server-authoritative ChopDown request.
+    ///
+    /// Distance is not a final rejection. If the target is valid and reachable,
+    /// the server moves the player to an adjacent tile and exposes the action
+    /// lifecycle through snapshots.
+    pub fn queue_chop_down(&mut self, player_id: Uuid, target: TilePos) -> Result<(ActionState, String), String> {
+        if !self.world.is_choppable_tree(target) {
+            return Err("target is not a choppable tree".to_string());
+        }
 
-        // Clone blocked once so we can consult it while mutating players without borrow checker fights.
+        let Some(start_tile) = self.world.players.get(&player_id).map(|p| p.tile) else {
+            return Err("player is not in the world".to_string());
+        };
+
+        let distance = manhattan(start_tile, target);
+        if distance <= 1 {
+            if let Some(p) = self.world.players.get_mut(&player_id) {
+                p.goal = None;
+                p.path.clear();
+                p.move_progress_tiles = 0.0;
+                p.action = Some(ServerAction {
+                    action: InteractionAction::ChopDown,
+                    target: InteractionTarget::Tile(target),
+                    state: ActionState::Active,
+                });
+            }
+
+            return Ok((ActionState::Active, format!("ChopDown active at {},{}", target.x, target.y)));
+        }
+
+        let Some(goal) = self.world.pick_best_adjacent_unblocked(start_tile, target, 1) else {
+            return Err("no reachable adjacent tile for ChopDown".to_string());
+        };
+
+        let path = self.world.find_path_bfs(start_tile, goal, MAX_BFS_ITERS);
+        if path.is_empty() && start_tile != goal {
+            return Err("no path to ChopDown target".to_string());
+        }
+
+        if let Some(p) = self.world.players.get_mut(&player_id) {
+            p.goal = Some(goal);
+            p.path = path;
+            p.last_repath_tick = self.tick;
+            p.move_progress_tiles = 0.0;
+            p.action = Some(ServerAction {
+                action: InteractionAction::ChopDown,
+                target: InteractionTarget::Tile(target),
+                state: ActionState::MovingToRange,
+            });
+        }
+
+        Ok((ActionState::MovingToRange, format!(
+            "ChopDown queued; walking to {},{} for target {},{}",
+            goal.x, goal.y, target.x, target.y
+        )))
+    }
+
+    /// Advance server simulation and return lifecycle events produced this tick.
+    pub fn step(&mut self) -> Vec<ServerMsg> {
+        self.tick += 1;
+        let mut events = Vec::new();
+
         let blocked_snapshot = self.world.blocked.clone();
 
         for p in self.world.players.values_mut() {
-            let Some(goal) = p.goal else { continue; };
+            let Some(goal) = p.goal else {
+                maybe_activate_action(p, &mut events);
+                continue;
+            };
 
             if p.tile == goal {
                 p.goal = None;
                 p.path.clear();
                 p.move_progress_tiles = 0.0;
+                maybe_activate_action(p, &mut events);
                 continue;
             }
 
@@ -107,7 +178,6 @@ impl GameSim {
 
             p.move_progress_tiles += self.tiles_per_tick;
 
-            // Advance whole tile steps only when enough movement time has accumulated.
             while p.move_progress_tiles >= 1.0 {
                 let Some(next) = p.path.front().copied() else {
                     p.move_progress_tiles = 0.0;
@@ -134,10 +204,13 @@ impl GameSim {
                     p.goal = None;
                     p.path.clear();
                     p.move_progress_tiles = 0.0;
+                    maybe_activate_action(p, &mut events);
                     break;
                 }
             }
         }
+
+        events
     }
 
     pub fn snapshot(&self) -> WorldSnapshot {
@@ -154,10 +227,49 @@ impl GameSim {
                     next_tile: p.path.front().copied(),
                     goal: p.goal,
                     moving: p.goal.is_some() && (!p.path.is_empty() || p.tile != p.goal.unwrap_or(p.tile)),
+                    action: p.action.as_ref().map(|a| a.snapshot()),
                 })
                 .collect(),
         }
     }
+
+    fn clear_action(&mut self, player_id: Uuid, state: ActionState, message: &str) -> Option<ServerMsg> {
+        let p = self.world.players.get_mut(&player_id)?;
+        let action = p.action.take()?;
+        Some(ServerMsg::ActionState {
+            player_id,
+            action: action.action,
+            target: action.target,
+            state,
+            message: message.to_string(),
+        })
+    }
+}
+
+fn maybe_activate_action(p: &mut PlayerState, events: &mut Vec<ServerMsg>) {
+    let Some(action) = p.action.as_mut() else { return; };
+    if action.state != ActionState::MovingToRange && action.state != ActionState::Queued {
+        return;
+    }
+
+    match action.target.clone() {
+        InteractionTarget::Tile(target) => {
+            if manhattan(p.tile, target) <= 1 {
+                action.state = ActionState::Active;
+                events.push(ServerMsg::ActionState {
+                    player_id: p.player_id,
+                    action: action.action,
+                    target: action.target.clone(),
+                    state: ActionState::Active,
+                    message: format!("{:?} active at {},{}", action.action, target.x, target.y),
+                });
+            }
+        }
+    }
+}
+
+fn manhattan(a: TilePos, b: TilePos) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }
 
 use std::collections::{HashMap, HashSet, VecDeque};
