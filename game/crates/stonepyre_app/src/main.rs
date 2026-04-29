@@ -51,6 +51,7 @@ fn main() {
                 boot::game_net::send_walk_intents_to_server_runtime,
                 boot::game_net::reconcile_local_player_to_server,
                 boot::game_net::sync_remote_players_from_snapshots,
+                boot::game_net::animate_remote_players_from_snapshots,
                 boot::game_net::update_game_net_overlay,
             )
                 .run_if(in_state(Screen::InWorld)),
