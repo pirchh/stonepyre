@@ -5524,6 +5524,7 @@ dependencies = [
  "serde_json",
  "stonepyre_content",
  "stonepyre_engine",
+ "stonepyre_protocol",
  "stonepyre_ui",
  "stonepyre_world",
  "tungstenite",
@@ -5571,6 +5572,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stonepyre_protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "stonepyre_world",
+ "uuid",
+]
+
+[[package]]
 name = "stonepyre_server"
 version = "0.1.0"
 dependencies = [
@@ -5585,6 +5595,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "stonepyre_market",
+ "stonepyre_protocol",
  "stonepyre_world",
  "thiserror 1.0.69",
  "tokio",
