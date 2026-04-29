@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use stonepyre_world::TilePos;
 
-use super::protocol::NetPlayerSnapshot;
+use super::protocol::{InteractionAction, InteractionTarget, NetPlayerSnapshot};
 
 #[derive(Debug)]
 pub enum GameNetEvent {
@@ -31,6 +31,10 @@ pub enum GameNetEvent {
 #[derive(Debug)]
 pub enum GameNetCommand {
     MoveTo { tile: TilePos },
+    Interact {
+        action: InteractionAction,
+        target: InteractionTarget,
+    },
 }
 
 #[derive(Resource, Debug, Clone)]

@@ -7,7 +7,7 @@ use uuid::Uuid;
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
 use stonepyre_world::TilePos;
 
-use super::protocol::{ClientMsg, NetPlayerSnapshot, ServerMsg};
+use super::protocol::{ClientMsg, InteractionAction, InteractionTarget, NetPlayerSnapshot, ServerMsg};
 use super::status::{GameNetCommand, GameNetEvent, GameNetRuntime, GameNetStatus};
 
 pub fn spawn_game_ws(
@@ -57,6 +57,19 @@ pub fn send_move_to_server(game_net: &GameNetRuntime, tile: TilePos) -> bool {
     };
 
     tx.send(GameNetCommand::MoveTo { tile }).is_ok()
+}
+
+pub fn send_interaction_to_server(
+    game_net: &GameNetRuntime,
+    action: InteractionAction,
+    target: InteractionTarget,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::Interact { action, target }).is_ok()
 }
 
 fn run_game_ws(
@@ -112,6 +125,23 @@ fn run_game_ws(
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws move send failed: {e}"))?;
                     let _ = tx.send(GameNetEvent::MoveSent { tile });
+                }
+                GameNetCommand::Interact { action, target } => {
+                    let msg = ClientMsg::Interact {
+                        action,
+                        target: target.clone(),
+                    };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws interaction serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws interaction send failed: {e}"))?;
+
+                    if let InteractionTarget::Tile(tile) = target {
+                        if action == InteractionAction::WalkHere {
+                            let _ = tx.send(GameNetEvent::MoveSent { tile });
+                        }
+                    }
                 }
             }
         }
@@ -169,6 +199,21 @@ fn run_game_ws(
                             players,
                             server_tile,
                         });
+                    }
+                    Ok(ServerMsg::InteractionAck {
+                        accepted,
+                        action,
+                        target,
+                        message,
+                    }) => {
+                        if accepted {
+                            info!(
+                                "game ws interaction accepted action={:?} target={:?}: {}",
+                                action, target, message
+                            );
+                        } else {
+                            let _ = tx.send(GameNetEvent::Error(message));
+                        }
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -290,6 +335,13 @@ pub fn send_walk_intents_to_server_runtime(
             continue;
         };
 
+        // Keep WalkHere on the proven MoveTo path for now.
+        //
+        // Phase 5 adds the shared interaction protocol and server-side routing, but we do
+        // not want to change the live movement transport in the same pass. Movement and
+        // reconciliation were already tuned around MoveTo; switching WalkHere to
+        // ClientMsg::Interact exposed rubber-banding while local prediction is still
+        // tile-path based. ChopDown/server actions can use Interact in the next phase.
         if !send_move_to_server(&game_net, tile) {
             warn!("game net move target dropped; websocket is not ready");
         }

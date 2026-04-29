@@ -8,6 +8,10 @@ pub enum ClientMsg {
     Ping,
     JoinWorld { character_id: Uuid },
     MoveTo { tile: TilePos },
+    Interact {
+        action: InteractionAction,
+        target: InteractionTarget,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +26,13 @@ pub enum ServerMsg {
     },
 
     Snapshot(WorldSnapshot),
+
+    InteractionAck {
+        accepted: bool,
+        action: InteractionAction,
+        target: InteractionTarget,
+        message: String,
+    },
 
     Error {
         message: String,
@@ -39,4 +50,15 @@ pub struct PlayerSnapshot {
     pub player_id: Uuid,
     pub character_id: Uuid,
     pub tile: TilePos,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InteractionAction {
+    WalkHere,
+    ChopDown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InteractionTarget {
+    Tile(TilePos),
 }

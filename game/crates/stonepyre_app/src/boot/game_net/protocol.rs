@@ -1,4 +1,11 @@
-pub(super) use stonepyre_protocol::{ClientMsg, PlayerSnapshot, ServerMsg, WorldSnapshot};
+pub(super) use stonepyre_protocol::{
+    ClientMsg,
+    InteractionAction,
+    InteractionTarget,
+    PlayerSnapshot,
+    ServerMsg,
+    WorldSnapshot,
+};
 
 use stonepyre_world::TilePos;
 use uuid::Uuid;

@@ -1,1 +1,8 @@
-pub use stonepyre_protocol::{ClientMsg, PlayerSnapshot, ServerMsg, WorldSnapshot};
+pub use stonepyre_protocol::{
+    ClientMsg,
+    InteractionAction,
+    InteractionTarget,
+    PlayerSnapshot,
+    ServerMsg,
+    WorldSnapshot,
+};

@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     error::ApiError,
     game::{
-        protocol::{ClientMsg, ServerMsg},
+        protocol::{ClientMsg, InteractionAction, InteractionTarget, ServerMsg},
         ActiveCharacterJoinError,
     },
     http::middleware::AuthContext,
@@ -169,6 +169,17 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             sim.set_move_target(pid, tile);
                         }
                     }
+
+                    ClientMsg::Interact { action, target } => {
+                        let Some(pid) = player_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before sending interactions".to_string(),
+                            });
+                            continue;
+                        };
+
+                        handle_interaction(&state, pid, action, target, &out_tx).await;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -200,6 +211,38 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 
     forward_task.abort();
     write_task.abort();
+}
+
+async fn handle_interaction(
+    state: &AppState,
+    player_id: Uuid,
+    action: InteractionAction,
+    target: InteractionTarget,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match (action, target.clone()) {
+        (InteractionAction::WalkHere, InteractionTarget::Tile(tile)) => {
+            {
+                let mut sim = state.game.sim.write().await;
+                sim.set_move_target(player_id, tile);
+            }
+
+            let _ = out_tx.send(ServerMsg::InteractionAck {
+                accepted: true,
+                action,
+                target,
+                message: "walk target accepted".to_string(),
+            });
+        }
+        (InteractionAction::ChopDown, InteractionTarget::Tile(_tile)) => {
+            let _ = out_tx.send(ServerMsg::InteractionAck {
+                accepted: false,
+                action,
+                target,
+                message: "ChopDown is not implemented on the server yet".to_string(),
+            });
+        }
+    }
 }
 
 async fn account_owns_character(

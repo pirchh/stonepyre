@@ -48,8 +48,16 @@ fn main() {
             Update,
             (
                 boot::game_net::pump_game_net_results,
-                boot::game_net::send_walk_intents_to_server_runtime,
-                boot::game_net::reconcile_local_player_to_server,
+                boot::game_net::send_walk_intents_to_server_runtime
+                    .after(stonepyre_engine::plugins::interaction::plan_intents_to_actions)
+                    .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                boot::game_net::reconcile_local_player_to_server
+                    .after(boot::game_net::pump_game_net_results)
+                    .after(boot::game_net::send_walk_intents_to_server_runtime)
+                    .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                boot::game_net::sync_network_target_marker_from_last_move
+                    .after(stonepyre_engine::plugins::world::debug_draw_target_marker)
+                    .after(boot::game_net::pump_game_net_results),
                 boot::game_net::sync_remote_players_from_snapshots,
                 boot::game_net::animate_remote_players_from_snapshots,
                 boot::game_net::update_game_net_overlay,
