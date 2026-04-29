@@ -6,7 +6,9 @@ members = [
   "crates/stonepyre_world",
   "crates/stonepyre_content",
   "crates/stonepyre_ui",
-  "crates/stonepyre_market", "crates/stonepyre_server",
+  "crates/stonepyre_market",
+  "crates/stonepyre_server",
+  "crates/stonepyre_protocol",
 ]
 
 [workspace.package]

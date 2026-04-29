@@ -10,6 +10,7 @@ stonepyre_engine = { path = "../stonepyre_engine" }
 stonepyre_content = { path = "../stonepyre_content" }
 stonepyre_ui = { path = "../stonepyre_ui" }
 stonepyre_world = { path = "../stonepyre_world" }
+stonepyre_protocol = { path = "../stonepyre_protocol" }
 
 # Client → server API
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
