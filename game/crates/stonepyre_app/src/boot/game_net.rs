@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::{
     mpsc::{self, Receiver, Sender},
     Mutex,
@@ -10,7 +11,7 @@ use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
 use stonepyre_engine::plugins::world::{
-    player_feet_world, Player, TilePath, FOOT_OFFSET_Y,
+    player_feet_world, Player, TilePath, FOOT_OFFSET_Y, PLAYER_SCALE,
 };
 use stonepyre_world::{tile_to_world_center, world_to_tile, TilePos};
 
@@ -53,6 +54,13 @@ struct PlayerSnapshot {
     pub tile: TilePos,
 }
 
+#[derive(Debug, Clone)]
+pub struct NetPlayerSnapshot {
+    pub player_id: Uuid,
+    pub character_id: Uuid,
+    pub tile: TilePos,
+}
+
 #[derive(Debug)]
 pub enum GameNetEvent {
     Connecting { url: String, character_id: Uuid },
@@ -64,7 +72,7 @@ pub enum GameNetEvent {
     },
     Snapshot {
         server_tick: u64,
-        players: usize,
+        players: Vec<NetPlayerSnapshot>,
         server_tile: Option<TilePos>,
     },
     MoveSent { tile: TilePos },
@@ -86,12 +94,14 @@ pub struct GameNetStatus {
     pub tick_hz: Option<u32>,
     pub server_tick: Option<u64>,
     pub snapshot_players: usize,
+    pub latest_players: Vec<NetPlayerSnapshot>,
     pub server_tile: Option<TilePos>,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
     pub last_error: Option<String>,
     pub correction_count: u64,
+    pub remote_player_count: usize,
 }
 
 impl Default for GameNetStatus {
@@ -104,12 +114,14 @@ impl Default for GameNetStatus {
             tick_hz: None,
             server_tick: None,
             snapshot_players: 0,
+            latest_players: Vec::new(),
             server_tile: None,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,
             last_error: None,
             correction_count: 0,
+            remote_player_count: 0,
         }
     }
 }
@@ -139,6 +151,12 @@ pub struct GameNetOverlayRoot;
 #[derive(Component)]
 pub struct GameNetOverlayText;
 
+#[derive(Component, Clone, Copy, Debug)]
+pub struct RemoteNetPlayer {
+    pub player_id: Uuid,
+    pub character_id: Uuid,
+}
+
 pub fn spawn_game_ws(
     game_net: &mut GameNetRuntime,
     status: &mut GameNetStatus,
@@ -158,11 +176,13 @@ pub fn spawn_game_ws(
     status.player_id = None;
     status.server_tick = None;
     status.snapshot_players = 0;
+    status.latest_players.clear();
     status.server_tile = None;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
     status.last_error = None;
+    status.remote_player_count = 0;
 
     let _ = tx.send(GameNetEvent::Connecting {
         url: url.clone(),
@@ -274,6 +294,16 @@ fn run_game_ws(
                         });
                     }
                     Ok(ServerMsg::Snapshot(snap)) => {
+                        let players: Vec<NetPlayerSnapshot> = snap
+                            .players
+                            .iter()
+                            .map(|p| NetPlayerSnapshot {
+                                player_id: p.player_id,
+                                character_id: p.character_id,
+                                tile: p.tile,
+                            })
+                            .collect();
+
                         let server_tile = player_id.and_then(|pid| {
                             snap.players
                                 .iter()
@@ -283,7 +313,7 @@ fn run_game_ws(
 
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
-                            players: snap.players.len(),
+                            players,
                             server_tile,
                         });
                     }
@@ -363,11 +393,15 @@ pub fn pump_game_net_results(
                 server_tile,
             } => {
                 status.server_tick = Some(server_tick);
-                status.snapshot_players = players;
+                status.snapshot_players = players.len();
+                status.latest_players = players;
                 if let Some(tile) = server_tile {
                     status.server_tile = Some(tile);
                 }
-                debug!("game net snapshot tick={} players={}", server_tick, players);
+                debug!(
+                    "game net snapshot tick={} players={}",
+                    server_tick, status.snapshot_players
+                );
             }
             GameNetEvent::MoveSent { tile } => {
                 status.last_move_sent = Some(tile);
@@ -380,6 +414,8 @@ pub fn pump_game_net_results(
             GameNetEvent::Disconnected => {
                 status.connected = false;
                 status.connecting = false;
+                status.latest_players.clear();
+                status.remote_player_count = 0;
                 warn!("game net disconnected");
             }
         }
@@ -445,6 +481,84 @@ pub fn reconcile_local_player_to_server(
             "game net corrected local player to server tile {},{} drift={}",
             server_tile.x, server_tile.y, drift
         );
+    }
+}
+
+/// Spawn/update/despawn remote players based on the authoritative server snapshot.
+///
+/// This is intentionally simple: remote players snap to the latest server tile for now.
+/// A later pass can smooth/interpolate them between snapshots.
+pub fn sync_remote_players_from_snapshots(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut status: ResMut<GameNetStatus>,
+    mut remotes: Query<(Entity, &RemoteNetPlayer, &mut Transform)>,
+) {
+    let Some(local_player_id) = status.player_id else {
+        status.remote_player_count = 0;
+        return;
+    };
+
+    let mut expected: HashSet<Uuid> = HashSet::new();
+
+    for p in status.latest_players.iter() {
+        if p.player_id == local_player_id {
+            continue;
+        }
+
+        expected.insert(p.player_id);
+
+        let center = tile_to_world_center(p.tile);
+        let target_translation = Vec3::new(center.x, center.y + FOOT_OFFSET_Y, 9.5);
+
+        let mut found = false;
+        for (_, remote, mut xform) in remotes.iter_mut() {
+            if remote.player_id == p.player_id {
+                xform.translation = target_translation;
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            let image: Handle<Image> = asset_server
+                .load("characters/humanoid/base_greyscale/idle/south/south_idle.png");
+
+            commands.spawn((
+                Sprite {
+                    image,
+                    ..default()
+                },
+                Transform::from_translation(target_translation)
+                    .with_scale(Vec3::splat(PLAYER_SCALE)),
+                RemoteNetPlayer {
+                    player_id: p.player_id,
+                    character_id: p.character_id,
+                },
+                Name::new(format!("remote_player_{}", p.player_id)),
+            ));
+        }
+    }
+
+    for (entity, remote, _) in remotes.iter_mut() {
+        if !expected.contains(&remote.player_id) {
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
+        }
+    }
+
+    status.remote_player_count = expected.len();
+}
+
+pub fn despawn_remote_players(
+    mut commands: Commands,
+    remotes: Query<Entity, With<RemoteNetPlayer>>,
+) {
+    for e in remotes.iter() {
+        if let Ok(mut ec) = commands.get_entity(e) {
+            ec.despawn();
+        }
     }
 }
 
@@ -520,6 +634,7 @@ pub fn update_game_net_overlay(
          Tick Hz: {}\n\
          Snapshot Tick: {}\n\
          Snapshot Players: {}\n\
+         Remote Players: {}\n\
          Local Tile: {}\n\
          Server Tile: {}\n\
          Drift: {}\n\
@@ -531,6 +646,7 @@ pub fn update_game_net_overlay(
         status.tick_hz.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
         status.server_tick.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
         status.snapshot_players,
+        status.remote_player_count,
         fmt_tile(status.local_tile),
         fmt_tile(status.server_tile),
         status.drift_tiles.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
