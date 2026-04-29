@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use stonepyre_world::{neighbors_4, TilePos};
 use uuid::Uuid;
 
+use crate::game::protocol::{ActionState, InteractionAction, InteractionTarget, PlayerActionSnapshot};
+
 /// Server-side movement speed in tiles/sec.
 /// Keep this aligned with stonepyre_engine::plugins::world::MOVE_TILES_PER_SEC.
 pub const SERVER_MOVE_TILES_PER_SEC: f32 = 1.6;
@@ -22,7 +24,6 @@ impl WorldState {
         // Match the current client demo world blockers:
         // - demo tree at (2, 0)
         // - demo NPC at (-2, 1)
-        // This avoids client/server path divergence while the world is still hardcoded.
         blocked.insert(TilePos::new(2, 0));
         blocked.insert(TilePos::new(-2, 1));
 
@@ -40,12 +41,9 @@ impl WorldState {
     #[inline]
     pub fn is_choppable_tree(&self, t: TilePos) -> bool {
         // v0 server-owned action target: keep this aligned with the demo tree.
-        // Once world data is shared/loaded, this should query authoritative node state.
         t == TilePos::new(2, 0)
     }
 
-    /// If the requested target tile is blocked, try to select a nearby
-    /// unblocked tile within `range` using a cheap heuristic (closest to start).
     pub fn pick_best_adjacent_unblocked(
         &self,
         start: TilePos,
@@ -57,7 +55,6 @@ impl WorldState {
 
         for dx in -range..=range {
             for dy in -range..=range {
-                // manhattan ring-ish
                 if dx.abs() + dy.abs() > range {
                     continue;
                 }
@@ -82,8 +79,6 @@ impl WorldState {
         best
     }
 
-    /// BFS pathfind on a 4-neighbor grid avoiding `blocked`.
-    /// Returns a path of steps from start -> goal (excluding start).
     pub fn find_path_bfs(&self, start: TilePos, goal: TilePos, max_iters: usize) -> VecDeque<TilePos> {
         if start == goal {
             return VecDeque::new();
@@ -150,6 +145,23 @@ fn reconstruct_path(
     out
 }
 
+#[derive(Clone, Debug)]
+pub struct ServerAction {
+    pub action: InteractionAction,
+    pub target: InteractionTarget,
+    pub state: ActionState,
+}
+
+impl ServerAction {
+    pub fn snapshot(&self) -> PlayerActionSnapshot {
+        PlayerActionSnapshot {
+            action: self.action,
+            target: self.target.clone(),
+            state: self.state,
+        }
+    }
+}
+
 pub struct PlayerState {
     pub player_id: Uuid,
     pub character_id: Uuid,
@@ -167,6 +179,8 @@ pub struct PlayerState {
     pub last_repath_tick: u64,
 
     /// Fractional movement accumulator in tiles.
-    /// This prevents the server from moving one whole tile every tick.
     pub move_progress_tiles: f32,
+
+    /// Current server-owned non-movement action lifecycle.
+    pub action: Option<ServerAction>,
 }

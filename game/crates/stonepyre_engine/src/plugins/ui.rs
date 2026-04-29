@@ -15,6 +15,10 @@ pub struct ContextMenuState {
     pub candidates: Vec<InteractionCandidate>,
     pub spawned: Vec<Entity>,
     pub dirty: bool,
+
+    /// Set when the context menu handles a left click this frame.
+    /// World click handling checks this so menu choices do not also click the tile behind the menu.
+    pub consumed_left_click: bool,
 }
 
 #[derive(Component)]
@@ -138,8 +142,8 @@ pub(crate) fn context_menu_overlay_system(
             .id();
         menu.spawned.push(row_ent);
 
-        // Text as CHILD: local offset inside row
-        // Row sprite is centered, so left edge is -ITEM_W/2.
+        // Text as CHILD: local offset inside row.
+        // Only track/despawn the row; the child is despawned with its parent.
         let label = format!("{:?}", cand.verb);
         let text_ent = commands
             .spawn((
@@ -150,13 +154,10 @@ pub(crate) fn context_menu_overlay_system(
                     ..default()
                 },
                 TextColor(Color::srgba(0.92, 0.92, 0.95, 1.0)),
-                // local position inside the row (left padding, vertical tweak)
                 Transform::from_xyz(0.0, -7.0, 1.0),
             ))
             .id();
-        menu.spawned.push(text_ent);
 
-        // Parent text to row (NOT to panel)
         commands.entity(row_ent).add_child(text_ent);
     }
 }
@@ -187,7 +188,14 @@ pub(crate) fn handle_context_menu_overlay_clicks(
             continue;
         }
 
+        // Any left click while the context menu is open belongs to the menu layer.
+        // A row click selects an action; an outside click closes the menu. Either way,
+        // it must not also become a WalkHere click on the world behind the menu.
+        menu.consumed_left_click = true;
+
         let Some(world) = screen_to_world_2d(cam, cam_xform, wnd, ev.cursor_screen) else {
+            menu.open = false;
+            menu.dirty = true;
             continue;
         };
 
@@ -210,4 +218,9 @@ pub(crate) fn handle_context_menu_overlay_clicks(
         menu.open = false;
         menu.dirty = true;
     }
+}
+
+pub(crate) fn clear_context_menu_consumed_click(menu: Option<ResMut<ContextMenuState>>) {
+    let Some(mut menu) = menu else { return; };
+    menu.consumed_left_click = false;
 }

@@ -76,6 +76,11 @@ pub struct ActionResolvedMsg {
     pub intent: Intent,
 }
 
+/// When enabled by the app, non-movement interactions are routed to the game server
+/// and should not resolve local gameplay effects such as woodcutting rolls/charges.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct ServerAuthoritativeInteractions(pub bool);
+
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
 
@@ -93,7 +98,14 @@ pub fn handle_clicks_build_candidates(
     let Some(mut menu) = menu else { return; };
     let Ok(player_ent) = player_q.single() else { return; };
 
+    let consumed_left_click = menu.consumed_left_click;
+
     for ev in click_reader.read() {
+        // If the context menu handled this click, do NOT also treat it as a world click.
+        if consumed_left_click && ev.button == MouseButton::Left {
+            continue;
+        }
+
         // If the context menu is open, do NOT treat left-click as a world click.
         if menu.open && ev.button == MouseButton::Left {
             continue;
@@ -206,6 +218,7 @@ pub fn handle_menu_selection_emit_intent(
 pub fn plan_intents_to_actions(
     mut intents: MessageReader<IntentMsg>,
     world: Option<Res<WorldGrid>>,
+    server_authoritative: Option<Res<ServerAuthoritativeInteractions>>,
     interactables: Query<(Entity, &GridPos, &InteractableKind)>,
     mut player_q: Query<(Entity, &Transform, &mut TilePath, &mut Facing), With<Player>>,
     mut commands: Commands,
@@ -216,6 +229,7 @@ pub fn plan_intents_to_actions(
         return;
     };
     let start_tile = world_to_tile(player_feet_world(player_xform));
+    let server_authoritative = server_authoritative.as_ref().map(|r| r.0).unwrap_or(false);
 
     for ev in intents.read() {
         if ev.actor != player_ent {
@@ -223,6 +237,15 @@ pub fn plan_intents_to_actions(
         }
 
         let intent = ev.intent;
+
+        // In networked/server-authoritative mode, gameplay interactions are owned by the server.
+        // The local engine may still plan WalkHere for offline mode and target preview, but it must
+        // not resolve ChopDown/TalkTo/Examine locally because that would produce client-only effects.
+        if server_authoritative && intent.verb != Verb::WalkHere {
+            commands.entity(player_ent).remove::<CurrentAction>();
+            commands.entity(player_ent).remove::<RequestedAnim>();
+            continue;
+        }
 
         let target_tile = match intent.target {
             Target::Tile(t) => t,

@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     error::ApiError,
     game::{
-        protocol::{ClientMsg, InteractionAction, InteractionTarget, ServerMsg},
+        protocol::{ActionState, ClientMsg, InteractionAction, InteractionTarget, ServerMsg},
         ActiveCharacterJoinError,
     },
     http::middleware::AuthContext,
@@ -165,8 +165,14 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
-                            let mut sim = state.game.sim.write().await;
-                            sim.set_move_target(pid, tile);
+                            let event = {
+                                let mut sim = state.game.sim.write().await;
+                                sim.set_move_target(pid, tile)
+                            };
+
+                            if let Some(event) = event {
+                                let _ = out_tx.send(event);
+                            }
                         }
                     }
 
@@ -222,9 +228,13 @@ async fn handle_interaction(
 ) {
     match (action, target.clone()) {
         (InteractionAction::WalkHere, InteractionTarget::Tile(tile)) => {
-            {
+            let event = {
                 let mut sim = state.game.sim.write().await;
-                sim.set_move_target(player_id, tile);
+                sim.set_move_target(player_id, tile)
+            };
+
+            if let Some(event) = event {
+                let _ = out_tx.send(event);
             }
 
             let _ = out_tx.send(ServerMsg::InteractionAck {
@@ -236,24 +246,40 @@ async fn handle_interaction(
         }
         (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
             let validation = {
-                let sim = state.game.sim.read().await;
-                sim.validate_chop_down(player_id, tile)
+                let mut sim = state.game.sim.write().await;
+                sim.queue_chop_down(player_id, tile)
             };
 
             match validation {
-                Ok(()) => {
+                Ok((state, message)) => {
                     let _ = out_tx.send(ServerMsg::InteractionAck {
                         accepted: true,
                         action,
+                        target: target.clone(),
+                        message: message.clone(),
+                    });
+
+                    let _ = out_tx.send(ServerMsg::ActionState {
+                        player_id,
+                        action,
                         target,
-                        message: format!("ChopDown accepted at {},{}", tile.x, tile.y),
+                        state,
+                        message,
                     });
                 }
                 Err(message) => {
                     let _ = out_tx.send(ServerMsg::InteractionAck {
                         accepted: false,
                         action,
+                        target: target.clone(),
+                        message: message.clone(),
+                    });
+
+                    let _ = out_tx.send(ServerMsg::ActionState {
+                        player_id,
+                        action,
                         target,
+                        state: ActionState::Rejected,
                         message,
                     });
                 }

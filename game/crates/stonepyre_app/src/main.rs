@@ -55,6 +55,10 @@ fn main() {
                     .after(boot::game_net::pump_game_net_results)
                     .after(boot::game_net::send_walk_intents_to_server_runtime)
                     .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                boot::game_net::play_server_authoritative_action_visuals
+                    .after(boot::game_net::reconcile_local_player_to_server)
+                    .after(stonepyre_engine::plugins::movement::follow_path_to_next_tile)
+                    .before(stonepyre_engine::plugins::animation::animate_humanoid),
                 boot::game_net::sync_network_target_marker_from_last_move
                     .after(stonepyre_engine::plugins::world::debug_draw_target_marker)
                     .after(boot::game_net::pump_game_net_results),
@@ -80,8 +84,14 @@ fn enable_game_ui_on_enter_world(mut enabled: ResMut<stonepyre_ui::GameUiEnabled
     enabled.0 = true;
 }
 
-fn disable_game_ui_on_exit_world(mut enabled: ResMut<stonepyre_ui::GameUiEnabled>) {
+fn disable_game_ui_on_exit_world(
+    mut commands: Commands,
+    mut enabled: ResMut<stonepyre_ui::GameUiEnabled>,
+) {
     enabled.0 = false;
+    commands.insert_resource(
+        stonepyre_engine::plugins::interaction::ServerAuthoritativeInteractions(false),
+    );
 }
 
 fn start_world_on_enter(
@@ -93,6 +103,11 @@ fn start_world_on_enter(
     mut game_status: ResMut<boot::game_net::GameNetStatus>,
 ) {
     let character_id = boot.pending_start_world.take().unwrap_or(Uuid::nil());
+    let has_session = boot.session.is_some();
+
+    commands.insert_resource(
+        stonepyre_engine::plugins::interaction::ServerAuthoritativeInteractions(has_session),
+    );
 
     // Join the server-side runtime if we have an authenticated session.
     if let Some(session) = boot.session.as_ref() {
