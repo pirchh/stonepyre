@@ -32,7 +32,7 @@ fn main() {
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
         .add_plugins(stonepyre_ui::StonepyreUiPlugin)
-        // ✅ World entry: enable in-world UI + spawn world
+        // World entry: enable in-world UI, spawn the local demo world, and join the server runtime.
         .add_systems(
             OnEnter(Screen::InWorld),
             (
@@ -40,7 +40,12 @@ fn main() {
                 start_world_on_enter,
             ),
         )
-        // ✅ Leaving world: turn off in-world UI so MainMenu is clean/fullscreen
+        // Pump server runtime events while in-world. For now this logs join/snapshot status.
+        .add_systems(
+            Update,
+            boot::game_net::pump_game_net_results.run_if(in_state(Screen::InWorld)),
+        )
+        // Leaving world: turn off in-world UI so MainMenu is clean/fullscreen.
         .add_systems(OnExit(Screen::InWorld), disable_game_ui_on_exit_world)
         .run();
 }
@@ -58,8 +63,22 @@ fn start_world_on_enter(
     asset_server: Res<AssetServer>,
     harvest_defs: Option<Res<stonepyre_engine::plugins::skills::HarvestDb>>,
     mut boot: ResMut<BootState>,
+    mut game_net: ResMut<boot::game_net::GameNetRuntime>,
 ) {
     let character_id = boot.pending_start_world.take().unwrap_or(Uuid::nil());
+
+    // Join the server-side runtime if we have an authenticated session.
+    // This does not drive visuals yet; it proves the join -> welcome -> snapshot path.
+    if let Some(session) = boot.session.as_ref() {
+        boot::game_net::spawn_game_ws(
+            &mut game_net,
+            boot.server_base_url.clone(),
+            session.token.clone(),
+            character_id,
+        );
+    } else {
+        warn!("entering world without a session; skipping game websocket join");
+    }
 
     stonepyre_engine::plugins::world::spawn_demo_world_for_character(
         &mut commands,

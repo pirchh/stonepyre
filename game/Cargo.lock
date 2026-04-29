@@ -5525,6 +5525,8 @@ dependencies = [
  "stonepyre_content",
  "stonepyre_engine",
  "stonepyre_ui",
+ "stonepyre_world",
+ "tungstenite",
  "uuid",
 ]
 
