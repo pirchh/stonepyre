@@ -7,43 +7,55 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, http::middleware::AuthContext, state::AppState};
-use crate::game::protocol::{ClientMsg, ServerMsg};
+use crate::{
+    error::ApiError,
+    game::{
+        protocol::{ClientMsg, ServerMsg},
+        ActiveCharacterJoinError,
+    },
+    http::middleware::AuthContext,
+    state::AppState,
+};
 
 pub async fn game_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     ctx: AuthContext,
 ) -> Result<impl IntoResponse, ApiError> {
-    // ctx validated by middleware; accept upgrade
+    // ctx validated by middleware; accept upgrade.
     Ok(ws.on_upgrade(move |socket| handle_socket(state, ctx, socket)))
 }
 
 async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Outgoing queue so multiple producers can send without cloning ws_tx
+    // Outgoing queue so multiple producers can send without cloning ws_tx.
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ServerMsg>();
 
-    // Subscribe to server broadcast stream
+    // Subscribe to server broadcast stream.
     let mut broadcast_rx = state.game.hub.subscribe();
 
-    // Until JoinWorld, this is None
+    // Until JoinWorld succeeds, these are None.
     let mut player_id: Option<Uuid> = None;
+    let mut character_id: Option<Uuid> = None;
 
-    // Task: pump outbound messages to websocket
+    // Task: pump outbound messages to websocket.
     let write_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
-            let Ok(json) = serde_json::to_string(&msg) else { continue; };
+            let Ok(json) = serde_json::to_string(&msg) else {
+                continue;
+            };
+
             if ws_tx.send(Message::Text(json.into())).await.is_err() {
                 break;
             }
         }
     });
 
-    // Task: forward broadcast -> out queue
+    // Task: forward broadcast -> out queue.
     let out_tx_broadcast = out_tx.clone();
     let forward_task = tokio::spawn(async move {
         while let Ok(msg) = broadcast_rx.recv().await {
@@ -51,7 +63,7 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
         }
     });
 
-    // Read client messages
+    // Read client messages.
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(txt) => {
@@ -68,22 +80,52 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
                         let _ = out_tx.send(ServerMsg::Pong);
                     }
 
-                    ClientMsg::JoinWorld { character_id } => {
-                        let pid = player_id.get_or_insert_with(Uuid::new_v4).to_owned();
+                    ClientMsg::JoinWorld {
+                        character_id: requested_character_id,
+                    } => {
+                        if player_id.is_some() {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "this websocket has already joined the world".to_string(),
+                            });
+                            continue;
+                        }
+
+                        let requested_player_id = Uuid::new_v4();
+
+                        let reserve_result = {
+                            let mut sessions = state.game.sessions.write().await;
+                            sessions.reserve_character(requested_player_id, requested_character_id)
+                        };
+
+                        if let Err(err) = reserve_result {
+                            let message = join_error_message(err);
+                            warn!("game ws join rejected: {}", message);
+
+                            let _ = out_tx.send(ServerMsg::Error { message });
+                            continue;
+                        }
 
                         {
                             let mut sim = state.game.sim.write().await;
-                            sim.add_player(pid, character_id);
+                            sim.add_player(requested_player_id, requested_character_id);
                         }
+
+                        player_id = Some(requested_player_id);
+                        character_id = Some(requested_character_id);
 
                         let tick_hz: u32 = std::env::var("GAME_TICK_HZ")
                             .ok()
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(10);
 
+                        info!(
+                            "game ws joined player_id={} character_id={}",
+                            requested_player_id, requested_character_id
+                        );
+
                         let welcome = ServerMsg::Welcome {
-                            player_id: pid,
-                            character_id,
+                            player_id: requested_player_id,
+                            character_id: requested_character_id,
                             tick_hz,
                         };
 
@@ -103,12 +145,44 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
         }
     }
 
-    // cleanup on disconnect
+    // Cleanup on disconnect.
     if let Some(pid) = player_id {
-        let mut sim = state.game.sim.write().await;
-        sim.remove_player(pid);
+        {
+            let mut sim = state.game.sim.write().await;
+            sim.remove_player(pid);
+        }
+
+        {
+            let mut sessions = state.game.sessions.write().await;
+            sessions.release_player(pid);
+        }
+
+        if let Some(cid) = character_id {
+            info!("game ws disconnected player_id={} character_id={}", pid, cid);
+        } else {
+            info!("game ws disconnected player_id={}", pid);
+        }
     }
 
     forward_task.abort();
     write_task.abort();
+}
+
+fn join_error_message(err: ActiveCharacterJoinError) -> String {
+    match err {
+        ActiveCharacterJoinError::CharacterAlreadyActive {
+            character_id,
+            existing_player_id,
+        } => format!(
+            "character {} is already active in the world as player {}",
+            character_id, existing_player_id
+        ),
+        ActiveCharacterJoinError::PlayerAlreadyJoined {
+            player_id,
+            existing_character_id,
+        } => format!(
+            "player {} has already joined the world as character {}",
+            player_id, existing_character_id
+        ),
+    }
 }
