@@ -32,21 +32,34 @@ fn main() {
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
         .add_plugins(stonepyre_ui::StonepyreUiPlugin)
-        // World entry: enable in-world UI, spawn the local demo world, and join the server runtime.
+        // World entry: enable in-world UI, spawn the local demo world, join the server runtime,
+        // and show a small runtime/debug readout.
         .add_systems(
             OnEnter(Screen::InWorld),
             (
                 enable_game_ui_on_enter_world,
                 start_world_on_enter,
+                boot::game_net::spawn_game_net_debug_overlay,
             ),
         )
-        // Pump server runtime events while in-world. For now this logs join/snapshot status.
+        // Pump server runtime events while in-world.
         .add_systems(
             Update,
-            boot::game_net::pump_game_net_results.run_if(in_state(Screen::InWorld)),
+            (
+                boot::game_net::pump_game_net_results,
+                boot::game_net::send_move_target_on_right_click,
+                boot::game_net::sync_game_net_debug_overlay,
+            )
+                .run_if(in_state(Screen::InWorld)),
         )
         // Leaving world: turn off in-world UI so MainMenu is clean/fullscreen.
-        .add_systems(OnExit(Screen::InWorld), disable_game_ui_on_exit_world)
+        .add_systems(
+            OnExit(Screen::InWorld),
+            (
+                boot::game_net::despawn_game_net_debug_overlay,
+                disable_game_ui_on_exit_world,
+            ),
+        )
         .run();
 }
 

@@ -20,6 +20,7 @@ impl Plugin for BootFlowPlugin {
             .init_resource::<BootState>()
             .init_resource::<net::NetRuntime>()
             .init_resource::<game_net::GameNetRuntime>()
+            .init_resource::<game_net::GameNetStatus>()
             .init_resource::<fonts::UiFonts>()
             // Startup init
             .add_systems(
