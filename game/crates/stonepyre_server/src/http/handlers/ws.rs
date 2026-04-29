@@ -29,7 +29,7 @@ pub async fn game_ws(
     Ok(ws.on_upgrade(move |socket| handle_socket(state, ctx, socket)))
 }
 
-async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
+async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     // Outgoing queue so multiple producers can send without cloning ws_tx.
@@ -90,6 +90,37 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
                             continue;
                         }
 
+                        let owns_character = match account_owns_character(
+                            &state,
+                            ctx.account_id,
+                            requested_character_id,
+                        )
+                        .await
+                        {
+                            Ok(owns) => owns,
+                            Err(e) => {
+                                warn!(
+                                    "game ws character ownership check failed account_id={} character_id={} error={:?}",
+                                    ctx.account_id, requested_character_id, e
+                                );
+                                let _ = out_tx.send(ServerMsg::Error {
+                                    message: "failed to validate character ownership".to_string(),
+                                });
+                                continue;
+                            }
+                        };
+
+                        if !owns_character {
+                            warn!(
+                                "game ws join rejected: account_id={} does not own character_id={}",
+                                ctx.account_id, requested_character_id
+                            );
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "you do not own this character".to_string(),
+                            });
+                            continue;
+                        }
+
                         let requested_player_id = Uuid::new_v4();
 
                         let reserve_result = {
@@ -119,8 +150,8 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
                             .unwrap_or(10);
 
                         info!(
-                            "game ws joined player_id={} character_id={}",
-                            requested_player_id, requested_character_id
+                            "game ws joined account_id={} player_id={} character_id={}",
+                            ctx.account_id, requested_player_id, requested_character_id
                         );
 
                         let welcome = ServerMsg::Welcome {
@@ -158,14 +189,33 @@ async fn handle_socket(state: AppState, _ctx: AuthContext, socket: WebSocket) {
         }
 
         if let Some(cid) = character_id {
-            info!("game ws disconnected player_id={} character_id={}", pid, cid);
+            info!(
+                "game ws disconnected account_id={} player_id={} character_id={}",
+                ctx.account_id, pid, cid
+            );
         } else {
-            info!("game ws disconnected player_id={}", pid);
+            info!("game ws disconnected account_id={} player_id={}", ctx.account_id, pid);
         }
     }
 
     forward_task.abort();
     write_task.abort();
+}
+
+async fn account_owns_character(
+    state: &AppState,
+    account_id: Uuid,
+    character_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT game.account_owns_character($1::uuid, $2::uuid)
+        "#,
+    )
+    .bind(account_id)
+    .bind(character_id)
+    .fetch_one(&state.db)
+    .await
 }
 
 fn join_error_message(err: ActiveCharacterJoinError) -> String {
