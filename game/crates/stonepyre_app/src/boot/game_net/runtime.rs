@@ -31,6 +31,9 @@ pub fn spawn_game_ws(
     status.snapshot_players = 0;
     status.latest_players.clear();
     status.server_tile = None;
+    status.server_next_tile = None;
+    status.server_goal = None;
+    status.server_moving = false;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -184,20 +187,27 @@ fn run_game_ws(
                                 player_id: p.player_id,
                                 character_id: p.character_id,
                                 tile: p.tile,
+                                next_tile: p.next_tile,
+                                goal: p.goal,
+                                moving: p.moving,
                             })
                             .collect();
 
-                        let server_tile = player_id.and_then(|pid| {
-                            snap.players
-                                .iter()
-                                .find(|p| p.player_id == pid)
-                                .map(|p| p.tile)
-                        });
+                        let local_player = player_id
+                            .and_then(|pid| snap.players.iter().find(|p| p.player_id == pid));
+
+                        let server_tile = local_player.map(|p| p.tile);
+                        let server_next_tile = local_player.and_then(|p| p.next_tile);
+                        let server_goal = local_player.and_then(|p| p.goal);
+                        let server_moving = local_player.map(|p| p.moving).unwrap_or(false);
 
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
                             players,
                             server_tile,
+                            server_next_tile,
+                            server_goal,
+                            server_moving,
                         });
                     }
                     Ok(ServerMsg::InteractionAck {
@@ -289,16 +299,27 @@ pub fn pump_game_net_results(
                 server_tick,
                 players,
                 server_tile,
+                server_next_tile,
+                server_goal,
+                server_moving,
             } => {
                 status.server_tick = Some(server_tick);
                 status.snapshot_players = players.len();
                 status.latest_players = players;
+                status.server_moving = server_moving;
+                status.server_next_tile = server_next_tile;
+                status.server_goal = server_goal;
                 if let Some(tile) = server_tile {
                     status.server_tile = Some(tile);
                 }
                 debug!(
-                    "game net snapshot tick={} players={}",
-                    server_tick, status.snapshot_players
+                    "game net snapshot tick={} players={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
+                    server_tick,
+                    status.snapshot_players,
+                    status.server_tile,
+                    status.server_next_tile,
+                    status.server_goal,
+                    status.server_moving
                 );
             }
             GameNetEvent::MoveSent { tile } => {
@@ -313,6 +334,9 @@ pub fn pump_game_net_results(
                 status.connected = false;
                 status.connecting = false;
                 status.latest_players.clear();
+                status.server_next_tile = None;
+                status.server_goal = None;
+                status.server_moving = false;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
             }

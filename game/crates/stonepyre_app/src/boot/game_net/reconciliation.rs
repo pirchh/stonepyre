@@ -13,16 +13,21 @@ const HARD_CORRECT_THRESHOLD: i32 = 10;
 
 #[derive(Default)]
 pub(crate) struct ReconcileLocalState {
-    last_server_tile: Option<TilePos>,
+    last_follow_target: Option<TilePos>,
 }
 
-/// Follow the authoritative server tile smoothly instead of running an independent
-/// local movement simulation.
+/// Follow server-authoritative movement without visually backtracking.
 ///
-/// In networked play, WalkHere clicks are sent to the server and the normal local
-/// planner is cleared. This system then converts server tile snapshots into a short
-/// local TilePath so the local player animates toward the authoritative position.
-/// Hard snapping is reserved for truly large desyncs.
+/// The server snapshot contains the last reached tile, next server step, and
+/// current server-approved goal. The local client uses those snapshots for
+/// presentation, but it should not chase a next step that is already behind the
+/// local visual position. That small "chase the previous server step" case is
+/// what caused the one-tile bounce when spam-clicking.
+///
+/// If the local visual has already moved past the server's next step relative to
+/// the server-approved goal, we continue toward the server goal instead of
+/// moving backward to the older next step. Server authority is still preserved by
+/// the hard correction threshold for real desyncs.
 pub fn reconcile_local_player_to_server(
     mut commands: Commands,
     mut status: ResMut<GameNetStatus>,
@@ -33,7 +38,7 @@ pub fn reconcile_local_player_to_server(
     let Ok((entity, mut xform, mut path, step_opt)) = player_q.single_mut() else {
         status.local_tile = None;
         status.drift_tiles = None;
-        local_state.last_server_tile = None;
+        local_state.last_follow_target = None;
         return;
     };
 
@@ -42,62 +47,135 @@ pub fn reconcile_local_player_to_server(
 
     let Some(server_tile) = status.server_tile else {
         status.drift_tiles = None;
-        local_state.last_server_tile = None;
+        local_state.last_follow_target = None;
         return;
     };
 
-    let drift = (local_tile.x - server_tile.x).abs() + (local_tile.y - server_tile.y).abs();
-    status.drift_tiles = Some(drift);
+    let server_drift = manhattan_distance(local_tile, server_tile);
+    status.drift_tiles = Some(server_drift);
 
-    if drift == 0 {
-        local_state.last_server_tile = Some(server_tile);
-        return;
-    }
+    let raw_follow_target = if status.server_moving {
+        status.server_next_tile.unwrap_or(server_tile)
+    } else {
+        server_tile
+    };
 
-    if drift >= HARD_CORRECT_THRESHOLD {
+    if server_drift >= HARD_CORRECT_THRESHOLD {
         let center = tile_to_world_center(server_tile);
         xform.translation.x = center.x;
         xform.translation.y = center.y + FOOT_OFFSET_Y;
         path.tiles.clear();
         commands.entity(entity).remove::<StepTo>();
         status.correction_count += 1;
-        local_state.last_server_tile = Some(server_tile);
+        local_state.last_follow_target = Some(server_tile);
         warn!(
-            "game net hard-corrected local player to server tile {},{} drift={}",
-            server_tile.x, server_tile.y, drift
+            "game net hard-corrected local player to server tile {},{} server_drift={}",
+            server_tile.x, server_tile.y, server_drift
         );
         return;
     }
 
-    let server_tile_changed = local_state.last_server_tile != Some(server_tile);
-    let moving = !path.tiles.is_empty() || step_opt.is_some();
+    let follow_target = choose_visual_follow_target(
+        local_tile,
+        raw_follow_target,
+        status.server_goal,
+        status.server_moving,
+        world.as_deref(),
+    );
+
+    let follow_drift = manhattan_distance(local_tile, follow_target);
+
+    if follow_drift == 0 {
+        local_state.last_follow_target = Some(follow_target);
+        return;
+    }
+
     let current_step = step_opt.map(|s| s.0);
     let path_goal = path.tiles.back().copied().or(current_step);
-    let already_following_server = path_goal == Some(server_tile);
+    let already_following_target = path_goal == Some(follow_target);
+    let follow_target_changed = local_state.last_follow_target != Some(follow_target);
 
-    // If the server has advanced to a new authoritative tile, or if we are idle but
-    // still not on the server tile, create a short local path toward the server.
-    // This is not prediction; it is presentation of the authoritative snapshot stream.
-    if server_tile_changed || (!moving && drift > 0) || (!already_following_server && drift > 1) {
-        let next_path = if let Some(world) = world.as_ref() {
-            let found = world.find_path_bfs(local_tile, server_tile);
-            if found.is_empty() && local_tile != server_tile {
-                manhattan_path(local_tile, server_tile)
-            } else {
-                found
-            }
-        } else {
-            manhattan_path(local_tile, server_tile)
-        };
+    if follow_target_changed || !already_following_target {
+        let next_path = find_visual_path(local_tile, follow_target, world.as_deref());
 
         path.tiles = next_path;
         commands.entity(entity).remove::<StepTo>();
-        local_state.last_server_tile = Some(server_tile);
+        local_state.last_follow_target = Some(follow_target);
         debug!(
-            "game net following server tile {},{} from {},{} drift={}",
-            server_tile.x, server_tile.y, local_tile.x, local_tile.y, drift
+            "game net visual follow target {},{} from {},{} server_tile={},{} raw_next={:?} goal={:?} moving={} server_drift={} follow_drift={}",
+            follow_target.x,
+            follow_target.y,
+            local_tile.x,
+            local_tile.y,
+            server_tile.x,
+            server_tile.y,
+            status.server_next_tile,
+            status.server_goal,
+            status.server_moving,
+            server_drift,
+            follow_drift
         );
     }
+}
+
+fn choose_visual_follow_target(
+    local_tile: TilePos,
+    raw_follow_target: TilePos,
+    server_goal: Option<TilePos>,
+    server_moving: bool,
+    world: Option<&WorldGrid>,
+) -> TilePos {
+    let Some(goal) = server_goal else {
+        return raw_follow_target;
+    };
+
+    if !server_moving {
+        return raw_follow_target;
+    }
+
+    // If the raw server next step is closer to the goal than the local visual,
+    // following it is forward progress. Use it.
+    let local_goal_dist = manhattan_distance(local_tile, goal);
+    let target_goal_dist = manhattan_distance(raw_follow_target, goal);
+    if target_goal_dist < local_goal_dist {
+        return raw_follow_target;
+    }
+
+    // If local visual is already at/near/past that step relative to the current
+    // goal, do not visually walk backward. Continue one local step toward the
+    // server-approved goal instead. This is presentation-only; the server still
+    // owns tile state and can hard-correct large desyncs.
+    next_step_toward(local_tile, goal, world).unwrap_or(raw_follow_target)
+}
+
+fn find_visual_path(from: TilePos, to: TilePos, world: Option<&WorldGrid>) -> VecDeque<TilePos> {
+    if let Some(world) = world {
+        let found = world.find_path_bfs(from, to);
+        if !found.is_empty() || from == to {
+            return found;
+        }
+    }
+
+    manhattan_path(from, to)
+}
+
+fn next_step_toward(from: TilePos, goal: TilePos, world: Option<&WorldGrid>) -> Option<TilePos> {
+    if from == goal {
+        return Some(goal);
+    }
+
+    if let Some(world) = world {
+        let found = world.find_path_bfs(from, goal);
+        if let Some(first) = found.front().copied() {
+            return Some(first);
+        }
+    }
+
+    manhattan_path(from, goal).front().copied()
+}
+
+fn manhattan_distance(a: TilePos, b: TilePos) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }
 
 fn manhattan_path(from: TilePos, to: TilePos) -> VecDeque<TilePos> {

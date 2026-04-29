@@ -151,6 +151,9 @@ impl GameSim {
                     player_id: p.player_id,
                     character_id: p.character_id,
                     tile: p.tile,
+                    next_tile: p.path.front().copied(),
+                    goal: p.goal,
+                    moving: p.goal.is_some() && (!p.path.is_empty() || p.tile != p.goal.unwrap_or(p.tile)),
                 })
                 .collect(),
         }
