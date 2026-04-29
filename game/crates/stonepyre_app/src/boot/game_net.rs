@@ -4,6 +4,7 @@ mod reconciliation;
 mod remote_players;
 mod runtime;
 mod status;
+mod target_marker;
 
 pub use overlay::{
     despawn_game_net_overlay,
@@ -19,6 +20,7 @@ pub use remote_players::{
 };
 pub use runtime::{
     pump_game_net_results,
+    send_interaction_to_server,
     send_move_to_server,
     send_walk_intents_to_server_runtime,
     spawn_game_ws,
@@ -29,3 +31,4 @@ pub use status::{
     GameNetRuntime,
     GameNetStatus,
 };
+pub use target_marker::sync_network_target_marker_from_last_move;

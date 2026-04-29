@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use stonepyre_world::TilePos;
 
-use super::protocol::NetPlayerSnapshot;
+use super::protocol::{InteractionAction, InteractionTarget, NetPlayerSnapshot};
 
 #[derive(Debug)]
 pub enum GameNetEvent {
@@ -22,6 +22,9 @@ pub enum GameNetEvent {
         server_tick: u64,
         players: Vec<NetPlayerSnapshot>,
         server_tile: Option<TilePos>,
+        server_next_tile: Option<TilePos>,
+        server_goal: Option<TilePos>,
+        server_moving: bool,
     },
     MoveSent { tile: TilePos },
     Error(String),
@@ -31,6 +34,10 @@ pub enum GameNetEvent {
 #[derive(Debug)]
 pub enum GameNetCommand {
     MoveTo { tile: TilePos },
+    Interact {
+        action: InteractionAction,
+        target: InteractionTarget,
+    },
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -44,6 +51,9 @@ pub struct GameNetStatus {
     pub snapshot_players: usize,
     pub latest_players: Vec<NetPlayerSnapshot>,
     pub server_tile: Option<TilePos>,
+    pub server_next_tile: Option<TilePos>,
+    pub server_goal: Option<TilePos>,
+    pub server_moving: bool,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -64,6 +74,9 @@ impl Default for GameNetStatus {
             snapshot_players: 0,
             latest_players: Vec::new(),
             server_tile: None,
+            server_next_tile: None,
+            server_goal: None,
+            server_moving: false,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

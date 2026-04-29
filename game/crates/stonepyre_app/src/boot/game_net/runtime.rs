@@ -7,7 +7,7 @@ use uuid::Uuid;
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
 use stonepyre_world::TilePos;
 
-use super::protocol::{ClientMsg, NetPlayerSnapshot, ServerMsg};
+use super::protocol::{ClientMsg, InteractionAction, InteractionTarget, NetPlayerSnapshot, ServerMsg};
 use super::status::{GameNetCommand, GameNetEvent, GameNetRuntime, GameNetStatus};
 
 pub fn spawn_game_ws(
@@ -31,6 +31,9 @@ pub fn spawn_game_ws(
     status.snapshot_players = 0;
     status.latest_players.clear();
     status.server_tile = None;
+    status.server_next_tile = None;
+    status.server_goal = None;
+    status.server_moving = false;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -57,6 +60,19 @@ pub fn send_move_to_server(game_net: &GameNetRuntime, tile: TilePos) -> bool {
     };
 
     tx.send(GameNetCommand::MoveTo { tile }).is_ok()
+}
+
+pub fn send_interaction_to_server(
+    game_net: &GameNetRuntime,
+    action: InteractionAction,
+    target: InteractionTarget,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::Interact { action, target }).is_ok()
 }
 
 fn run_game_ws(
@@ -113,6 +129,23 @@ fn run_game_ws(
                         .map_err(|e| format!("game ws move send failed: {e}"))?;
                     let _ = tx.send(GameNetEvent::MoveSent { tile });
                 }
+                GameNetCommand::Interact { action, target } => {
+                    let msg = ClientMsg::Interact {
+                        action,
+                        target: target.clone(),
+                    };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws interaction serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws interaction send failed: {e}"))?;
+
+                    if let InteractionTarget::Tile(tile) = target {
+                        if action == InteractionAction::WalkHere {
+                            let _ = tx.send(GameNetEvent::MoveSent { tile });
+                        }
+                    }
+                }
             }
         }
 
@@ -154,21 +187,43 @@ fn run_game_ws(
                                 player_id: p.player_id,
                                 character_id: p.character_id,
                                 tile: p.tile,
+                                next_tile: p.next_tile,
+                                goal: p.goal,
+                                moving: p.moving,
                             })
                             .collect();
 
-                        let server_tile = player_id.and_then(|pid| {
-                            snap.players
-                                .iter()
-                                .find(|p| p.player_id == pid)
-                                .map(|p| p.tile)
-                        });
+                        let local_player = player_id
+                            .and_then(|pid| snap.players.iter().find(|p| p.player_id == pid));
+
+                        let server_tile = local_player.map(|p| p.tile);
+                        let server_next_tile = local_player.and_then(|p| p.next_tile);
+                        let server_goal = local_player.and_then(|p| p.goal);
+                        let server_moving = local_player.map(|p| p.moving).unwrap_or(false);
 
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
                             players,
                             server_tile,
+                            server_next_tile,
+                            server_goal,
+                            server_moving,
                         });
+                    }
+                    Ok(ServerMsg::InteractionAck {
+                        accepted,
+                        action,
+                        target,
+                        message,
+                    }) => {
+                        if accepted {
+                            info!(
+                                "game ws interaction accepted action={:?} target={:?}: {}",
+                                action, target, message
+                            );
+                        } else {
+                            let _ = tx.send(GameNetEvent::Error(message));
+                        }
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -244,16 +299,27 @@ pub fn pump_game_net_results(
                 server_tick,
                 players,
                 server_tile,
+                server_next_tile,
+                server_goal,
+                server_moving,
             } => {
                 status.server_tick = Some(server_tick);
                 status.snapshot_players = players.len();
                 status.latest_players = players;
+                status.server_moving = server_moving;
+                status.server_next_tile = server_next_tile;
+                status.server_goal = server_goal;
                 if let Some(tile) = server_tile {
                     status.server_tile = Some(tile);
                 }
                 debug!(
-                    "game net snapshot tick={} players={}",
-                    server_tick, status.snapshot_players
+                    "game net snapshot tick={} players={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
+                    server_tick,
+                    status.snapshot_players,
+                    status.server_tile,
+                    status.server_next_tile,
+                    status.server_goal,
+                    status.server_moving
                 );
             }
             GameNetEvent::MoveSent { tile } => {
@@ -268,6 +334,9 @@ pub fn pump_game_net_results(
                 status.connected = false;
                 status.connecting = false;
                 status.latest_players.clear();
+                status.server_next_tile = None;
+                status.server_goal = None;
+                status.server_moving = false;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
             }
@@ -290,6 +359,13 @@ pub fn send_walk_intents_to_server_runtime(
             continue;
         };
 
+        // Keep WalkHere on the proven MoveTo path for now.
+        //
+        // Phase 5 adds the shared interaction protocol and server-side routing, but we do
+        // not want to change the live movement transport in the same pass. Movement and
+        // reconciliation were already tuned around MoveTo; switching WalkHere to
+        // ClientMsg::Interact exposed rubber-banding while local prediction is still
+        // tile-path based. ChopDown/server actions can use Interact in the next phase.
         if !send_move_to_server(&game_net, tile) {
             warn!("game net move target dropped; websocket is not ready");
         }
