@@ -34,6 +34,10 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route("/game/characters", get(handlers::characters::list_slots))
         .route("/game/characters", post(handlers::characters::create))
         .route("/game/characters/:id", delete(handlers::characters::delete))
+        .route(
+            "/game/characters/:id/active-session",
+            get(handlers::characters::active_session),
+        )
 
         // Apply auth middleware to ALL above
         .layer(middleware::from_fn_with_state(state.clone(), require_bearer_auth));
