@@ -1,6 +1,6 @@
 pub mod world;
 
-use self::world::{PlayerState, WorldState};
+use self::world::{PlayerState, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{PlayerSnapshot, WorldSnapshot};
 use stonepyre_world::TilePos;
 use uuid::Uuid;
@@ -14,13 +14,16 @@ const REPATH_COOLDOWN_TICKS: u64 = 3;
 pub struct GameSim {
     pub tick: u64,
     pub world: WorldState,
+    tiles_per_tick: f32,
 }
 
 impl GameSim {
-    pub fn new() -> Self {
+    pub fn new(tick_hz: u32) -> Self {
+        let tick_hz = tick_hz.max(1) as f32;
         Self {
             tick: 0,
             world: WorldState::new(),
+            tiles_per_tick: SERVER_MOVE_TILES_PER_SEC / tick_hz,
         }
     }
 
@@ -36,6 +39,7 @@ impl GameSim {
                 goal: None,
                 path: Default::default(),
                 last_repath_tick: 0,
+                move_progress_tiles: 0.0,
             },
         );
     }
@@ -47,13 +51,11 @@ impl GameSim {
     /// Client asks to move somewhere.
     /// Server adjusts goal if blocked, computes path, stores it.
     pub fn set_move_target(&mut self, player_id: Uuid, requested: TilePos) {
-        // Extract current tile first to avoid borrow conflicts.
         let start_tile = match self.world.players.get(&player_id) {
             Some(p) => p.tile,
             None => return,
         };
 
-        // If requested is blocked, pick best nearby.
         let goal = if self.world.is_blocked(requested) {
             match self
                 .world
@@ -71,7 +73,8 @@ impl GameSim {
         if let Some(p) = self.world.players.get_mut(&player_id) {
             p.goal = Some(goal);
             p.path = path;
-            p.last_repath_tick = self.tick; // treat this as a repath too
+            p.last_repath_tick = self.tick;
+            p.move_progress_tiles = 0.0;
         }
     }
 
@@ -79,55 +82,61 @@ impl GameSim {
         self.tick += 1;
 
         // Clone blocked once so we can consult it while mutating players without borrow checker fights.
-        // (Still 100% server-authoritative.)
         let blocked_snapshot = self.world.blocked.clone();
 
         for p in self.world.players.values_mut() {
-            // If we have no goal, nothing to do.
             let Some(goal) = p.goal else { continue; };
 
-            // If we're already there, clear goal/path.
             if p.tile == goal {
                 p.goal = None;
                 p.path.clear();
+                p.move_progress_tiles = 0.0;
                 continue;
             }
 
-            // If we don't currently have a path but still have a goal,
-            // attempt to compute a new one (rate-limited).
             if p.path.is_empty() {
                 if (self.tick - p.last_repath_tick) >= REPATH_COOLDOWN_TICKS {
                     p.last_repath_tick = self.tick;
-
-                    // IMPORTANT: we can't call self.world.find_path_bfs here because of borrows,
-                    // so we compute with a helper that uses the cloned blocked set.
                     p.path = find_path_bfs_with_blocked(p.tile, goal, &blocked_snapshot, MAX_BFS_ITERS);
                 }
 
-                // Still no path? Wait.
                 if p.path.is_empty() {
                     continue;
                 }
             }
 
-            // We have a path step; validate next tile isn't blocked.
-            let next = *p.path.front().unwrap();
+            p.move_progress_tiles += self.tiles_per_tick;
 
-            if blocked_snapshot.contains(&next) {
-                // Next step became blocked mid-walk -> clear and repath (rate-limited).
-                p.path.clear();
+            // Advance whole tile steps only when enough movement time has accumulated.
+            while p.move_progress_tiles >= 1.0 {
+                let Some(next) = p.path.front().copied() else {
+                    p.move_progress_tiles = 0.0;
+                    break;
+                };
 
-                if (self.tick - p.last_repath_tick) >= REPATH_COOLDOWN_TICKS {
-                    p.last_repath_tick = self.tick;
-                    p.path = find_path_bfs_with_blocked(p.tile, goal, &blocked_snapshot, MAX_BFS_ITERS);
+                if blocked_snapshot.contains(&next) {
+                    p.path.clear();
+                    p.move_progress_tiles = 0.0;
+
+                    if (self.tick - p.last_repath_tick) >= REPATH_COOLDOWN_TICKS {
+                        p.last_repath_tick = self.tick;
+                        p.path = find_path_bfs_with_blocked(p.tile, goal, &blocked_snapshot, MAX_BFS_ITERS);
+                    }
+
+                    break;
                 }
 
-                continue;
-            }
+                p.tile = next;
+                p.path.pop_front();
+                p.move_progress_tiles -= 1.0;
 
-            // Apply one step per tick.
-            p.tile = next;
-            p.path.pop_front();
+                if p.tile == goal {
+                    p.goal = None;
+                    p.path.clear();
+                    p.move_progress_tiles = 0.0;
+                    break;
+                }
+            }
         }
     }
 
@@ -147,8 +156,6 @@ impl GameSim {
         }
     }
 }
-
-// --- Local BFS helper avoiding borrow issues (uses blocked snapshot) ---
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use stonepyre_world::neighbors_4;

@@ -6,7 +6,7 @@ pub mod game_net;
 pub mod net;
 pub mod ui;
 
-// ✅ must be public so main.rs can use Screen + BootState
+// must be public so main.rs can use Screen + BootState
 pub mod state;
 pub use state::{BootState, Screen};
 

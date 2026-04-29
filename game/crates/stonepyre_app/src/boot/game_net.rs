@@ -5,10 +5,14 @@ use std::sync::{
     Mutex,
 };
 use std::thread;
-use tungstenite::{client::IntoClientRequest, connect, Message};
+use tungstenite::{client::IntoClientRequest, connect, Error as WsError, Message};
 use uuid::Uuid;
 
-use stonepyre_world::{world_to_tile, TilePos};
+use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
+use stonepyre_engine::plugins::world::{
+    player_feet_world, Player, TilePath, FOOT_OFFSET_Y,
+};
+use stonepyre_world::{tile_to_world_center, world_to_tile, TilePos};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -18,22 +22,22 @@ enum ClientMsg {
     MoveTo { tile: TilePos },
 }
 
-#[derive(Debug, Clone, Copy)]
-enum GameNetCommand {
-    MoveTo { tile: TilePos },
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 enum ServerMsg {
     Pong,
+
     Welcome {
         player_id: Uuid,
         character_id: Uuid,
         tick_hz: u32,
     },
+
     Snapshot(WorldSnapshot),
-    Error { message: String },
+
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,37 +65,56 @@ pub enum GameNetEvent {
     Snapshot {
         server_tick: u64,
         players: usize,
-        self_tile: Option<TilePos>,
+        server_tile: Option<TilePos>,
     },
-    SentMove { tile: TilePos },
+    MoveSent { tile: TilePos },
     Error(String),
     Disconnected,
 }
 
-#[derive(Resource, Debug, Default, Clone)]
+#[derive(Debug)]
+pub enum GameNetCommand {
+    MoveTo { tile: TilePos },
+}
+
+#[derive(Resource, Debug, Clone)]
 pub struct GameNetStatus {
-    pub connecting_url: Option<String>,
     pub connected: bool,
+    pub connecting: bool,
     pub player_id: Option<Uuid>,
     pub character_id: Option<Uuid>,
     pub tick_hz: Option<u32>,
-    pub last_snapshot_tick: Option<u64>,
-    pub last_snapshot_players: usize,
-    pub self_tile: Option<TilePos>,
+    pub server_tick: Option<u64>,
+    pub snapshot_players: usize,
+    pub server_tile: Option<TilePos>,
+    pub local_tile: Option<TilePos>,
+    pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
     pub last_error: Option<String>,
+    pub correction_count: u64,
 }
 
-impl GameNetStatus {
-    pub fn reset_for_connect(&mut self, url: String, character_id: Uuid) {
-        *self = Self {
-            connecting_url: Some(url),
-            character_id: Some(character_id),
-            ..default()
-        };
+impl Default for GameNetStatus {
+    fn default() -> Self {
+        Self {
+            connected: false,
+            connecting: false,
+            player_id: None,
+            character_id: None,
+            tick_hz: None,
+            server_tick: None,
+            snapshot_players: 0,
+            server_tile: None,
+            local_tile: None,
+            drift_tiles: None,
+            last_move_sent: None,
+            last_error: None,
+            correction_count: 0,
+        }
     }
 }
 
+/// Runtime bridge for the server-side game websocket.
 #[derive(Resource)]
 pub struct GameNetRuntime {
     pub tx: Sender<GameNetEvent>,
@@ -110,33 +133,15 @@ impl Default for GameNetRuntime {
     }
 }
 
-impl GameNetRuntime {
-    fn set_command_sender(&self, tx: Sender<GameNetCommand>) {
-        *self.command_tx.lock().unwrap() = Some(tx);
-    }
-
-    fn clear_command_sender(&self) {
-        *self.command_tx.lock().unwrap() = None;
-    }
-
-    fn send_command(&self, cmd: GameNetCommand) -> Result<(), String> {
-        let Some(tx) = self.command_tx.lock().unwrap().clone() else {
-            return Err("game websocket is not ready for commands".to_string());
-        };
-
-        tx.send(cmd)
-            .map_err(|_| "game websocket command channel is closed".to_string())
-    }
-}
+#[derive(Component)]
+pub struct GameNetOverlayRoot;
 
 #[derive(Component)]
-pub struct GameNetDebugRoot;
-
-#[derive(Component)]
-pub struct GameNetDebugText;
+pub struct GameNetOverlayText;
 
 pub fn spawn_game_ws(
     game_net: &mut GameNetRuntime,
+    status: &mut GameNetStatus,
     server_base_url: String,
     token: String,
     character_id: Uuid,
@@ -144,7 +149,20 @@ pub fn spawn_game_ws(
     let url = ws_url_from_base(&server_base_url);
     let tx = game_net.tx.clone();
     let (cmd_tx, cmd_rx) = mpsc::channel::<GameNetCommand>();
-    game_net.set_command_sender(cmd_tx);
+
+    *game_net.command_tx.lock().unwrap() = Some(cmd_tx);
+
+    status.connected = false;
+    status.connecting = true;
+    status.character_id = Some(character_id);
+    status.player_id = None;
+    status.server_tick = None;
+    status.snapshot_players = 0;
+    status.server_tile = None;
+    status.local_tile = None;
+    status.drift_tiles = None;
+    status.last_move_sent = None;
+    status.last_error = None;
 
     let _ = tx.send(GameNetEvent::Connecting {
         url: url.clone(),
@@ -157,6 +175,15 @@ pub fn spawn_game_ws(
         }
         let _ = tx.send(GameNetEvent::Disconnected);
     });
+}
+
+pub fn send_move_to_server(game_net: &GameNetRuntime, tile: TilePos) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::MoveTo { tile }).is_ok()
 }
 
 fn run_game_ws(
@@ -176,7 +203,18 @@ fn run_game_ws(
         .map_err(|e| format!("game ws auth header failed: {e}"))?;
     request.headers_mut().insert("Authorization", auth_value);
 
-    let (mut socket, _response) = connect(request).map_err(|e| format!("game ws connect failed: {e}"))?;
+    let (mut socket, _response) = connect(request)
+        .map_err(|e| format!("game ws connect failed: {e}"))?;
+
+    // Keep the websocket responsive to client commands while we wait for server messages.
+    // tungstenite wraps the TcpStream in MaybeTlsStream; in local/dev ws:// mode this is Plain.
+    if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
+        if let Err(e) = stream.set_read_timeout(Some(std::time::Duration::from_millis(50))) {
+            let _ = tx.send(GameNetEvent::Error(format!(
+                "game ws read timeout setup failed: {e}"
+            )));
+        }
+    }
 
     let _ = tx.send(GameNetEvent::Connected);
 
@@ -191,10 +229,30 @@ fn run_game_ws(
     let mut player_id: Option<Uuid> = None;
 
     loop {
-        drain_game_commands(&mut socket, &cmd_rx, &tx)?;
+        while let Ok(cmd) = cmd_rx.try_recv() {
+            match cmd {
+                GameNetCommand::MoveTo { tile } => {
+                    let msg = ClientMsg::MoveTo { tile };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws move serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws move send failed: {e}"))?;
+                    let _ = tx.send(GameNetEvent::MoveSent { tile });
+                }
+            }
+        }
 
         let msg = match socket.read() {
             Ok(m) => m,
+            Err(WsError::Io(e))
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                continue;
+            }
             Err(e) => return Err(format!("game ws read failed: {e}")),
         };
 
@@ -216,14 +274,17 @@ fn run_game_ws(
                         });
                     }
                     Ok(ServerMsg::Snapshot(snap)) => {
-                        let self_tile = player_id.and_then(|pid| {
-                            snap.players.iter().find(|p| p.player_id == pid).map(|p| p.tile)
+                        let server_tile = player_id.and_then(|pid| {
+                            snap.players
+                                .iter()
+                                .find(|p| p.player_id == pid)
+                                .map(|p| p.tile)
                         });
 
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
                             players: snap.players.len(),
-                            self_tile,
+                            server_tile,
                         });
                     }
                     Ok(ServerMsg::Error { message }) => {
@@ -242,30 +303,6 @@ fn run_game_ws(
     }
 }
 
-fn drain_game_commands<S: std::io::Read + std::io::Write>(
-    socket: &mut tungstenite::WebSocket<S>,
-    cmd_rx: &Receiver<GameNetCommand>,
-    tx: &Sender<GameNetEvent>,
-) -> Result<(), String> {
-    while let Ok(cmd) = cmd_rx.try_recv() {
-        match cmd {
-            GameNetCommand::MoveTo { tile } => {
-                let msg = ClientMsg::MoveTo { tile };
-                let json = serde_json::to_string(&msg)
-                    .map_err(|e| format!("game ws move serialize failed: {e}"))?;
-
-                socket
-                    .send(Message::Text(json))
-                    .map_err(|e| format!("game ws move send failed: {e}"))?;
-
-                let _ = tx.send(GameNetEvent::SentMove { tile });
-            }
-        }
-    }
-
-    Ok(())
-}
-
 fn ws_url_from_base(base: &str) -> String {
     let trimmed = base.trim_end_matches('/');
     let ws_base = if let Some(rest) = trimmed.strip_prefix("https://") {
@@ -279,7 +316,10 @@ fn ws_url_from_base(base: &str) -> String {
     format!("{ws_base}/v1/game/ws")
 }
 
-pub fn pump_game_net_results(game_net: Res<GameNetRuntime>, mut status: ResMut<GameNetStatus>) {
+pub fn pump_game_net_results(
+    game_net: Res<GameNetRuntime>,
+    mut status: ResMut<GameNetStatus>,
+) {
     loop {
         let msg = {
             let rx = game_net.rx.lock().unwrap();
@@ -290,10 +330,14 @@ pub fn pump_game_net_results(game_net: Res<GameNetRuntime>, mut status: ResMut<G
 
         match msg {
             GameNetEvent::Connecting { url, character_id } => {
-                status.reset_for_connect(url.clone(), character_id);
+                status.connecting = true;
+                status.connected = false;
+                status.character_id = Some(character_id);
+                status.last_error = None;
                 info!("game net connecting url={} character_id={}", url, character_id);
             }
             GameNetEvent::Connected => {
+                status.connecting = false;
                 status.connected = true;
                 status.last_error = None;
                 info!("game net connected");
@@ -303,12 +347,11 @@ pub fn pump_game_net_results(game_net: Res<GameNetRuntime>, mut status: ResMut<G
                 character_id,
                 tick_hz,
             } => {
-                status.connected = true;
                 status.player_id = Some(player_id);
                 status.character_id = Some(character_id);
                 status.tick_hz = Some(tick_hz);
-                status.last_error = None;
-
+                status.connected = true;
+                status.connecting = false;
                 info!(
                     "game net welcome player_id={} character_id={} tick_hz={}",
                     player_id, character_id, tick_hz
@@ -317,19 +360,17 @@ pub fn pump_game_net_results(game_net: Res<GameNetRuntime>, mut status: ResMut<G
             GameNetEvent::Snapshot {
                 server_tick,
                 players,
-                self_tile,
+                server_tile,
             } => {
-                status.last_snapshot_tick = Some(server_tick);
-                status.last_snapshot_players = players;
-                status.self_tile = self_tile;
-                debug!(
-                    "game net snapshot tick={} players={} self_tile={:?}",
-                    server_tick, players, self_tile
-                );
+                status.server_tick = Some(server_tick);
+                status.snapshot_players = players;
+                if let Some(tile) = server_tile {
+                    status.server_tile = Some(tile);
+                }
+                debug!("game net snapshot tick={} players={}", server_tick, players);
             }
-            GameNetEvent::SentMove { tile } => {
+            GameNetEvent::MoveSent { tile } => {
                 status.last_move_sent = Some(tile);
-                status.last_error = None;
                 info!("game net sent move target tile={},{}", tile.x, tile.y);
             }
             GameNetEvent::Error(msg) => {
@@ -338,165 +379,172 @@ pub fn pump_game_net_results(game_net: Res<GameNetRuntime>, mut status: ResMut<G
             }
             GameNetEvent::Disconnected => {
                 status.connected = false;
+                status.connecting = false;
                 warn!("game net disconnected");
             }
         }
     }
 }
 
-pub fn send_move_target_on_right_click(
-    buttons: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+/// Send authoritative movement commands only after the actual WalkHere intent is chosen.
+/// Right-click still only opens the context menu.
+pub fn send_walk_intents_to_server_runtime(
+    mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
-    mut status: ResMut<GameNetStatus>,
 ) {
-    if !buttons.just_pressed(MouseButton::Right) {
-        return;
-    }
-
-    let Ok(window) = windows.single() else {
-        status.last_error = Some("could not find primary window for move target".to_string());
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        status.last_error = Some("right-click move ignored: cursor was outside the window".to_string());
-        return;
-    };
-
-    let Ok((camera, camera_transform)) = cameras.single() else {
-        status.last_error = Some("could not find world camera for move target".to_string());
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
-        status.last_error = Some("could not convert cursor to world position".to_string());
-        return;
-    };
-
-    let tile = world_to_tile(world_pos);
-
-    match game_net.send_command(GameNetCommand::MoveTo { tile }) {
-        Ok(()) => {
-            status.last_move_sent = Some(tile);
-            status.last_error = None;
+    for ev in intents.read() {
+        if ev.intent.verb != Verb::WalkHere {
+            continue;
         }
-        Err(e) => {
-            status.last_error = Some(e);
+
+        let Target::Tile(tile) = ev.intent.target else {
+            continue;
+        };
+
+        if !send_move_to_server(&game_net, tile) {
+            warn!("game net move target dropped; websocket is not ready");
         }
     }
 }
 
-pub fn spawn_game_net_debug_overlay(mut commands: Commands, asset_server: Res<AssetServer>) {
+/// Track the visible player tile, compare it to the authoritative server tile,
+/// and only hard-correct if the local player drifts too far away.
+///
+/// The client still predicts immediately by using the existing local TilePath. This system is
+/// reconciliation, not the only movement driver.
+pub fn reconcile_local_player_to_server(
+    mut status: ResMut<GameNetStatus>,
+    mut player_q: Query<(&mut Transform, &mut TilePath), With<Player>>,
+) {
+    let Ok((mut xform, mut path)) = player_q.single_mut() else {
+        status.local_tile = None;
+        status.drift_tiles = None;
+        return;
+    };
+
+    let local_tile = world_to_tile(player_feet_world(&xform));
+    status.local_tile = Some(local_tile);
+
+    let Some(server_tile) = status.server_tile else {
+        status.drift_tiles = None;
+        return;
+    };
+
+    let drift = (local_tile.x - server_tile.x).abs() + (local_tile.y - server_tile.y).abs();
+    status.drift_tiles = Some(drift);
+
+    // Small differences are normal while prediction and snapshots are in flight.
+    // If we drift too far, resync locally to the authoritative tile.
+    if drift >= 3 {
+        let center = tile_to_world_center(server_tile);
+        xform.translation.x = center.x;
+        xform.translation.y = center.y + FOOT_OFFSET_Y;
+        path.tiles.clear();
+        status.correction_count += 1;
+        warn!(
+            "game net corrected local player to server tile {},{} drift={}",
+            server_tile.x, server_tile.y, drift
+        );
+    }
+}
+
+pub fn spawn_game_net_overlay(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/ui.ttf");
 
     let root = commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(12.0),
-                top: Val::Px(12.0),
-                width: Val::Px(430.0),
+                left: Val::Px(14.0),
+                top: Val::Px(14.0),
+                width: Val::Px(420.0),
                 height: Val::Auto,
                 padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.015, 0.015, 0.02, 0.82)),
-            GameNetDebugRoot,
+            BackgroundColor(Color::srgba(0.02, 0.02, 0.025, 0.72)),
+            GameNetOverlayRoot,
             Name::new("game_net_debug_overlay"),
         ))
         .id();
 
     let text = commands
         .spawn((
-            Text::new("Game Runtime: starting..."),
+            Text::new("Game Net: starting..."),
             TextFont {
                 font,
                 font_size: 14.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.86, 0.92, 1.0)),
-            GameNetDebugText,
-            Name::new("game_net_debug_text"),
+            TextColor(Color::srgb(0.88, 0.92, 0.95)),
+            GameNetOverlayText,
+            Name::new("game_net_debug_overlay_text"),
         ))
         .id();
 
     commands.entity(root).add_child(text);
 }
 
-pub fn sync_game_net_debug_overlay(
-    status: Res<GameNetStatus>,
-    mut q: Query<&mut Text, With<GameNetDebugText>>,
+pub fn despawn_game_net_overlay(
+    mut commands: Commands,
+    roots: Query<Entity, With<GameNetOverlayRoot>>,
 ) {
-    if !status.is_changed() {
-        return;
+    for e in roots.iter() {
+        if let Ok(mut ec) = commands.get_entity(e) {
+            ec.despawn();
+        }
     }
+}
 
-    let Ok(mut text) = q.single_mut() else {
+pub fn update_game_net_overlay(
+    status: Res<GameNetStatus>,
+    mut text_q: Query<&mut Text, With<GameNetOverlayText>>,
+) {
+    let Ok(mut text) = text_q.single_mut() else {
         return;
     };
 
     let connection = if status.connected {
         "Connected"
-    } else if status.connecting_url.is_some() {
-        "Connecting / Disconnected"
+    } else if status.connecting {
+        "Connecting"
     } else {
-        "Not started"
+        "Disconnected"
     };
 
-    let player_id = status
-        .player_id
-        .map(short_uuid)
-        .unwrap_or_else(|| "—".to_string());
-
-    let character_id = status
-        .character_id
-        .map(short_uuid)
-        .unwrap_or_else(|| "—".to_string());
-
-    let tick_hz = status
-        .tick_hz
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "—".to_string());
-
-    let snapshot_tick = status
-        .last_snapshot_tick
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "—".to_string());
-
-    let tile = status
-        .self_tile
-        .map(|t| format!("{}, {}", t.x, t.y))
-        .unwrap_or_else(|| "—".to_string());
-
-    let last_move = status
-        .last_move_sent
-        .map(|t| format!("{}, {}", t.x, t.y))
-        .unwrap_or_else(|| "—".to_string());
-
-    let error = status.last_error.as_deref().unwrap_or("—");
-
     text.0 = format!(
-        "Game Runtime\n         Connection: {connection}\n         Player: {player_id}\n         Character: {character_id}\n         Tick Hz: {tick_hz}\n         Snapshot Tick: {snapshot_tick}\n         Snapshot Players: {}\n         Server Tile: {tile}\n         Last Move Sent: {last_move}\n         Last Error: {error}",
-        status.last_snapshot_players,
+        "Game Net\n\
+         Connection: {connection}\n\
+         Player ID: {}\n\
+         Character ID: {}\n\
+         Tick Hz: {}\n\
+         Snapshot Tick: {}\n\
+         Snapshot Players: {}\n\
+         Local Tile: {}\n\
+         Server Tile: {}\n\
+         Drift: {}\n\
+         Last Move Sent: {}\n\
+         Corrections: {}\n\
+         Last Error: {}",
+        fmt_uuid(status.player_id),
+        fmt_uuid(status.character_id),
+        status.tick_hz.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
+        status.server_tick.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
+        status.snapshot_players,
+        fmt_tile(status.local_tile),
+        fmt_tile(status.server_tile),
+        status.drift_tiles.map(|v| v.to_string()).unwrap_or_else(|| "—".to_string()),
+        fmt_tile(status.last_move_sent),
+        status.correction_count,
+        status.last_error.clone().unwrap_or_else(|| "—".to_string()),
     );
 }
 
-pub fn despawn_game_net_debug_overlay(
-    mut commands: Commands,
-    game_net: Res<GameNetRuntime>,
-    roots: Query<Entity, With<GameNetDebugRoot>>,
-) {
-    game_net.clear_command_sender();
-
-    for root in roots.iter() {
-        if let Ok(mut entity) = commands.get_entity(root) {
-            entity.despawn();
-        }
-    }
+fn fmt_uuid(v: Option<Uuid>) -> String {
+    v.map(|id| id.to_string()).unwrap_or_else(|| "—".to_string())
 }
 
-fn short_uuid(id: Uuid) -> String {
-    id.to_string().chars().take(8).collect()
+fn fmt_tile(v: Option<TilePos>) -> String {
+    v.map(|t| format!("{}, {}", t.x, t.y))
+        .unwrap_or_else(|| "—".to_string())
 }
