@@ -6,7 +6,7 @@ pub mod game_net;
 pub mod net;
 pub mod ui;
 
-// ✅ must be public so main.rs can use Screen + BootState
+// must be public so main.rs can use Screen + BootState
 pub mod state;
 pub use state::{BootState, Screen};
 
@@ -20,6 +20,7 @@ impl Plugin for BootFlowPlugin {
             .init_resource::<BootState>()
             .init_resource::<net::NetRuntime>()
             .init_resource::<game_net::GameNetRuntime>()
+            .init_resource::<game_net::GameNetStatus>()
             .init_resource::<fonts::UiFonts>()
             // Startup init
             .add_systems(

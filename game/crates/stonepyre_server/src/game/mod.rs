@@ -14,9 +14,9 @@ pub struct GameRuntime {
 }
 
 impl GameRuntime {
-    pub fn new() -> Self {
+    pub fn new(tick_hz: u32) -> Self {
         let hub = GameHub::new();
-        let sim = Arc::new(RwLock::new(GameSim::new()));
+        let sim = Arc::new(RwLock::new(GameSim::new(tick_hz)));
         Self { hub, sim }
     }
 }

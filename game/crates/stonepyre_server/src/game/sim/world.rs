@@ -3,9 +3,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use stonepyre_world::{neighbors_4, TilePos};
 use uuid::Uuid;
 
+/// Server-side movement speed in tiles/sec.
+/// Keep this aligned with stonepyre_engine::plugins::world::MOVE_TILES_PER_SEC.
+pub const SERVER_MOVE_TILES_PER_SEC: f32 = 1.6;
+
 /// The server's world snapshot state (v0).
-/// - `blocked` is your "unwalkable tiles" set (water, cliffs, etc.)
-/// - Later: expand this to include object/building footprints.
+/// - `blocked` is the authoritative unwalkable tile set.
+/// - Keep this aligned with the demo-world blockers until world data becomes shared/loaded.
 pub struct WorldState {
     pub players: HashMap<Uuid, PlayerState>,
     pub blocked: HashSet<TilePos>,
@@ -15,11 +19,12 @@ impl WorldState {
     pub fn new() -> Self {
         let mut blocked = HashSet::new();
 
-        // Demo unwalkable tiles (water). Replace with real tilemap logic later.
-        // A little vertical wall at x=3 from y=-2..=2
-        for y in -2..=2 {
-            blocked.insert(TilePos::new(3, y));
-        }
+        // Match the current client demo world blockers:
+        // - demo tree at (2, 0)
+        // - demo NPC at (-2, 1)
+        // This avoids client/server path divergence while the world is still hardcoded.
+        blocked.insert(TilePos::new(2, 0));
+        blocked.insert(TilePos::new(-2, 1));
 
         Self {
             players: HashMap::new(),
@@ -107,7 +112,6 @@ impl WorldState {
                 came_from.insert(n, cur);
 
                 if n == goal {
-                    // reconstruct
                     return reconstruct_path(start, goal, &came_from);
                 }
 
@@ -132,7 +136,6 @@ fn reconstruct_path(
         if let Some(prev) = came_from.get(&cur) {
             cur = *prev;
         } else {
-            // no path
             return VecDeque::new();
         }
     }
@@ -144,15 +147,19 @@ pub struct PlayerState {
     pub player_id: Uuid,
     pub character_id: Uuid,
 
-    /// Current tile pos
+    /// Current authoritative tile pos.
     pub tile: TilePos,
 
-    /// Desired destination tile (unblocked goal after adjustment)
+    /// Desired destination tile (unblocked goal after adjustment).
     pub goal: Option<TilePos>,
 
-    /// Current computed path (steps from current tile -> goal)
+    /// Current computed path (steps from current tile -> goal).
     pub path: VecDeque<TilePos>,
 
-    /// Used to rate-limit repathing attempts
+    /// Used to rate-limit repathing attempts.
     pub last_repath_tick: u64,
+
+    /// Fractional movement accumulator in tiles.
+    /// This prevents the server from moving one whole tile every tick.
+    pub move_progress_tiles: f32,
 }

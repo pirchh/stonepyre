@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use crate::{config::Config, state::AppState};
 
 const MARKET_SIM_LOCK_KEY: i64 = 9_007_199_254_740_993;
-const GAME_SIM_LOCK_KEY: i64 = 9_007_199_254_740_994; // different key
+const GAME_SIM_LOCK_KEY: i64 = 9_007_199_254_740_994;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,6 +23,16 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(log_level).init();
 
     let cfg = Config::from_env()?;
+    let tick_hz: u32 = std::env::var("GAME_TICK_HZ")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
+    let snapshot_hz: u32 = std::env::var("GAME_SNAPSHOT_HZ")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
+
     info!("stonepyre_server starting...");
     info!("bind={}", cfg.bind_addr);
     info!("db={}", cfg.database_url);
@@ -31,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     let pool = sqlx::PgPool::connect(&cfg.database_url).await?;
 
     // In-memory game runtime
-    let game = game::GameRuntime::new();
+    let game = game::GameRuntime::new(tick_hz);
 
     let state = AppState::new(cfg.clone(), pool.clone(), game.clone());
 
@@ -83,16 +93,6 @@ async fn main() -> anyhow::Result<()> {
         .try_get("ok")?;
 
     if game_got_lock {
-        let tick_hz: u32 = std::env::var("GAME_TICK_HZ")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(10);
-
-        let snapshot_hz: u32 = std::env::var("GAME_SNAPSHOT_HZ")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(2);
-
         info!(
             "game sim lock acquired; starting game loops tick_hz={} snapshot_hz={}",
             tick_hz, snapshot_hz
