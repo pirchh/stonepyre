@@ -78,6 +78,33 @@ impl GameSim {
         }
     }
 
+    /// Validate a server-authoritative ChopDown request.
+    ///
+    /// This is intentionally a v0 action gate: it proves the client/server action
+    /// path without mutating trees, inventory, XP, respawn, or persistence yet.
+    pub fn validate_chop_down(&self, player_id: Uuid, target: TilePos) -> Result<(), String> {
+        let Some(player) = self.world.players.get(&player_id) else {
+            return Err("player is not in the world".to_string());
+        };
+
+        if !self.world.is_choppable_tree(target) {
+            return Err("target is not a choppable tree".to_string());
+        }
+
+        let dx = (player.tile.x - target.x).abs();
+        let dy = (player.tile.y - target.y).abs();
+        let distance = dx + dy;
+
+        if distance > 1 {
+            return Err(format!(
+                "too far away to chop target {},{} from {},{}",
+                target.x, target.y, player.tile.x, player.tile.y
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn step(&mut self) {
         self.tick += 1;
 

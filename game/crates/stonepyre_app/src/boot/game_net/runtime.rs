@@ -5,6 +5,7 @@ use tungstenite::{client::IntoClientRequest, connect, Error as WsError, Message}
 use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
+use stonepyre_engine::plugins::world::GridPos;
 use stonepyre_world::TilePos;
 
 use super::protocol::{ClientMsg, InteractionAction, InteractionTarget, NetPlayerSnapshot, ServerMsg};
@@ -344,30 +345,54 @@ pub fn pump_game_net_results(
     }
 }
 
-/// Send authoritative movement commands only after the actual WalkHere intent is chosen.
-/// Right-click still only opens the context menu.
+/// Send authoritative runtime commands after the actual menu/intent choice is made.
+///
+/// Right-click still only opens the context menu. This system only runs after the
+/// engine has emitted a concrete `IntentMsg` from left-click/default action or an
+/// explicit context-menu selection.
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    grid_pos_q: Query<&GridPos>,
 ) {
     for ev in intents.read() {
-        if ev.intent.verb != Verb::WalkHere {
-            continue;
-        }
+        match ev.intent.verb {
+            Verb::WalkHere => {
+                let Target::Tile(tile) = ev.intent.target else {
+                    continue;
+                };
 
-        let Target::Tile(tile) = ev.intent.target else {
-            continue;
-        };
+                // Keep WalkHere on MoveTo. Movement has its own server-authoritative
+                // snapshot loop and reconciliation behavior.
+                if !send_move_to_server(&game_net, tile) {
+                    warn!("game net move target dropped; websocket is not ready");
+                }
+            }
+            Verb::ChopDown => {
+                let Some(tile) = intent_target_tile(ev.intent.target, &grid_pos_q) else {
+                    warn!("game net chopdown target dropped; target tile could not be resolved");
+                    continue;
+                };
 
-        // Keep WalkHere on the proven MoveTo path for now.
-        //
-        // Phase 5 adds the shared interaction protocol and server-side routing, but we do
-        // not want to change the live movement transport in the same pass. Movement and
-        // reconciliation were already tuned around MoveTo; switching WalkHere to
-        // ClientMsg::Interact exposed rubber-banding while local prediction is still
-        // tile-path based. ChopDown/server actions can use Interact in the next phase.
-        if !send_move_to_server(&game_net, tile) {
-            warn!("game net move target dropped; websocket is not ready");
+                if !send_interaction_to_server(
+                    &game_net,
+                    InteractionAction::ChopDown,
+                    InteractionTarget::Tile(tile),
+                ) {
+                    warn!("game net chopdown target dropped; websocket is not ready");
+                }
+            }
+            Verb::TalkTo | Verb::Examine => {
+                // These stay local-only for now. They will route through the same
+                // interaction path once the server owns NPCs/examine data.
+            }
         }
+    }
+}
+
+fn intent_target_tile(target: Target, grid_pos_q: &Query<&GridPos>) -> Option<TilePos> {
+    match target {
+        Target::Tile(tile) => Some(tile),
+        Target::Entity(entity) => grid_pos_q.get(entity).ok().map(|gp| gp.0),
     }
 }

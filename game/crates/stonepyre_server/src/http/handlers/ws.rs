@@ -234,13 +234,30 @@ async fn handle_interaction(
                 message: "walk target accepted".to_string(),
             });
         }
-        (InteractionAction::ChopDown, InteractionTarget::Tile(_tile)) => {
-            let _ = out_tx.send(ServerMsg::InteractionAck {
-                accepted: false,
-                action,
-                target,
-                message: "ChopDown is not implemented on the server yet".to_string(),
-            });
+        (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
+            let validation = {
+                let sim = state.game.sim.read().await;
+                sim.validate_chop_down(player_id, tile)
+            };
+
+            match validation {
+                Ok(()) => {
+                    let _ = out_tx.send(ServerMsg::InteractionAck {
+                        accepted: true,
+                        action,
+                        target,
+                        message: format!("ChopDown accepted at {},{}", tile.x, tile.y),
+                    });
+                }
+                Err(message) => {
+                    let _ = out_tx.send(ServerMsg::InteractionAck {
+                        accepted: false,
+                        action,
+                        target,
+                        message,
+                    });
+                }
+            }
         }
     }
 }

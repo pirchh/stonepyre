@@ -37,6 +37,13 @@ impl WorldState {
         self.blocked.contains(&t)
     }
 
+    #[inline]
+    pub fn is_choppable_tree(&self, t: TilePos) -> bool {
+        // v0 server-owned action target: keep this aligned with the demo tree.
+        // Once world data is shared/loaded, this should query authoritative node state.
+        t == TilePos::new(2, 0)
+    }
+
     /// If the requested target tile is blocked, try to select a nearby
     /// unblocked tile within `range` using a cheap heuristic (closest to start).
     pub fn pick_best_adjacent_unblocked(
