@@ -25,24 +25,17 @@ pub async fn game_ws(
     State(state): State<AppState>,
     ctx: AuthContext,
 ) -> Result<impl IntoResponse, ApiError> {
-    // ctx validated by middleware; accept upgrade.
     Ok(ws.on_upgrade(move |socket| handle_socket(state, ctx, socket)))
 }
 
 async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
     let (mut ws_tx, mut ws_rx) = socket.split();
-
-    // Outgoing queue so multiple producers can send without cloning ws_tx.
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ServerMsg>();
-
-    // Subscribe to server broadcast stream.
     let mut broadcast_rx = state.game.hub.subscribe();
 
-    // Until JoinWorld succeeds, these are None.
     let mut player_id: Option<Uuid> = None;
     let mut character_id: Option<Uuid> = None;
 
-    // Task: pump outbound messages to websocket.
     let write_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             let Ok(json) = serde_json::to_string(&msg) else {
@@ -55,7 +48,6 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
         }
     });
 
-    // Task: forward broadcast -> out queue.
     let out_tx_broadcast = out_tx.clone();
     let forward_task = tokio::spawn(async move {
         while let Ok(msg) = broadcast_rx.recv().await {
@@ -63,7 +55,6 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
         }
     });
 
-    // Read client messages.
     while let Some(Ok(msg)) = ws_rx.next().await {
         match msg {
             Message::Text(txt) => {
@@ -79,7 +70,6 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                     ClientMsg::Ping => {
                         let _ = out_tx.send(ServerMsg::Pong);
                     }
-
                     ClientMsg::JoinWorld {
                         character_id: requested_character_id,
                     } => {
@@ -154,15 +144,32 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             ctx.account_id, requested_player_id, requested_character_id
                         );
 
-                        let welcome = ServerMsg::Welcome {
+                        let _ = out_tx.send(ServerMsg::Welcome {
                             player_id: requested_player_id,
                             character_id: requested_character_id,
                             tick_hz,
-                        };
+                        });
 
-                        let _ = out_tx.send(welcome);
+                        match crate::game::sim::inventory::load_character_inventory_snapshot(
+                            &state.db,
+                            requested_character_id,
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => {
+                                let _ = out_tx.send(ServerMsg::InventorySnapshot(snapshot));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "game ws inventory snapshot failed account_id={} character_id={} error={:?}",
+                                    ctx.account_id, requested_character_id, e
+                                );
+                                let _ = out_tx.send(ServerMsg::Error {
+                                    message: "failed to load inventory".to_string(),
+                                });
+                            }
+                        }
                     }
-
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
                             let event = {
@@ -175,7 +182,6 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             }
                         }
                     }
-
                     ClientMsg::Interact { action, target } => {
                         let Some(pid) = player_id else {
                             let _ = out_tx.send(ServerMsg::Error {
@@ -193,7 +199,6 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
         }
     }
 
-    // Cleanup on disconnect.
     if let Some(pid) = player_id {
         {
             let mut sim = state.game.sim.write().await;

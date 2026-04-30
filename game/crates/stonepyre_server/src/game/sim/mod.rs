@@ -1,39 +1,58 @@
+pub mod harvest;
+pub mod inventory;
 pub mod world;
 
+use self::harvest::HarvestSkill;
+use self::inventory::InventoryGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
-    ActionState,
-    InteractionAction,
-    InteractionTarget,
-    PlayerSnapshot,
-    ServerMsg,
-    WorldSnapshot,
+    ActionState, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot, HarvestResult,
+    InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, WorldSnapshot,
 };
 use stonepyre_world::TilePos;
 use uuid::Uuid;
 
 const MAX_BFS_ITERS: usize = 50_000;
 const REPATH_COOLDOWN_TICKS: u64 = 3;
+const HARVEST_ROLL_SECS: f32 = 1.25;
+
+#[derive(Clone, Debug)]
+pub enum GameSimEvent {
+    Server(ServerMsg),
+    InventoryGrant(InventoryGrantRequest),
+}
+
+impl From<ServerMsg> for GameSimEvent {
+    fn from(value: ServerMsg) -> Self {
+        Self::Server(value)
+    }
+}
 
 pub struct GameSim {
     pub tick: u64,
     pub world: WorldState,
     tiles_per_tick: f32,
+    harvest_roll_ticks: u64,
+    ticks_per_second: u64,
 }
 
 impl GameSim {
     pub fn new(tick_hz: u32) -> Self {
+        let ticks_per_second = u64::from(tick_hz.max(1));
         let tick_hz = tick_hz.max(1) as f32;
+        let harvest_roll_ticks = (tick_hz * HARVEST_ROLL_SECS).round().max(1.0) as u64;
+
         Self {
             tick: 0,
             world: WorldState::new(),
             tiles_per_tick: SERVER_MOVE_TILES_PER_SEC / tick_hz,
+            harvest_roll_ticks,
+            ticks_per_second,
         }
     }
 
     pub fn add_player(&mut self, player_id: Uuid, character_id: Uuid) {
         let spawn = TilePos::new(0, 0);
-
         self.world.players.insert(
             player_id,
             PlayerState {
@@ -89,13 +108,29 @@ impl GameSim {
 
     /// Queue a server-authoritative ChopDown request.
     ///
-    /// Distance is not a final rejection. If the target is valid and reachable,
-    /// the server moves the player to an adjacent tile and exposes the action
-    /// lifecycle through snapshots.
-    pub fn queue_chop_down(&mut self, player_id: Uuid, target: TilePos) -> Result<(ActionState, String), String> {
-        if !self.world.is_choppable_tree(target) {
-            return Err("target is not a choppable tree".to_string());
-        }
+    /// Distance is not a final rejection. If the target is a valid woodcutting
+    /// harvest node and reachable, the server moves the player to an adjacent
+    /// tile and exposes the action lifecycle through snapshots.
+    pub fn queue_chop_down(
+        &mut self,
+        player_id: Uuid,
+        target: TilePos,
+    ) -> Result<(ActionState, String), String> {
+        let (target_name, target_def_id) = {
+            let Some(def) = self.world.harvest_node_def_at(target) else {
+                return Err("target is not a harvest node".to_string());
+            };
+
+            if def.skill != HarvestSkill::Woodcutting {
+                return Err(format!("{} cannot be chopped down", def.display_name));
+            }
+
+            if !self.world.harvest.can_harvest_at(target) {
+                return Err(format!("{} is depleted", def.display_name));
+            }
+
+            (def.display_name, def.id)
+        };
 
         let Some(start_tile) = self.world.players.get(&player_id).map(|p| p.tile) else {
             return Err("player is not in the world".to_string());
@@ -111,10 +146,17 @@ impl GameSim {
                     action: InteractionAction::ChopDown,
                     target: InteractionTarget::Tile(target),
                     state: ActionState::Active,
+                    next_harvest_tick: Some(self.tick + self.harvest_roll_ticks),
                 });
             }
 
-            return Ok((ActionState::Active, format!("ChopDown active at {},{}", target.x, target.y)));
+            return Ok((
+                ActionState::Active,
+                format!(
+                    "ChopDown active on {} ({}) at {},{}",
+                    target_name, target_def_id, target.x, target.y
+                ),
+            ));
         }
 
         let Some(goal) = self.world.pick_best_adjacent_unblocked(start_tile, target, 1) else {
@@ -135,25 +177,36 @@ impl GameSim {
                 action: InteractionAction::ChopDown,
                 target: InteractionTarget::Tile(target),
                 state: ActionState::MovingToRange,
+                next_harvest_tick: None,
             });
         }
 
-        Ok((ActionState::MovingToRange, format!(
-            "ChopDown queued; walking to {},{} for target {},{}",
-            goal.x, goal.y, target.x, target.y
-        )))
+        Ok((
+            ActionState::MovingToRange,
+            format!(
+                "ChopDown queued on {} ({}); walking to {},{} for target {},{}",
+                target_name, target_def_id, goal.x, goal.y, target.x, target.y
+            ),
+        ))
     }
 
-    /// Advance server simulation and return lifecycle events produced this tick.
-    pub fn step(&mut self) -> Vec<ServerMsg> {
+    /// Advance server simulation and return lifecycle/events produced this tick.
+    pub fn step(&mut self) -> Vec<GameSimEvent> {
         self.tick += 1;
         let mut events = Vec::new();
+
+        for node in self.world.harvest.tick_respawns(self.tick) {
+            events.push(ServerMsg::HarvestNodeEvent(node_event_from_snapshot(
+                HarvestNodeEventKind::Restored,
+                node,
+            )).into());
+        }
 
         let blocked_snapshot = self.world.blocked.clone();
 
         for p in self.world.players.values_mut() {
             let Some(goal) = p.goal else {
-                maybe_activate_action(p, &mut events);
+                maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
                 continue;
             };
 
@@ -161,7 +214,7 @@ impl GameSim {
                 p.goal = None;
                 p.path.clear();
                 p.move_progress_tiles = 0.0;
-                maybe_activate_action(p, &mut events);
+                maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
                 continue;
             }
 
@@ -204,11 +257,13 @@ impl GameSim {
                     p.goal = None;
                     p.path.clear();
                     p.move_progress_tiles = 0.0;
-                    maybe_activate_action(p, &mut events);
+                    maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
                     break;
                 }
             }
         }
+
+        self.tick_active_harvest_actions(&mut events);
 
         events
     }
@@ -216,6 +271,7 @@ impl GameSim {
     pub fn snapshot(&self) -> WorldSnapshot {
         WorldSnapshot {
             server_tick: self.tick,
+            harvest_nodes: self.world.harvest.snapshots(),
             players: self
                 .world
                 .players
@@ -244,9 +300,129 @@ impl GameSim {
             message: message.to_string(),
         })
     }
+
+    fn tick_active_harvest_actions(&mut self, events: &mut Vec<GameSimEvent>) {
+        let ready_players: Vec<Uuid> = self
+            .world
+            .players
+            .iter()
+            .filter_map(|(player_id, p)| {
+                let action = p.action.as_ref()?;
+                if action.action != InteractionAction::ChopDown || action.state != ActionState::Active {
+                    return None;
+                }
+
+                let next_tick = action.next_harvest_tick?;
+                (self.tick >= next_tick).then_some(*player_id)
+            })
+            .collect();
+
+        for player_id in ready_players {
+            let Some((target, player_tile, character_id)) = self.world.players.get(&player_id).and_then(|p| {
+                let action = p.action.as_ref()?;
+                let InteractionTarget::Tile(target) = action.target.clone();
+                Some((target, p.tile, p.character_id))
+            }) else {
+                continue;
+            };
+
+            if manhattan(player_tile, target) > 1 {
+                if let Some(cancelled) = self.clear_action(
+                    player_id,
+                    ActionState::Cancelled,
+                    "harvest cancelled because player moved out of range",
+                ) {
+                    events.push(cancelled.into());
+                }
+                continue;
+            }
+
+            let roll = rand::random::<f32>();
+            let result = self.world.harvest.roll_harvest(target, roll, self.tick, self.ticks_per_second);
+
+            match result {
+                Ok(outcome) => {
+                    if let Some(loot) = outcome.loot_preview.as_ref() {
+                        events.push(GameSimEvent::InventoryGrant(InventoryGrantRequest {
+                            player_id,
+                            character_id,
+                            item_id: loot.item_id.to_string(),
+                            quantity: loot.quantity,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            display_name: outcome.display_name.to_string(),
+                            node_id: outcome.node_id.to_string(),
+                            charges_remaining: outcome.charges_remaining,
+                        }));
+                    } else {
+                        events.push(ServerMsg::HarvestResult(HarvestResult {
+                            player_id,
+                            character_id,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            node_id: outcome.node_id.to_string(),
+                            display_name: outcome.display_name.to_string(),
+                            success: outcome.success,
+                            item_id: None,
+                            quantity: 0,
+                            inventory_quantity: None,
+                            charges_remaining: outcome.charges_remaining,
+                        }).into());
+                    }
+
+                    if outcome.depleted {
+                        if let Some(p) = self.world.players.get_mut(&player_id) {
+                            p.action = None;
+                        }
+
+                        events.push(ServerMsg::ActionState {
+                            player_id,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            state: ActionState::Complete,
+                            message: "ChopDown complete".to_string(),
+                        }.into());
+
+                        events.push(ServerMsg::HarvestNodeEvent(HarvestNodeEvent {
+                            kind: HarvestNodeEventKind::Depleted,
+                            node_id: outcome.node_id.to_string(),
+                            node_def_id: outcome.def_id.to_string(),
+                            display_name: outcome.display_name.to_string(),
+                            tile: target,
+                            charges_remaining: outcome.charges_remaining,
+                            max_charges: outcome.max_charges,
+                            depleted_until_tick: outcome.depleted_until_tick,
+                        }).into());
+                    } else if let Some(p) = self.world.players.get_mut(&player_id) {
+                        if let Some(action) = p.action.as_mut() {
+                            action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
+                        }
+                    }
+                }
+                Err(message) => {
+                    if let Some(p) = self.world.players.get_mut(&player_id) {
+                        p.action = None;
+                    }
+
+                    events.push(ServerMsg::ActionState {
+                        player_id,
+                        action: InteractionAction::ChopDown,
+                        target: InteractionTarget::Tile(target),
+                        state: ActionState::Complete,
+                        message,
+                    }.into());
+                }
+            }
+        }
+    }
 }
 
-fn maybe_activate_action(p: &mut PlayerState, events: &mut Vec<ServerMsg>) {
+fn maybe_activate_action(
+    p: &mut PlayerState,
+    current_tick: u64,
+    harvest_roll_ticks: u64,
+    events: &mut Vec<GameSimEvent>,
+) {
     let Some(action) = p.action.as_mut() else { return; };
     if action.state != ActionState::MovingToRange && action.state != ActionState::Queued {
         return;
@@ -256,15 +432,29 @@ fn maybe_activate_action(p: &mut PlayerState, events: &mut Vec<ServerMsg>) {
         InteractionTarget::Tile(target) => {
             if manhattan(p.tile, target) <= 1 {
                 action.state = ActionState::Active;
+                action.next_harvest_tick = Some(current_tick + harvest_roll_ticks);
                 events.push(ServerMsg::ActionState {
                     player_id: p.player_id,
                     action: action.action,
                     target: action.target.clone(),
                     state: ActionState::Active,
                     message: format!("{:?} active at {},{}", action.action, target.x, target.y),
-                });
+                }.into());
             }
         }
+    }
+}
+
+fn node_event_from_snapshot(kind: HarvestNodeEventKind, node: HarvestNodeSnapshot) -> HarvestNodeEvent {
+    HarvestNodeEvent {
+        kind,
+        node_id: node.node_id,
+        node_def_id: node.node_def_id,
+        display_name: node.display_name,
+        tile: node.tile,
+        charges_remaining: node.charges_remaining,
+        max_charges: node.max_charges,
+        depleted_until_tick: node.depleted_until_tick,
     }
 }
 

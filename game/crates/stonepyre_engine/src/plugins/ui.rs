@@ -14,9 +14,12 @@ pub struct ContextMenuState {
     pub screen_pos: Vec2,
     pub candidates: Vec<InteractionCandidate>,
 
-    /// Parent/root menu entities that should be despawned when the menu closes/rebuilds.
-    /// Child text entities are intentionally not tracked here because despawning the parent row
-    /// also despawns its children. Tracking both causes double-despawn warnings in Bevy.
+    /// Menu entities that should be despawned when the menu closes/rebuilds.
+    ///
+    /// Keep these as standalone world entities. Avoid queued parent/child
+    /// relationships here because the menu can be opened, selected, and closed
+    /// in a tight command window; a queued child attach can race with a queued
+    /// despawn and produce noisy "Entity despawned" warnings.
     pub spawned: Vec<Entity>,
 
     pub dirty: bool,
@@ -122,7 +125,9 @@ pub(crate) fn context_menu_overlay_system(
         .id();
     menu.spawned.push(panel);
 
-    // Rows (world), with text as a child in local space.
+    // Rows and text are both standalone world entities.
+    // This avoids parent/child command ordering warnings if the menu is closed
+    // during the same frame window as it was rebuilt.
     for (i, cand) in candidates.iter().enumerate() {
         let row_top = panel_top_left.y - PAD - (i as f32) * ITEM_H;
         let row_bottom = row_top - ITEM_H;
@@ -130,6 +135,7 @@ pub(crate) fn context_menu_overlay_system(
 
         let row_left = panel_top_left.x + PAD;
         let row_right = row_left + ITEM_W;
+        let row_center_x = (row_left + row_right) * 0.5;
 
         let row_ent = commands
             .spawn((
@@ -137,7 +143,7 @@ pub(crate) fn context_menu_overlay_system(
                     Color::srgba(0.14, 0.14, 0.18, 0.95),
                     Vec2::new(ITEM_W, ITEM_H),
                 ),
-                Transform::from_xyz((row_left + row_right) * 0.5, row_center_y, MENU_Z + 1.0),
+                Transform::from_xyz(row_center_x, row_center_y, MENU_Z + 1.0),
                 ContextMenuOverlayItem {
                     idx: i,
                     min: Vec2::new(row_left, row_bottom),
@@ -147,8 +153,6 @@ pub(crate) fn context_menu_overlay_system(
             .id();
         menu.spawned.push(row_ent);
 
-        // Text is a child of the row and is intentionally NOT pushed to menu.spawned.
-        // Despawning the row will despawn this child too.
         let label = format!("{:?}", cand.verb);
         let text_ent = commands
             .spawn((
@@ -159,11 +163,10 @@ pub(crate) fn context_menu_overlay_system(
                     ..default()
                 },
                 TextColor(Color::srgba(0.92, 0.92, 0.95, 1.0)),
-                Transform::from_xyz(0.0, -7.0, 1.0),
+                Transform::from_xyz(row_center_x, row_center_y - 7.0, MENU_Z + 2.0),
             ))
             .id();
-
-        commands.entity(row_ent).add_child(text_ent);
+        menu.spawned.push(text_ent);
     }
 }
 

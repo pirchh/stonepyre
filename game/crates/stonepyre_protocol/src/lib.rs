@@ -40,8 +40,8 @@ pub enum ServerMsg {
         message: String,
     },
 
-    /// Optional direct lifecycle event for client logs/UI. Snapshots remain the
-    /// durable source of truth for active action state.
+    /// Direct lifecycle event for client logs/UI. Snapshots remain the durable
+    /// source of truth for active action state.
     ActionState {
         player_id: Uuid,
         action: InteractionAction,
@@ -49,6 +49,17 @@ pub enum ServerMsg {
         state: ActionState,
         message: String,
     },
+
+    /// Structured harvest roll result. This is separate from ActionState so
+    /// action lifecycle stays focused on queued/moving/active/complete state.
+    HarvestResult(HarvestResult),
+
+    /// Structured world-node event for depletion/restoration.
+    HarvestNodeEvent(HarvestNodeEvent),
+
+    InventorySnapshot(InventorySnapshot),
+
+    InventoryDelta(InventoryDelta),
 
     Error {
         message: String,
@@ -59,6 +70,7 @@ pub enum ServerMsg {
 pub struct WorldSnapshot {
     pub server_tick: u64,
     pub players: Vec<PlayerSnapshot>,
+    pub harvest_nodes: Vec<HarvestNodeSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +99,71 @@ pub struct PlayerActionSnapshot {
     pub action: InteractionAction,
     pub target: InteractionTarget,
     pub state: ActionState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarvestNodeSnapshot {
+    pub node_id: String,
+    pub node_def_id: String,
+    pub display_name: String,
+    pub tile: TilePos,
+    pub charges_remaining: u32,
+    pub max_charges: u32,
+    pub depleted: bool,
+    pub depleted_until_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarvestResult {
+    pub player_id: Uuid,
+    pub character_id: Uuid,
+    pub action: InteractionAction,
+    pub target: InteractionTarget,
+    pub node_id: String,
+    pub display_name: String,
+    pub success: bool,
+    pub item_id: Option<String>,
+    pub quantity: u32,
+    pub inventory_quantity: Option<i64>,
+    pub charges_remaining: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarvestNodeEvent {
+    pub kind: HarvestNodeEventKind,
+    pub node_id: String,
+    pub node_def_id: String,
+    pub display_name: String,
+    pub tile: TilePos,
+    pub charges_remaining: u32,
+    pub max_charges: u32,
+    pub depleted_until_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HarvestNodeEventKind {
+    Depleted,
+    Restored,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventorySnapshot {
+    pub character_id: Uuid,
+    pub items: Vec<InventoryItemSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryItemSnapshot {
+    pub item_id: String,
+    pub quantity: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryDelta {
+    pub character_id: Uuid,
+    pub item_id: String,
+    pub quantity_delta: i64,
+    pub new_quantity: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

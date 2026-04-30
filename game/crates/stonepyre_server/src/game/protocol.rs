@@ -1,6 +1,13 @@
 pub use stonepyre_protocol::{
     ActionState,
     ClientMsg,
+    HarvestNodeEvent,
+    HarvestNodeEventKind,
+    HarvestNodeSnapshot,
+    HarvestResult,
+    InventoryDelta,
+    InventoryItemSnapshot,
+    InventorySnapshot,
     InteractionAction,
     InteractionTarget,
     PlayerActionSnapshot,

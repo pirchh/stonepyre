@@ -7,7 +7,19 @@ use uuid::Uuid;
 
 use stonepyre_world::TilePos;
 
-use super::protocol::{ActionState, InteractionAction, InteractionTarget, NetPlayerSnapshot, PlayerActionSnapshot};
+use super::protocol::{
+    ActionState,
+    HarvestNodeEvent,
+    HarvestNodeSnapshot,
+    HarvestResult,
+    InteractionAction,
+    InteractionTarget,
+    InventoryDelta,
+    InventoryItemSnapshot,
+    InventorySnapshot,
+    NetPlayerSnapshot,
+    PlayerActionSnapshot,
+};
 
 #[derive(Debug)]
 pub enum GameNetEvent {
@@ -21,6 +33,7 @@ pub enum GameNetEvent {
     Snapshot {
         server_tick: u64,
         players: Vec<NetPlayerSnapshot>,
+        harvest_nodes: Vec<HarvestNodeSnapshot>,
         server_tile: Option<TilePos>,
         server_next_tile: Option<TilePos>,
         server_goal: Option<TilePos>,
@@ -41,6 +54,10 @@ pub enum GameNetEvent {
         state: ActionState,
         message: String,
     },
+    HarvestResult(HarvestResult),
+    HarvestNodeEvent(HarvestNodeEvent),
+    InventorySnapshot(InventorySnapshot),
+    InventoryDelta(InventoryDelta),
     Error(String),
     Disconnected,
 }
@@ -64,11 +81,14 @@ pub struct GameNetStatus {
     pub server_tick: Option<u64>,
     pub snapshot_players: usize,
     pub latest_players: Vec<NetPlayerSnapshot>,
+    pub harvest_nodes: Vec<HarvestNodeSnapshot>,
     pub server_tile: Option<TilePos>,
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
     pub server_moving: bool,
     pub server_action: Option<PlayerActionSnapshot>,
+    pub inventory_items: Vec<InventoryItemSnapshot>,
+    pub inventory_dirty: bool,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -89,11 +109,14 @@ impl Default for GameNetStatus {
             server_tick: None,
             snapshot_players: 0,
             latest_players: Vec::new(),
+            harvest_nodes: Vec::new(),
             server_tile: None,
             server_next_tile: None,
             server_goal: None,
             server_moving: false,
             server_action: None,
+            inventory_items: Vec::new(),
+            inventory_dirty: false,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

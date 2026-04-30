@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use stonepyre_engine::plugins::animation::ForceIdleOnce;
 use stonepyre_engine::plugins::skills::{AnimClip, RequestedAnim, RequestedAnimMode};
 use stonepyre_engine::plugins::world::{player_feet_world, Facing, Player};
 use stonepyre_world::{world_to_tile, TilePos};
@@ -13,7 +14,8 @@ const CHOP_VISUAL_SECS: f32 = 0.75;
 ///
 /// Gameplay state is owned by the server. This system only mirrors the latest
 /// authoritative action lifecycle from snapshots into animation. If the server
-/// action is not Active, the skill clip is removed immediately.
+/// action is not Active, the skill clip is removed immediately and the animation
+/// system is asked to snap back to idle this frame.
 pub fn play_server_authoritative_action_visuals(
     mut commands: Commands,
     mut player_q: Query<(
@@ -29,16 +31,12 @@ pub fn play_server_authoritative_action_visuals(
     };
 
     let Some(action) = status.server_action.as_ref() else {
-        if requested_anim.is_some() {
-            commands.entity(player_ent).remove::<RequestedAnim>();
-        }
+        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
         return;
     };
 
     if action.action != InteractionAction::ChopDown || action.state != ActionState::Active {
-        if requested_anim.is_some() {
-            commands.entity(player_ent).remove::<RequestedAnim>();
-        }
+        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
         return;
     }
 
@@ -53,9 +51,7 @@ pub fn play_server_authoritative_action_visuals(
     // positions are out of action range. The server should cancel first, but this
     // prevents a stale snapshot/frame from leaving the clip playing.
     if manhattan(server_tile, target) > 1 && manhattan(local_tile, target) > 1 {
-        if requested_anim.is_some() {
-            commands.entity(player_ent).remove::<RequestedAnim>();
-        }
+        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
         return;
     }
 
@@ -64,10 +60,17 @@ pub fn play_server_authoritative_action_visuals(
     if requested_anim.is_none() {
         commands.entity(player_ent).insert(RequestedAnim {
             clip: AnimClip::Woodcutting,
-            mode: RequestedAnimMode::OneShot {
-                timer: Timer::from_seconds(CHOP_VISUAL_SECS, TimerMode::Once),
+            mode: RequestedAnimMode::Loop {
+                timer: Timer::from_seconds(CHOP_VISUAL_SECS, TimerMode::Repeating),
             },
         });
+    }
+}
+
+fn stop_action_visual_now(commands: &mut Commands, player_ent: Entity, had_requested_anim: bool) {
+    if had_requested_anim {
+        commands.entity(player_ent).remove::<RequestedAnim>();
+        commands.entity(player_ent).insert(ForceIdleOnce);
     }
 }
 

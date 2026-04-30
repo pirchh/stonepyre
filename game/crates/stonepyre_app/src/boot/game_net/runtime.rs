@@ -38,11 +38,14 @@ pub fn spawn_game_ws(
     status.server_tick = None;
     status.snapshot_players = 0;
     status.latest_players.clear();
+    status.harvest_nodes.clear();
     status.server_tile = None;
     status.server_next_tile = None;
     status.server_goal = None;
     status.server_moving = false;
     status.server_action = None;
+    status.inventory_items.clear();
+    status.inventory_dirty = true;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -105,8 +108,6 @@ fn run_game_ws(
     let (mut socket, _response) = connect(request)
         .map_err(|e| format!("game ws connect failed: {e}"))?;
 
-    // Keep the websocket responsive to client commands while we wait for server messages.
-    // tungstenite wraps the TcpStream in MaybeTlsStream; in local/dev ws:// mode this is Plain.
     if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
         if let Err(e) = stream.set_read_timeout(Some(std::time::Duration::from_millis(50))) {
             let _ = tx.send(GameNetEvent::Error(format!(
@@ -216,6 +217,7 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
                             players,
+                            harvest_nodes: snap.harvest_nodes,
                             server_tile,
                             server_next_tile,
                             server_goal,
@@ -236,7 +238,6 @@ fn run_game_ws(
                             message,
                         });
                     }
-
                     Ok(ServerMsg::ActionState {
                         player_id,
                         action,
@@ -251,6 +252,18 @@ fn run_game_ws(
                             state,
                             message,
                         });
+                    }
+                    Ok(ServerMsg::HarvestResult(result)) => {
+                        let _ = tx.send(GameNetEvent::HarvestResult(result));
+                    }
+                    Ok(ServerMsg::HarvestNodeEvent(event)) => {
+                        let _ = tx.send(GameNetEvent::HarvestNodeEvent(event));
+                    }
+                    Ok(ServerMsg::InventorySnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::InventorySnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::InventoryDelta(delta)) => {
+                        let _ = tx.send(GameNetEvent::InventoryDelta(delta));
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -325,6 +338,7 @@ pub fn pump_game_net_results(
             GameNetEvent::Snapshot {
                 server_tick,
                 players,
+                harvest_nodes,
                 server_tile,
                 server_next_tile,
                 server_goal,
@@ -334,6 +348,7 @@ pub fn pump_game_net_results(
                 status.server_tick = Some(server_tick);
                 status.snapshot_players = players.len();
                 status.latest_players = players;
+                status.harvest_nodes = harvest_nodes;
                 status.server_moving = server_moving;
                 status.server_next_tile = server_next_tile;
                 status.server_goal = server_goal;
@@ -342,9 +357,10 @@ pub fn pump_game_net_results(
                     status.server_tile = Some(tile);
                 }
                 debug!(
-                    "game net snapshot tick={} players={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
+                    "game net snapshot tick={} players={} harvest_nodes={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
                     server_tick,
                     status.snapshot_players,
+                    status.harvest_nodes.len(),
                     status.server_tile,
                     status.server_next_tile,
                     status.server_goal,
@@ -406,6 +422,102 @@ pub fn pump_game_net_results(
                     }
                 }
             }
+            GameNetEvent::HarvestResult(result) => {
+                match result.item_id.as_ref() {
+                    Some(item_id) => info!(
+                        "game net harvest result success={} node={} item={} quantity={} inventory_quantity={:?} charges_remaining={}",
+                        result.success,
+                        result.node_id,
+                        item_id,
+                        result.quantity,
+                        result.inventory_quantity,
+                        result.charges_remaining
+                    ),
+                    None => info!(
+                        "game net harvest result success={} node={} charges_remaining={}",
+                        result.success,
+                        result.node_id,
+                        result.charges_remaining
+                    ),
+                }
+            }
+            GameNetEvent::HarvestNodeEvent(event) => {
+                info!(
+                    "game net harvest node event kind={:?} node={} tile={},{} charges_remaining={}",
+                    event.kind,
+                    event.node_id,
+                    event.tile.x,
+                    event.tile.y,
+                    event.charges_remaining
+                );
+
+                let depleted = matches!(
+                    event.kind,
+                    super::protocol::HarvestNodeEventKind::Depleted
+                );
+
+                let snapshot = super::protocol::HarvestNodeSnapshot {
+                    node_id: event.node_id.clone(),
+                    node_def_id: event.node_def_id.clone(),
+                    display_name: event.display_name.clone(),
+                    tile: event.tile,
+                    charges_remaining: event.charges_remaining,
+                    max_charges: event.max_charges,
+                    depleted,
+                    depleted_until_tick: event.depleted_until_tick,
+                };
+
+                if let Some(existing) = status
+                    .harvest_nodes
+                    .iter_mut()
+                    .find(|node| node.node_id == event.node_id)
+                {
+                    *existing = snapshot;
+                } else {
+                    status.harvest_nodes.push(snapshot);
+                }
+            }
+            GameNetEvent::InventorySnapshot(snapshot) => {
+                info!(
+                    "game net inventory snapshot character_id={} items={}",
+                    snapshot.character_id,
+                    snapshot.items.len()
+                );
+                status.inventory_items = snapshot.items;
+                status.inventory_dirty = true;
+            }
+            GameNetEvent::InventoryDelta(delta) => {
+                info!(
+                    "game net inventory delta character_id={} item_id={} delta={} new_quantity={}",
+                    delta.character_id,
+                    delta.item_id,
+                    delta.quantity_delta,
+                    delta.new_quantity
+                );
+
+                if status.character_id != Some(delta.character_id) {
+                    continue;
+                }
+
+                let item_id = delta.item_id.clone();
+                if delta.new_quantity <= 0 {
+                    status.inventory_items.retain(|item| item.item_id != item_id.as_str());
+                } else if let Some(item) = status
+                    .inventory_items
+                    .iter_mut()
+                    .find(|item| item.item_id == item_id.as_str())
+                {
+                    item.quantity = delta.new_quantity;
+                } else {
+                    status.inventory_items.push(super::protocol::InventoryItemSnapshot {
+                        item_id,
+                        quantity: delta.new_quantity,
+                    });
+                }
+
+                status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
+                status.inventory_dirty = true;
+            }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
                 warn!("game net error: {}", msg);
@@ -414,10 +526,13 @@ pub fn pump_game_net_results(
                 status.connected = false;
                 status.connecting = false;
                 status.latest_players.clear();
+                status.harvest_nodes.clear();
                 status.server_next_tile = None;
                 status.server_goal = None;
                 status.server_moving = false;
                 status.server_action = None;
+                status.inventory_items.clear();
+                status.inventory_dirty = true;
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
@@ -426,11 +541,6 @@ pub fn pump_game_net_results(
     }
 }
 
-/// Send authoritative runtime commands after the actual menu/intent choice is made.
-///
-/// Right-click still only opens the context menu. This system only runs after the
-/// engine has emitted a concrete `IntentMsg` from left-click/default action or an
-/// explicit context-menu selection.
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
@@ -443,8 +553,6 @@ pub fn send_walk_intents_to_server_runtime(
                     continue;
                 };
 
-                // Keep WalkHere on MoveTo. Movement has its own server-authoritative
-                // snapshot loop and reconciliation behavior.
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
                 }
@@ -463,10 +571,7 @@ pub fn send_walk_intents_to_server_runtime(
                     warn!("game net chopdown target dropped; websocket is not ready");
                 }
             }
-            Verb::TalkTo | Verb::Examine => {
-                // These stay local-only for now. They will route through the same
-                // interaction path once the server owns NPCs/examine data.
-            }
+            Verb::TalkTo | Verb::Examine => {}
         }
     }
 }

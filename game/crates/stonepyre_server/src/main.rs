@@ -5,7 +5,7 @@ mod state;
 mod game;
 
 use axum::Router;
-use sqlx::{Connection, Row};
+use sqlx::{Connection, PgPool, Row};
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{info, warn};
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
             tick_hz, snapshot_hz
         );
 
-        start_game_loops(game.clone(), tick_hz, snapshot_hz);
+        start_game_loops(game.clone(), pool.clone(), tick_hz, snapshot_hz);
     } else {
         warn!("game sim lock NOT acquired; another process is running the game loop. server will NOT tick the game.");
     }
@@ -107,9 +107,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
+fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_hz: u32) {
     tokio::spawn({
         let game = game.clone();
+        let db = db.clone();
         async move {
             let dt = std::time::Duration::from_millis((1000 / tick_hz.max(1)) as u64);
             let mut interval = tokio::time::interval(dt);
@@ -122,7 +123,73 @@ fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
                 };
 
                 for event in events {
-                    game.hub.broadcast(event);
+                    match event {
+                        game::sim::GameSimEvent::Server(msg) => {
+                            game.hub.broadcast(msg);
+                        }
+                        game::sim::GameSimEvent::InventoryGrant(grant) => {
+                            match game::sim::inventory::grant_character_item(
+                                &db,
+                                grant.character_id,
+                                &grant.item_id,
+                                grant.quantity,
+                            )
+                            .await
+                            {
+                                Ok(result) => {
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::HarvestResult(
+                                        crate::game::protocol::HarvestResult {
+                                            player_id: grant.player_id,
+                                            character_id: grant.character_id,
+                                            action: grant.action,
+                                            target: grant.target.clone(),
+                                            node_id: grant.node_id.clone(),
+                                            display_name: grant.display_name.clone(),
+                                            success: true,
+                                            item_id: Some(result.item_id.clone()),
+                                            quantity: result.quantity,
+                                            inventory_quantity: Some(result.new_quantity),
+                                            charges_remaining: grant.charges_remaining,
+                                        },
+                                    ));
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::InventoryDelta(
+                                        crate::game::protocol::InventoryDelta {
+                                            character_id: result.character_id,
+                                            item_id: result.item_id.clone(),
+                                            quantity_delta: i64::from(result.quantity),
+                                            new_quantity: result.new_quantity,
+                                        },
+                                    ));
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "persistent inventory grant failed character_id={} item_id={} quantity={} error={:?}",
+                                        grant.character_id,
+                                        grant.item_id,
+                                        grant.quantity,
+                                        e
+                                    );
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::HarvestResult(
+                                        crate::game::protocol::HarvestResult {
+                                            player_id: grant.player_id,
+                                            character_id: grant.character_id,
+                                            action: grant.action,
+                                            target: grant.target,
+                                            node_id: grant.node_id,
+                                            display_name: grant.display_name,
+                                            success: true,
+                                            item_id: Some(grant.item_id),
+                                            quantity: grant.quantity,
+                                            inventory_quantity: None,
+                                            charges_remaining: grant.charges_remaining,
+                                        },
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
