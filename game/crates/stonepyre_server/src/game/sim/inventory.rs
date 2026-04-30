@@ -1,57 +1,64 @@
-use std::collections::HashMap;
-
+use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Server-owned inventory state for the live runtime.
+/// Server-owned inventory grant produced by the live game simulation.
 ///
-/// v0 is intentionally in-memory and keyed by character_id so the shape can move
-/// to database persistence later without changing the gameplay authority model.
-#[derive(Default)]
-pub struct InventoryStore {
-    by_character: HashMap<Uuid, Inventory>,
-}
-
-impl InventoryStore {
-    pub fn ensure_character(&mut self, character_id: Uuid) {
-        self.by_character.entry(character_id).or_default();
-    }
-
-    pub fn add_item(
-        &mut self,
-        character_id: Uuid,
-        item_id: impl Into<String>,
-        quantity: u32,
-    ) -> InventoryGrant {
-        let item_id = item_id.into();
-        let inventory = self.by_character.entry(character_id).or_default();
-        let new_quantity = inventory.add_item(item_id.clone(), quantity);
-
-        InventoryGrant {
-            character_id,
-            item_id,
-            quantity,
-            new_quantity,
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Inventory {
-    stacks: HashMap<String, u32>,
-}
-
-impl Inventory {
-    fn add_item(&mut self, item_id: String, quantity: u32) -> u32 {
-        let entry = self.stacks.entry(item_id).or_insert(0);
-        *entry = entry.saturating_add(quantity);
-        *entry
-    }
-}
-
+/// Persistence is handled outside the simulation tick so the game loop can keep
+/// world/action state in memory while item ownership is written to Postgres.
 #[derive(Clone, Debug)]
-pub struct InventoryGrant {
+pub struct InventoryGrantRequest {
+    pub player_id: Uuid,
     pub character_id: Uuid,
     pub item_id: String,
     pub quantity: u32,
-    pub new_quantity: u32,
+    pub action: crate::game::protocol::InteractionAction,
+    pub target: crate::game::protocol::InteractionTarget,
+    pub display_name: String,
+    pub node_id: String,
+    pub charges_remaining: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct InventoryGrantResult {
+    pub character_id: Uuid,
+    pub item_id: String,
+    pub quantity: u32,
+    pub new_quantity: i64,
+}
+
+/// Persist an item grant for a character and return the authoritative stack count.
+///
+/// This uses an atomic upsert so repeated successful harvest rolls cannot lose
+/// quantity updates when they land close together.
+pub async fn grant_character_item(
+    pool: &PgPool,
+    character_id: Uuid,
+    item_id: &str,
+    quantity: u32,
+) -> Result<InventoryGrantResult, sqlx::Error> {
+    let quantity_i64 = i64::from(quantity);
+
+    let new_quantity: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO game.character_inventory (character_id, item_id, quantity)
+        VALUES ($1::uuid, $2::text, $3::bigint)
+        ON CONFLICT (character_id, item_id)
+        DO UPDATE SET
+            quantity = game.character_inventory.quantity + EXCLUDED.quantity,
+            updated_at = now()
+        RETURNING quantity
+        "#,
+    )
+    .bind(character_id)
+    .bind(item_id)
+    .bind(quantity_i64)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(InventoryGrantResult {
+        character_id,
+        item_id: item_id.to_string(),
+        quantity,
+        new_quantity,
+    })
 }

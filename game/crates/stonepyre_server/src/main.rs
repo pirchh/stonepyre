@@ -5,7 +5,7 @@ mod state;
 mod game;
 
 use axum::Router;
-use sqlx::{Connection, Row};
+use sqlx::{Connection, PgPool, Row};
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{info, warn};
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
             tick_hz, snapshot_hz
         );
 
-        start_game_loops(game.clone(), tick_hz, snapshot_hz);
+        start_game_loops(game.clone(), pool.clone(), tick_hz, snapshot_hz);
     } else {
         warn!("game sim lock NOT acquired; another process is running the game loop. server will NOT tick the game.");
     }
@@ -107,9 +107,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
+fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_hz: u32) {
     tokio::spawn({
         let game = game.clone();
+        let db = db.clone();
         async move {
             let dt = std::time::Duration::from_millis((1000 / tick_hz.max(1)) as u64);
             let mut interval = tokio::time::interval(dt);
@@ -122,7 +123,64 @@ fn start_game_loops(game: game::GameRuntime, tick_hz: u32, snapshot_hz: u32) {
                 };
 
                 for event in events {
-                    game.hub.broadcast(event);
+                    match event {
+                        game::sim::GameSimEvent::Server(msg) => {
+                            game.hub.broadcast(msg);
+                        }
+                        game::sim::GameSimEvent::InventoryGrant(grant) => {
+                            match game::sim::inventory::grant_character_item(
+                                &db,
+                                grant.character_id,
+                                &grant.item_id,
+                                grant.quantity,
+                            )
+                            .await
+                            {
+                                Ok(result) => {
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::ActionState {
+                                        player_id: grant.player_id,
+                                        action: grant.action,
+                                        target: grant.target,
+                                        state: crate::game::protocol::ActionState::Active,
+                                        message: format!(
+                                            "Harvest success on {} ({}); received {} {}; inventory {}={}; charges_remaining={}",
+                                            grant.display_name,
+                                            grant.node_id,
+                                            result.quantity,
+                                            result.item_id,
+                                            result.item_id,
+                                            result.new_quantity,
+                                            grant.charges_remaining
+                                        ),
+                                    });
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "persistent inventory grant failed character_id={} item_id={} quantity={} error={:?}",
+                                        grant.character_id,
+                                        grant.item_id,
+                                        grant.quantity,
+                                        e
+                                    );
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::ActionState {
+                                        player_id: grant.player_id,
+                                        action: grant.action,
+                                        target: grant.target,
+                                        state: crate::game::protocol::ActionState::Active,
+                                        message: format!(
+                                            "Harvest success on {} ({}); inventory grant failed for {} x{}; charges_remaining={}",
+                                            grant.display_name,
+                                            grant.node_id,
+                                            grant.item_id,
+                                            grant.quantity,
+                                            grant.charges_remaining
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

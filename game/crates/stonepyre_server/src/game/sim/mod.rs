@@ -3,7 +3,7 @@ pub mod inventory;
 pub mod world;
 
 use self::harvest::HarvestSkill;
-use self::inventory::{InventoryGrant, InventoryStore};
+use self::inventory::InventoryGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
     ActionState,
@@ -20,12 +20,23 @@ const MAX_BFS_ITERS: usize = 50_000;
 const REPATH_COOLDOWN_TICKS: u64 = 3;
 const HARVEST_ROLL_SECS: f32 = 1.25;
 
+#[derive(Clone, Debug)]
+pub enum GameSimEvent {
+    Server(ServerMsg),
+    InventoryGrant(InventoryGrantRequest),
+}
+
+impl From<ServerMsg> for GameSimEvent {
+    fn from(value: ServerMsg) -> Self {
+        Self::Server(value)
+    }
+}
+
 pub struct GameSim {
     pub tick: u64,
     pub world: WorldState,
     tiles_per_tick: f32,
     harvest_roll_ticks: u64,
-    inventories: InventoryStore,
 }
 
 impl GameSim {
@@ -38,14 +49,11 @@ impl GameSim {
             world: WorldState::new(),
             tiles_per_tick: SERVER_MOVE_TILES_PER_SEC / tick_hz,
             harvest_roll_ticks,
-            inventories: InventoryStore::default(),
         }
     }
 
     pub fn add_player(&mut self, player_id: Uuid, character_id: Uuid) {
         let spawn = TilePos::new(0, 0);
-        self.inventories.ensure_character(character_id);
-
         self.world.players.insert(
             player_id,
             PlayerState {
@@ -184,7 +192,7 @@ impl GameSim {
     }
 
     /// Advance server simulation and return lifecycle/events produced this tick.
-    pub fn step(&mut self) -> Vec<ServerMsg> {
+    pub fn step(&mut self) -> Vec<GameSimEvent> {
         self.tick += 1;
         let mut events = Vec::new();
 
@@ -286,7 +294,7 @@ impl GameSim {
         })
     }
 
-    fn tick_active_harvest_actions(&mut self, events: &mut Vec<ServerMsg>) {
+    fn tick_active_harvest_actions(&mut self, events: &mut Vec<GameSimEvent>) {
         let ready_players: Vec<Uuid> = self
             .world
             .players
@@ -317,7 +325,7 @@ impl GameSim {
                     ActionState::Cancelled,
                     "harvest cancelled because player moved out of range",
                 ) {
-                    events.push(cancelled);
+                    events.push(cancelled.into());
                 }
                 continue;
             }
@@ -327,18 +335,28 @@ impl GameSim {
 
             match result {
                 Ok(outcome) => {
-                    let grant = outcome.loot_preview.as_ref().map(|loot| {
-                        self.inventories
-                            .add_item(character_id, loot.item_id, loot.quantity)
-                    });
-                    let message = harvest_result_message(&outcome, grant.as_ref());
-                    events.push(ServerMsg::ActionState {
-                        player_id,
-                        action: InteractionAction::ChopDown,
-                        target: InteractionTarget::Tile(target),
-                        state: ActionState::Active,
-                        message,
-                    });
+                    if let Some(loot) = outcome.loot_preview.as_ref() {
+                        events.push(GameSimEvent::InventoryGrant(InventoryGrantRequest {
+                            player_id,
+                            character_id,
+                            item_id: loot.item_id.to_string(),
+                            quantity: loot.quantity,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            display_name: outcome.display_name.to_string(),
+                            node_id: outcome.node_id.to_string(),
+                            charges_remaining: outcome.charges_remaining,
+                        }));
+                    } else {
+                        let message = harvest_result_message(&outcome);
+                        events.push(ServerMsg::ActionState {
+                            player_id,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            state: ActionState::Active,
+                            message,
+                        }.into());
+                    }
 
                     if outcome.depleted {
                         if let Some(p) = self.world.players.get_mut(&player_id) {
@@ -354,7 +372,7 @@ impl GameSim {
                                 "{} depleted at {},{}",
                                 outcome.display_name, target.x, target.y
                             ),
-                        });
+                        }.into());
                     } else if let Some(p) = self.world.players.get_mut(&player_id) {
                         if let Some(action) = p.action.as_mut() {
                             action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
@@ -372,7 +390,7 @@ impl GameSim {
                         target: InteractionTarget::Tile(target),
                         state: ActionState::Complete,
                         message,
-                    });
+                    }.into());
                 }
             }
         }
@@ -383,7 +401,7 @@ fn maybe_activate_action(
     p: &mut PlayerState,
     current_tick: u64,
     harvest_roll_ticks: u64,
-    events: &mut Vec<ServerMsg>,
+    events: &mut Vec<GameSimEvent>,
 ) {
     let Some(action) = p.action.as_mut() else { return; };
     if action.state != ActionState::MovingToRange && action.state != ActionState::Queued {
@@ -401,7 +419,7 @@ fn maybe_activate_action(
                     target: action.target.clone(),
                     state: ActionState::Active,
                     message: format!("{:?} active at {},{}", action.action, target.x, target.y),
-                });
+                }.into());
             }
         }
     }
@@ -409,26 +427,12 @@ fn maybe_activate_action(
 
 fn harvest_result_message(
     outcome: &self::harvest::HarvestRollOutcome,
-    grant: Option<&InventoryGrant>,
 ) -> String {
     if outcome.success {
-        if let Some(grant) = grant {
-            format!(
-                "Harvest success on {} ({}); received {} {}; inventory {}={}; charges_remaining={}",
-                outcome.display_name,
-                outcome.node_id,
-                grant.quantity,
-                grant.item_id,
-                grant.item_id,
-                grant.new_quantity,
-                outcome.charges_remaining
-            )
-        } else {
-            format!(
-                "Harvest success on {} ({}); no loot granted; charges_remaining={}",
-                outcome.display_name, outcome.node_id, outcome.charges_remaining
-            )
-        }
+        format!(
+            "Harvest success on {} ({}); no loot granted; charges_remaining={}",
+            outcome.display_name, outcome.node_id, outcome.charges_remaining
+        )
     } else {
         format!(
             "Harvest failed on {} ({}); charges_remaining={}",
