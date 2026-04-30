@@ -37,10 +37,12 @@ pub struct GameSim {
     pub world: WorldState,
     tiles_per_tick: f32,
     harvest_roll_ticks: u64,
+    ticks_per_second: u64,
 }
 
 impl GameSim {
     pub fn new(tick_hz: u32) -> Self {
+        let ticks_per_second = u64::from(tick_hz.max(1));
         let tick_hz = tick_hz.max(1) as f32;
         let harvest_roll_ticks = (tick_hz * HARVEST_ROLL_SECS).round().max(1.0) as u64;
 
@@ -49,6 +51,7 @@ impl GameSim {
             world: WorldState::new(),
             tiles_per_tick: SERVER_MOVE_TILES_PER_SEC / tick_hz,
             harvest_roll_ticks,
+            ticks_per_second,
         }
     }
 
@@ -196,6 +199,19 @@ impl GameSim {
         self.tick += 1;
         let mut events = Vec::new();
 
+        for node in self.world.harvest.tick_respawns(self.tick) {
+            events.push(ServerMsg::ActionState {
+                player_id: Uuid::nil(),
+                action: InteractionAction::ChopDown,
+                target: InteractionTarget::Tile(node.tile),
+                state: ActionState::Complete,
+                message: format!(
+                    "{} restored at {},{}; charges_remaining={}",
+                    node.display_name, node.tile.x, node.tile.y, node.charges_remaining
+                ),
+            }.into());
+        }
+
         let blocked_snapshot = self.world.blocked.clone();
 
         for p in self.world.players.values_mut() {
@@ -265,6 +281,7 @@ impl GameSim {
     pub fn snapshot(&self) -> WorldSnapshot {
         WorldSnapshot {
             server_tick: self.tick,
+            harvest_nodes: self.world.harvest.snapshots(),
             players: self
                 .world
                 .players
@@ -331,7 +348,7 @@ impl GameSim {
             }
 
             let roll = rand::random::<f32>();
-            let result = self.world.harvest.roll_harvest(target, roll, self.tick);
+            let result = self.world.harvest.roll_harvest(target, roll, self.tick, self.ticks_per_second);
 
             match result {
                 Ok(outcome) => {

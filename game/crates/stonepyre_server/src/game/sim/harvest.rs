@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use stonepyre_world::TilePos;
 
+use crate::game::protocol::HarvestNodeSnapshot;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
     Woodcutting,
@@ -142,21 +144,87 @@ impl HarvestCatalog {
         self.node_instances_by_tile.keys().copied()
     }
 
+    pub fn snapshots(&self) -> Vec<HarvestNodeSnapshot> {
+        self.node_instances_by_tile
+            .values()
+            .filter_map(|node| self.snapshot_for_node(node))
+            .collect()
+    }
+
+    pub fn snapshot_at(&self, tile: TilePos) -> Option<HarvestNodeSnapshot> {
+        let node = self.node_instances_by_tile.get(&tile)?;
+        self.snapshot_for_node(node)
+    }
+
+    fn snapshot_for_node(&self, node: &HarvestNodeInstance) -> Option<HarvestNodeSnapshot> {
+        let def = self.node_defs.get(node.def_id)?;
+        Some(HarvestNodeSnapshot {
+            node_id: node.node_id.to_string(),
+            node_def_id: node.def_id.to_string(),
+            display_name: def.display_name.to_string(),
+            tile: node.tile,
+            charges_remaining: node.charges_remaining,
+            max_charges: def.charges,
+            depleted: node.charges_remaining == 0 || node.depleted_until_tick.is_some(),
+            depleted_until_tick: node.depleted_until_tick,
+        })
+    }
+
+    pub fn tick_respawns(&mut self, current_tick: u64) -> Vec<HarvestNodeSnapshot> {
+        let mut restored = Vec::new();
+
+        for node in self.node_instances_by_tile.values_mut() {
+            let Some(depleted_until_tick) = node.depleted_until_tick else {
+                continue;
+            };
+
+            if current_tick < depleted_until_tick {
+                continue;
+            }
+
+            let Some(def) = self.node_defs.get(node.def_id) else {
+                continue;
+            };
+
+            node.charges_remaining = def.charges;
+            node.depleted_until_tick = None;
+
+            restored.push(HarvestNodeSnapshot {
+                node_id: node.node_id.to_string(),
+                node_def_id: node.def_id.to_string(),
+                display_name: def.display_name.to_string(),
+                tile: node.tile,
+                charges_remaining: node.charges_remaining,
+                max_charges: def.charges,
+                depleted: false,
+                depleted_until_tick: None,
+            });
+        }
+
+        restored
+    }
+
     pub fn roll_harvest(
         &mut self,
         tile: TilePos,
         roll: f32,
         current_tick: u64,
+        ticks_per_second: u64,
     ) -> Result<HarvestRollOutcome, String> {
-        let (node_id, def_id, charges_remaining) = {
+        let (node_id, def_id, charges_remaining, depleted_until_tick) = {
             let Some(node) = self.node_instances_by_tile.get(&tile) else {
                 return Err("target is not a harvest node".to_string());
             };
 
-            (node.node_id, node.def_id, node.charges_remaining)
+            (
+                node.node_id,
+                node.def_id,
+                node.charges_remaining,
+                node.depleted_until_tick,
+            )
         };
 
-        if charges_remaining == 0 {
+        if charges_remaining == 0 || depleted_until_tick.is_some() {
             return Err("harvest node is depleted".to_string());
         }
 
@@ -187,7 +255,8 @@ impl HarvestCatalog {
         if success {
             node.charges_remaining = node.charges_remaining.saturating_sub(1);
             if node.charges_remaining == 0 {
-                node.depleted_until_tick = Some(current_tick + u64::from(def.respawn_secs));
+                let respawn_ticks = u64::from(def.respawn_secs) * ticks_per_second.max(1);
+                node.depleted_until_tick = Some(current_tick + respawn_ticks);
             }
         }
 

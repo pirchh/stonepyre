@@ -59,6 +59,7 @@ pub enum ServerMsg {
 pub struct WorldSnapshot {
     pub server_tick: u64,
     pub players: Vec<PlayerSnapshot>,
+    pub harvest_nodes: Vec<HarvestNodeSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +88,18 @@ pub struct PlayerActionSnapshot {
     pub action: InteractionAction,
     pub target: InteractionTarget,
     pub state: ActionState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarvestNodeSnapshot {
+    pub node_id: String,
+    pub node_def_id: String,
+    pub display_name: String,
+    pub tile: TilePos,
+    pub charges_remaining: u32,
+    pub max_charges: u32,
+    pub depleted: bool,
+    pub depleted_until_tick: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
