@@ -253,6 +253,12 @@ fn run_game_ws(
                             message,
                         });
                     }
+                    Ok(ServerMsg::HarvestResult(result)) => {
+                        let _ = tx.send(GameNetEvent::HarvestResult(result));
+                    }
+                    Ok(ServerMsg::HarvestNodeEvent(event)) => {
+                        let _ = tx.send(GameNetEvent::HarvestNodeEvent(event));
+                    }
                     Ok(ServerMsg::InventorySnapshot(snapshot)) => {
                         let _ = tx.send(GameNetEvent::InventorySnapshot(snapshot));
                     }
@@ -414,6 +420,61 @@ pub fn pump_game_net_results(
                             status.action_marker_target = None;
                         }
                     }
+                }
+            }
+            GameNetEvent::HarvestResult(result) => {
+                match result.item_id.as_ref() {
+                    Some(item_id) => info!(
+                        "game net harvest result success={} node={} item={} quantity={} inventory_quantity={:?} charges_remaining={}",
+                        result.success,
+                        result.node_id,
+                        item_id,
+                        result.quantity,
+                        result.inventory_quantity,
+                        result.charges_remaining
+                    ),
+                    None => info!(
+                        "game net harvest result success={} node={} charges_remaining={}",
+                        result.success,
+                        result.node_id,
+                        result.charges_remaining
+                    ),
+                }
+            }
+            GameNetEvent::HarvestNodeEvent(event) => {
+                info!(
+                    "game net harvest node event kind={:?} node={} tile={},{} charges_remaining={}",
+                    event.kind,
+                    event.node_id,
+                    event.tile.x,
+                    event.tile.y,
+                    event.charges_remaining
+                );
+
+                let depleted = matches!(
+                    event.kind,
+                    super::protocol::HarvestNodeEventKind::Depleted
+                );
+
+                let snapshot = super::protocol::HarvestNodeSnapshot {
+                    node_id: event.node_id.clone(),
+                    node_def_id: event.node_def_id.clone(),
+                    display_name: event.display_name.clone(),
+                    tile: event.tile,
+                    charges_remaining: event.charges_remaining,
+                    max_charges: event.max_charges,
+                    depleted,
+                    depleted_until_tick: event.depleted_until_tick,
+                };
+
+                if let Some(existing) = status
+                    .harvest_nodes
+                    .iter_mut()
+                    .find(|node| node.node_id == event.node_id)
+                {
+                    *existing = snapshot;
+                } else {
+                    status.harvest_nodes.push(snapshot);
                 }
             }
             GameNetEvent::InventorySnapshot(snapshot) => {

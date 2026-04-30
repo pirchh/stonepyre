@@ -6,12 +6,8 @@ use self::harvest::HarvestSkill;
 use self::inventory::InventoryGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
-    ActionState,
-    InteractionAction,
-    InteractionTarget,
-    PlayerSnapshot,
-    ServerMsg,
-    WorldSnapshot,
+    ActionState, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot, HarvestResult,
+    InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, WorldSnapshot,
 };
 use stonepyre_world::TilePos;
 use uuid::Uuid;
@@ -200,16 +196,10 @@ impl GameSim {
         let mut events = Vec::new();
 
         for node in self.world.harvest.tick_respawns(self.tick) {
-            events.push(ServerMsg::ActionState {
-                player_id: Uuid::nil(),
-                action: InteractionAction::ChopDown,
-                target: InteractionTarget::Tile(node.tile),
-                state: ActionState::Complete,
-                message: format!(
-                    "{} restored at {},{}; charges_remaining={}",
-                    node.display_name, node.tile.x, node.tile.y, node.charges_remaining
-                ),
-            }.into());
+            events.push(ServerMsg::HarvestNodeEvent(node_event_from_snapshot(
+                HarvestNodeEventKind::Restored,
+                node,
+            )).into());
         }
 
         let blocked_snapshot = self.world.blocked.clone();
@@ -365,14 +355,19 @@ impl GameSim {
                             charges_remaining: outcome.charges_remaining,
                         }));
                     } else {
-                        let message = harvest_result_message(&outcome);
-                        events.push(ServerMsg::ActionState {
+                        events.push(ServerMsg::HarvestResult(HarvestResult {
                             player_id,
+                            character_id,
                             action: InteractionAction::ChopDown,
                             target: InteractionTarget::Tile(target),
-                            state: ActionState::Active,
-                            message,
-                        }.into());
+                            node_id: outcome.node_id.to_string(),
+                            display_name: outcome.display_name.to_string(),
+                            success: outcome.success,
+                            item_id: None,
+                            quantity: 0,
+                            inventory_quantity: None,
+                            charges_remaining: outcome.charges_remaining,
+                        }).into());
                     }
 
                     if outcome.depleted {
@@ -390,6 +385,17 @@ impl GameSim {
                                 outcome.display_name, target.x, target.y
                             ),
                         }.into());
+
+                        events.push(ServerMsg::HarvestNodeEvent(HarvestNodeEvent {
+                            kind: HarvestNodeEventKind::Depleted,
+                            node_id: outcome.node_id.to_string(),
+                            node_def_id: outcome.def_id.to_string(),
+                            display_name: outcome.display_name.to_string(),
+                            tile: target,
+                            charges_remaining: outcome.charges_remaining,
+                            max_charges: outcome.max_charges,
+                            depleted_until_tick: outcome.depleted_until_tick,
+                        }).into());
                     } else if let Some(p) = self.world.players.get_mut(&player_id) {
                         if let Some(action) = p.action.as_mut() {
                             action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
@@ -442,19 +448,16 @@ fn maybe_activate_action(
     }
 }
 
-fn harvest_result_message(
-    outcome: &self::harvest::HarvestRollOutcome,
-) -> String {
-    if outcome.success {
-        format!(
-            "Harvest success on {} ({}); no loot granted; charges_remaining={}",
-            outcome.display_name, outcome.node_id, outcome.charges_remaining
-        )
-    } else {
-        format!(
-            "Harvest failed on {} ({}); charges_remaining={}",
-            outcome.display_name, outcome.node_id, outcome.charges_remaining
-        )
+fn node_event_from_snapshot(kind: HarvestNodeEventKind, node: HarvestNodeSnapshot) -> HarvestNodeEvent {
+    HarvestNodeEvent {
+        kind,
+        node_id: node.node_id,
+        node_def_id: node.node_def_id,
+        display_name: node.display_name,
+        tile: node.tile,
+        charges_remaining: node.charges_remaining,
+        max_charges: node.max_charges,
+        depleted_until_tick: node.depleted_until_tick,
     }
 }
 

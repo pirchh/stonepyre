@@ -58,6 +58,8 @@ pub struct HarvestRollOutcome {
     pub success: bool,
     pub depleted: bool,
     pub charges_remaining: u32,
+    pub max_charges: u32,
+    pub depleted_until_tick: Option<u64>,
     pub loot_preview: Option<HarvestLootPreview>,
 }
 
@@ -267,6 +269,8 @@ impl HarvestCatalog {
             success,
             depleted: node.charges_remaining == 0,
             charges_remaining: node.charges_remaining,
+            max_charges: def.charges,
+            depleted_until_tick: node.depleted_until_tick,
             loot_preview,
         })
     }

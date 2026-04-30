@@ -137,22 +137,21 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             .await
                             {
                                 Ok(result) => {
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::ActionState {
-                                        player_id: grant.player_id,
-                                        action: grant.action,
-                                        target: grant.target,
-                                        state: crate::game::protocol::ActionState::Active,
-                                        message: format!(
-                                            "Harvest success on {} ({}); received {} {}; inventory {}={}; charges_remaining={}",
-                                            grant.display_name,
-                                            grant.node_id,
-                                            result.quantity,
-                                            result.item_id,
-                                            result.item_id,
-                                            result.new_quantity,
-                                            grant.charges_remaining
-                                        ),
-                                    });
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::HarvestResult(
+                                        crate::game::protocol::HarvestResult {
+                                            player_id: grant.player_id,
+                                            character_id: grant.character_id,
+                                            action: grant.action,
+                                            target: grant.target.clone(),
+                                            node_id: grant.node_id.clone(),
+                                            display_name: grant.display_name.clone(),
+                                            success: true,
+                                            item_id: Some(result.item_id.clone()),
+                                            quantity: result.quantity,
+                                            inventory_quantity: Some(result.new_quantity),
+                                            charges_remaining: grant.charges_remaining,
+                                        },
+                                    ));
 
                                     game.hub.broadcast(crate::game::protocol::ServerMsg::InventoryDelta(
                                         crate::game::protocol::InventoryDelta {
@@ -172,20 +171,21 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         e
                                     );
 
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::ActionState {
-                                        player_id: grant.player_id,
-                                        action: grant.action,
-                                        target: grant.target,
-                                        state: crate::game::protocol::ActionState::Active,
-                                        message: format!(
-                                            "Harvest success on {} ({}); inventory grant failed for {} x{}; charges_remaining={}",
-                                            grant.display_name,
-                                            grant.node_id,
-                                            grant.item_id,
-                                            grant.quantity,
-                                            grant.charges_remaining
-                                        ),
-                                    });
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::HarvestResult(
+                                        crate::game::protocol::HarvestResult {
+                                            player_id: grant.player_id,
+                                            character_id: grant.character_id,
+                                            action: grant.action,
+                                            target: grant.target,
+                                            node_id: grant.node_id,
+                                            display_name: grant.display_name,
+                                            success: true,
+                                            item_id: Some(grant.item_id),
+                                            quantity: grant.quantity,
+                                            inventory_quantity: None,
+                                            charges_remaining: grant.charges_remaining,
+                                        },
+                                    ));
                                 }
                             }
                         }

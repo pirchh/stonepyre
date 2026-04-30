@@ -1,7 +1,10 @@
 pub(super) use stonepyre_protocol::{
     ActionState,
     ClientMsg,
+    HarvestNodeEvent,
+    HarvestNodeEventKind,
     HarvestNodeSnapshot,
+    HarvestResult,
     InteractionAction,
     InteractionTarget,
     InventoryDelta,

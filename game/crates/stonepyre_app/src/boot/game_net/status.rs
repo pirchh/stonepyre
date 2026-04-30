@@ -9,7 +9,9 @@ use stonepyre_world::TilePos;
 
 use super::protocol::{
     ActionState,
+    HarvestNodeEvent,
     HarvestNodeSnapshot,
+    HarvestResult,
     InteractionAction,
     InteractionTarget,
     InventoryDelta,
@@ -52,6 +54,8 @@ pub enum GameNetEvent {
         state: ActionState,
         message: String,
     },
+    HarvestResult(HarvestResult),
+    HarvestNodeEvent(HarvestNodeEvent),
     InventorySnapshot(InventorySnapshot),
     InventoryDelta(InventoryDelta),
     Error(String),
