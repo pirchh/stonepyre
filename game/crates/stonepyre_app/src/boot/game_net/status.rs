@@ -9,6 +9,7 @@ use stonepyre_world::TilePos;
 
 use super::protocol::{
     ActionState,
+    HarvestNodeSnapshot,
     InteractionAction,
     InteractionTarget,
     InventoryDelta,
@@ -30,6 +31,7 @@ pub enum GameNetEvent {
     Snapshot {
         server_tick: u64,
         players: Vec<NetPlayerSnapshot>,
+        harvest_nodes: Vec<HarvestNodeSnapshot>,
         server_tile: Option<TilePos>,
         server_next_tile: Option<TilePos>,
         server_goal: Option<TilePos>,
@@ -75,6 +77,7 @@ pub struct GameNetStatus {
     pub server_tick: Option<u64>,
     pub snapshot_players: usize,
     pub latest_players: Vec<NetPlayerSnapshot>,
+    pub harvest_nodes: Vec<HarvestNodeSnapshot>,
     pub server_tile: Option<TilePos>,
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
@@ -102,6 +105,7 @@ impl Default for GameNetStatus {
             server_tick: None,
             snapshot_players: 0,
             latest_players: Vec::new(),
+            harvest_nodes: Vec::new(),
             server_tile: None,
             server_next_tile: None,
             server_goal: None,

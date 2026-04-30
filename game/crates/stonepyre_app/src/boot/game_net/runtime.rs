@@ -38,6 +38,7 @@ pub fn spawn_game_ws(
     status.server_tick = None;
     status.snapshot_players = 0;
     status.latest_players.clear();
+    status.harvest_nodes.clear();
     status.server_tile = None;
     status.server_next_tile = None;
     status.server_goal = None;
@@ -216,6 +217,7 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::Snapshot {
                             server_tick: snap.server_tick,
                             players,
+                            harvest_nodes: snap.harvest_nodes,
                             server_tile,
                             server_next_tile,
                             server_goal,
@@ -330,6 +332,7 @@ pub fn pump_game_net_results(
             GameNetEvent::Snapshot {
                 server_tick,
                 players,
+                harvest_nodes,
                 server_tile,
                 server_next_tile,
                 server_goal,
@@ -339,6 +342,7 @@ pub fn pump_game_net_results(
                 status.server_tick = Some(server_tick);
                 status.snapshot_players = players.len();
                 status.latest_players = players;
+                status.harvest_nodes = harvest_nodes;
                 status.server_moving = server_moving;
                 status.server_next_tile = server_next_tile;
                 status.server_goal = server_goal;
@@ -347,9 +351,10 @@ pub fn pump_game_net_results(
                     status.server_tile = Some(tile);
                 }
                 debug!(
-                    "game net snapshot tick={} players={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
+                    "game net snapshot tick={} players={} harvest_nodes={} server_tile={:?} next_tile={:?} goal={:?} moving={}",
                     server_tick,
                     status.snapshot_players,
+                    status.harvest_nodes.len(),
                     status.server_tile,
                     status.server_next_tile,
                     status.server_goal,
@@ -460,6 +465,7 @@ pub fn pump_game_net_results(
                 status.connected = false;
                 status.connecting = false;
                 status.latest_players.clear();
+                status.harvest_nodes.clear();
                 status.server_next_tile = None;
                 status.server_goal = None;
                 status.server_moving = false;
