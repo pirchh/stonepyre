@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use stonepyre_world::{neighbors_4, TilePos};
 use uuid::Uuid;
 
+use super::harvest::{HarvestCatalog, HarvestNodeDef, HarvestSkill};
 use crate::game::protocol::{ActionState, InteractionAction, InteractionTarget, PlayerActionSnapshot};
 
 /// Server-side movement speed in tiles/sec.
@@ -15,21 +16,25 @@ pub const SERVER_MOVE_TILES_PER_SEC: f32 = 1.6;
 pub struct WorldState {
     pub players: HashMap<Uuid, PlayerState>,
     pub blocked: HashSet<TilePos>,
+    pub harvest: HarvestCatalog,
 }
 
 impl WorldState {
     pub fn new() -> Self {
+        let harvest = HarvestCatalog::demo();
         let mut blocked = HashSet::new();
 
-        // Match the current client demo world blockers:
-        // - demo tree at (2, 0)
-        // - demo NPC at (-2, 1)
-        blocked.insert(TilePos::new(2, 0));
+        // Harvest nodes are physical world objects, so their tiles are blocked.
+        // v0 keeps these in memory; later this can come from loaded world/object data.
+        blocked.extend(harvest.blocking_tiles());
+
+        // Match the current client demo NPC blocker until world data becomes shared/loaded.
         blocked.insert(TilePos::new(-2, 1));
 
         Self {
             players: HashMap::new(),
             blocked,
+            harvest,
         }
     }
 
@@ -39,9 +44,21 @@ impl WorldState {
     }
 
     #[inline]
+    pub fn harvest_node_def_at(&self, t: TilePos) -> Option<&HarvestNodeDef> {
+        self.harvest.node_def_at(t)
+    }
+
+    #[inline]
     pub fn is_choppable_tree(&self, t: TilePos) -> bool {
-        // v0 server-owned action target: keep this aligned with the demo tree.
-        t == TilePos::new(2, 0)
+        self.harvest_node_def_at(t)
+            .map(|def| def.skill == HarvestSkill::Woodcutting)
+            .unwrap_or(false)
+            && self.world_harvest_node_ready(t)
+    }
+
+    #[inline]
+    fn world_harvest_node_ready(&self, t: TilePos) -> bool {
+        self.harvest.can_harvest_at(t)
     }
 
     pub fn pick_best_adjacent_unblocked(
@@ -150,6 +167,7 @@ pub struct ServerAction {
     pub action: InteractionAction,
     pub target: InteractionTarget,
     pub state: ActionState,
+    pub next_harvest_tick: Option<u64>,
 }
 
 impl ServerAction {

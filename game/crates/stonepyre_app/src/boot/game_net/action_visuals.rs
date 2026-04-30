@@ -64,8 +64,8 @@ pub fn play_server_authoritative_action_visuals(
     if requested_anim.is_none() {
         commands.entity(player_ent).insert(RequestedAnim {
             clip: AnimClip::Woodcutting,
-            mode: RequestedAnimMode::OneShot {
-                timer: Timer::from_seconds(CHOP_VISUAL_SECS, TimerMode::Once),
+            mode: RequestedAnimMode::Loop {
+                timer: Timer::from_seconds(CHOP_VISUAL_SECS, TimerMode::Repeating),
             },
         });
     }
