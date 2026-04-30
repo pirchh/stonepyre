@@ -1,4 +1,5 @@
 mod action_visuals;
+mod inventory_sync;
 mod overlay;
 mod protocol;
 mod reconciliation;
@@ -8,6 +9,7 @@ mod status;
 mod target_marker;
 
 pub use action_visuals::play_server_authoritative_action_visuals;
+pub use inventory_sync::sync_inventory_from_server;
 pub use overlay::{
     despawn_game_net_overlay,
     spawn_game_net_overlay,

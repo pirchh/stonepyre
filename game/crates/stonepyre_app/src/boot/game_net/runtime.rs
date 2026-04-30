@@ -43,6 +43,8 @@ pub fn spawn_game_ws(
     status.server_goal = None;
     status.server_moving = false;
     status.server_action = None;
+    status.inventory_items.clear();
+    status.inventory_dirty = true;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -105,8 +107,6 @@ fn run_game_ws(
     let (mut socket, _response) = connect(request)
         .map_err(|e| format!("game ws connect failed: {e}"))?;
 
-    // Keep the websocket responsive to client commands while we wait for server messages.
-    // tungstenite wraps the TcpStream in MaybeTlsStream; in local/dev ws:// mode this is Plain.
     if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
         if let Err(e) = stream.set_read_timeout(Some(std::time::Duration::from_millis(50))) {
             let _ = tx.send(GameNetEvent::Error(format!(
@@ -236,7 +236,6 @@ fn run_game_ws(
                             message,
                         });
                     }
-
                     Ok(ServerMsg::ActionState {
                         player_id,
                         action,
@@ -251,6 +250,12 @@ fn run_game_ws(
                             state,
                             message,
                         });
+                    }
+                    Ok(ServerMsg::InventorySnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::InventorySnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::InventoryDelta(delta)) => {
+                        let _ = tx.send(GameNetEvent::InventoryDelta(delta));
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -406,6 +411,47 @@ pub fn pump_game_net_results(
                     }
                 }
             }
+            GameNetEvent::InventorySnapshot(snapshot) => {
+                info!(
+                    "game net inventory snapshot character_id={} items={}",
+                    snapshot.character_id,
+                    snapshot.items.len()
+                );
+                status.inventory_items = snapshot.items;
+                status.inventory_dirty = true;
+            }
+            GameNetEvent::InventoryDelta(delta) => {
+                info!(
+                    "game net inventory delta character_id={} item_id={} delta={} new_quantity={}",
+                    delta.character_id,
+                    delta.item_id,
+                    delta.quantity_delta,
+                    delta.new_quantity
+                );
+
+                if status.character_id != Some(delta.character_id) {
+                    continue;
+                }
+
+                let item_id = delta.item_id.clone();
+                if delta.new_quantity <= 0 {
+                    status.inventory_items.retain(|item| item.item_id != item_id.as_str());
+                } else if let Some(item) = status
+                    .inventory_items
+                    .iter_mut()
+                    .find(|item| item.item_id == item_id.as_str())
+                {
+                    item.quantity = delta.new_quantity;
+                } else {
+                    status.inventory_items.push(super::protocol::InventoryItemSnapshot {
+                        item_id,
+                        quantity: delta.new_quantity,
+                    });
+                }
+
+                status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
+                status.inventory_dirty = true;
+            }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
                 warn!("game net error: {}", msg);
@@ -418,6 +464,8 @@ pub fn pump_game_net_results(
                 status.server_goal = None;
                 status.server_moving = false;
                 status.server_action = None;
+                status.inventory_items.clear();
+                status.inventory_dirty = true;
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
@@ -426,11 +474,6 @@ pub fn pump_game_net_results(
     }
 }
 
-/// Send authoritative runtime commands after the actual menu/intent choice is made.
-///
-/// Right-click still only opens the context menu. This system only runs after the
-/// engine has emitted a concrete `IntentMsg` from left-click/default action or an
-/// explicit context-menu selection.
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
@@ -443,8 +486,6 @@ pub fn send_walk_intents_to_server_runtime(
                     continue;
                 };
 
-                // Keep WalkHere on MoveTo. Movement has its own server-authoritative
-                // snapshot loop and reconciliation behavior.
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
                 }
@@ -463,10 +504,7 @@ pub fn send_walk_intents_to_server_runtime(
                     warn!("game net chopdown target dropped; websocket is not ready");
                 }
             }
-            Verb::TalkTo | Verb::Examine => {
-                // These stay local-only for now. They will route through the same
-                // interaction path once the server owns NPCs/examine data.
-            }
+            Verb::TalkTo | Verb::Examine => {}
         }
     }
 }

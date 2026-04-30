@@ -50,6 +50,10 @@ pub enum ServerMsg {
         message: String,
     },
 
+    InventorySnapshot(InventorySnapshot),
+
+    InventoryDelta(InventoryDelta),
+
     Error {
         message: String,
     },
@@ -100,6 +104,26 @@ pub struct HarvestNodeSnapshot {
     pub max_charges: u32,
     pub depleted: bool,
     pub depleted_until_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventorySnapshot {
+    pub character_id: Uuid,
+    pub items: Vec<InventoryItemSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryItemSnapshot {
+    pub item_id: String,
+    pub quantity: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryDelta {
+    pub character_id: Uuid,
+    pub item_id: String,
+    pub quantity_delta: i64,
+    pub new_quantity: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -153,6 +153,15 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                             grant.charges_remaining
                                         ),
                                     });
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::InventoryDelta(
+                                        crate::game::protocol::InventoryDelta {
+                                            character_id: result.character_id,
+                                            item_id: result.item_id.clone(),
+                                            quantity_delta: i64::from(result.quantity),
+                                            new_quantity: result.new_quantity,
+                                        },
+                                    ));
                                 }
                                 Err(e) => {
                                     warn!(

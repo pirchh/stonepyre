@@ -32,8 +32,6 @@ fn main() {
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
         .add_plugins(stonepyre_ui::StonepyreUiPlugin)
-        // World entry: enable in-world UI, spawn the local demo world, join the server runtime,
-        // and show the temporary network debug overlay.
         .add_systems(
             OnEnter(Screen::InWorld),
             (
@@ -42,12 +40,12 @@ fn main() {
                 start_world_on_enter,
             ),
         )
-        // Pump server runtime events while in-world, send chosen WalkHere intents to the server,
-        // reconcile the local player, and mirror remote players from snapshots.
         .add_systems(
             Update,
             (
                 boot::game_net::pump_game_net_results,
+                boot::game_net::sync_inventory_from_server
+                    .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_walk_intents_to_server_runtime
                     .after(stonepyre_engine::plugins::interaction::plan_intents_to_actions)
                     .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
@@ -68,7 +66,6 @@ fn main() {
             )
                 .run_if(in_state(Screen::InWorld)),
         )
-        // Leaving world: turn off in-world UI and remove temporary runtime UI/entities.
         .add_systems(
             OnExit(Screen::InWorld),
             (
@@ -109,7 +106,6 @@ fn start_world_on_enter(
         stonepyre_engine::plugins::interaction::ServerAuthoritativeInteractions(has_session),
     );
 
-    // Join the server-side runtime if we have an authenticated session.
     if let Some(session) = boot.session.as_ref() {
         boot::game_net::spawn_game_ws(
             &mut game_net,

@@ -175,18 +175,16 @@ fn spawn_inventory_panel(
             commands.entity(slot).add_child(label);
             commands.entity(row).add_child(slot);
 
-            state.spawned.push(slot);
-            state.spawned.push(label);
-
             idx += 1;
         }
     }
 
+    // Only track the root. Despawning the root removes the whole UI subtree.
+    //
+    // Tracking both the root and its descendants can queue duplicate despawn
+    // commands when the inventory closes or rebuilds, which triggers Bevy's
+    // "Entity despawned" warnings.
     state.spawned.push(root);
-    state.spawned.push(panel);
-    state.spawned.push(title);
-    state.spawned.push(grid);
-
     state.root = Some(root);
 }
 
@@ -199,7 +197,13 @@ fn update_slot_labels(
         let txt = match inv.container.slots.get(lab.idx) {
             None => "Empty".to_string(),
             Some(None) => "Empty".to_string(),
-            Some(Some(stk)) => format!("{}", stk.id),
+            Some(Some(stk)) => {
+                if stk.qty > 1 {
+                    format!("{}\nx{}", stk.id, stk.qty)
+                } else {
+                    format!("{}", stk.id)
+                }
+            }
         };
         commands.entity(e).insert(Text::new(txt));
     }

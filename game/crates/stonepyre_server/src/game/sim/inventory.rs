@@ -1,6 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::game::protocol::{InventoryItemSnapshot, InventorySnapshot};
+
 /// Server-owned inventory grant produced by the live game simulation.
 ///
 /// Persistence is handled outside the simulation tick so the game loop can keep
@@ -60,5 +62,32 @@ pub async fn grant_character_item(
         item_id: item_id.to_string(),
         quantity,
         new_quantity,
+    })
+}
+
+/// Load the DB-authoritative inventory snapshot for a character.
+pub async fn load_character_inventory_snapshot(
+    pool: &PgPool,
+    character_id: Uuid,
+) -> Result<InventorySnapshot, sqlx::Error> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT item_id, quantity
+        FROM game.character_inventory
+        WHERE character_id = $1::uuid
+          AND quantity > 0
+        ORDER BY updated_at ASC, item_id ASC
+        "#,
+    )
+    .bind(character_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(InventorySnapshot {
+        character_id,
+        items: rows
+            .into_iter()
+            .map(|(item_id, quantity)| InventoryItemSnapshot { item_id, quantity })
+            .collect(),
     })
 }
