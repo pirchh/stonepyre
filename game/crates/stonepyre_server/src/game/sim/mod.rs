@@ -380,10 +380,7 @@ impl GameSim {
                             action: InteractionAction::ChopDown,
                             target: InteractionTarget::Tile(target),
                             state: ActionState::Complete,
-                            message: format!(
-                                "{} depleted at {},{}",
-                                outcome.display_name, target.x, target.y
-                            ),
+                            message: "ChopDown complete".to_string(),
                         }.into());
 
                         events.push(ServerMsg::HarvestNodeEvent(HarvestNodeEvent {
