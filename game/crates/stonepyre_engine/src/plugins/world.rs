@@ -78,23 +78,23 @@ pub fn spawn_demo_world_for_character(
 ) {
     commands.spawn(Camera2d);
 
-    // preload humanoid frames
+    // Preload humanoid frames.
     let humanoid_frames = crate::plugins::animation::HumanoidFrames::load(asset_server);
     let idle_south = humanoid_frames.idle_for(Facing::South);
     commands.insert_resource(humanoid_frames);
 
     let move_speed = TILE_SIZE * MOVE_TILES_PER_SEC;
 
-    // ✅ NEW: seed inventory with a couple starter items so UI can show something.
+    // Seed inventory with a couple starter items so UI can show something.
     let mut inv = Inventory::new(16);
 
-    // "axe_iron" is just an example id. It doesn't need to exist in content yet for UI display.
+    // "axe_iron" is just an example id. It does not need to exist in content yet for UI display.
     inv.container.slots[0] = Some(ItemStack {
         id: "axe_iron".to_string(),
         qty: 1,
     });
 
-    // Demonstrate non-stackable-like behavior (same id in multiple slots).
+    // Demonstrate non-stackable-like behavior with the same id in multiple slots.
     inv.container.slots[1] = Some(ItemStack {
         id: "log_oak".to_string(),
         qty: 1,
@@ -109,45 +109,37 @@ pub fn spawn_demo_world_for_character(
             image: idle_south,
             ..default()
         },
-        Transform::from_xyz(0.0, 0.0 + FOOT_OFFSET_Y, 10.0).with_scale(Vec3::splat(PLAYER_SCALE)),
+        Transform::from_xyz(0.0, FOOT_OFFSET_Y, 10.0).with_scale(Vec3::splat(PLAYER_SCALE)),
         Player,
         MoveSpeed(move_speed),
         TilePath::default(),
         Facing::South,
         crate::plugins::animation::HumanoidAnim::new(),
-        // ✅ NEW: appearance source-of-truth for UI paperdoll + future character creator
         PlayerAppearance::default(),
-        // ✅ Inventory/Equipment scaffolding
         inv,
         Equipment::default(),
         EquippedBackpack::default(),
     ));
 
-    // Demo tree: spawn as HarvestNode(def="oak_tree") if defs exist
+    // Demo harvest nodes.
+    //
+    // Keep these positions aligned with the server-side HarvestCatalog::demo()
+    // nodes:
+    // - demo_tree_2_0 at TilePos::new(2, 0)
+    // - demo_tree_4_1 at TilePos::new(4, 1)
+    //
+    // The Transform controls where the square is drawn.
+    // GridPos controls the logical tile used by interaction/visual sync.
+    // These must match or depletion tinting/click targets become confusing.
     if let Some(defs) = harvest_defs {
-        let node = crate::plugins::skills::harvest::HarvestNode::from_def_id("oak_tree", &defs.0);
-
-        commands.spawn((
-            Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
-            Transform::from_xyz(2.0 * TILE_SIZE, 0.0, 5.0),
-            GridPos(TilePos::new(2, 0)),
-            BlocksMovement,
-            InteractableKind::Tree,
-            Visibility::Visible,
-            node,
-        ));
+        spawn_demo_tree_with_harvest_node(commands, defs, TilePos::new(2, 0));
+        spawn_demo_tree_with_harvest_node(commands, defs, TilePos::new(4, 1));
     } else {
-        commands.spawn((
-            Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
-            Transform::from_xyz(2.0 * TILE_SIZE, 0.0, 5.0),
-            GridPos(TilePos::new(2, 0)),
-            BlocksMovement,
-            InteractableKind::Tree,
-            Visibility::Visible,
-        ));
+        spawn_demo_tree_without_harvest_node(commands, TilePos::new(2, 0));
+        spawn_demo_tree_without_harvest_node(commands, TilePos::new(4, 1));
     }
 
-    // Demo NPC (blue)
+    // Demo NPC (blue).
     commands.spawn((
         Sprite::from_color(Color::srgb(0.2, 0.4, 0.9), Vec2::splat(TILE_SIZE)),
         Transform::from_xyz(-2.0 * TILE_SIZE, 1.0 * TILE_SIZE, 5.0),
@@ -156,12 +148,49 @@ pub fn spawn_demo_world_for_character(
         InteractableKind::Npc,
     ));
 
-    // Target marker fills the whole tile
+    // Target marker fills the whole tile.
     commands.spawn((
         Sprite::from_color(Color::srgba(0.2, 0.8, 0.2, 0.25), Vec2::splat(TILE_SIZE)),
         Transform::from_xyz(0.0, 0.0, 9.0),
         TargetMarker::default(),
         Visibility::Hidden,
+    ));
+}
+
+fn spawn_demo_tree_with_harvest_node(
+    commands: &mut Commands,
+    defs: &crate::plugins::skills::HarvestDb,
+    tile: TilePos,
+) {
+    let node = crate::plugins::skills::harvest::HarvestNode::from_def_id("oak_tree", &defs.0);
+
+    commands.spawn((
+        Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
+        Transform::from_xyz(
+            tile.x as f32 * TILE_SIZE,
+            tile.y as f32 * TILE_SIZE,
+            5.0,
+        ),
+        GridPos(tile),
+        BlocksMovement,
+        InteractableKind::Tree,
+        Visibility::Visible,
+        node,
+    ));
+}
+
+fn spawn_demo_tree_without_harvest_node(commands: &mut Commands, tile: TilePos) {
+    commands.spawn((
+        Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
+        Transform::from_xyz(
+            tile.x as f32 * TILE_SIZE,
+            tile.y as f32 * TILE_SIZE,
+            5.0,
+        ),
+        GridPos(tile),
+        BlocksMovement,
+        InteractableKind::Tree,
+        Visibility::Visible,
     ));
 }
 
