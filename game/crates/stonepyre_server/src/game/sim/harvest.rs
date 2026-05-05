@@ -4,6 +4,28 @@ use stonepyre_world::TilePos;
 
 use crate::game::protocol::HarvestNodeSnapshot;
 
+
+// Phase 7j demo tuning.
+//
+// Keep these server-side/content-side for now. The DB should not become the map
+// editor: placement comes from content/runtime data, live depletion state stays
+// in server memory, and only inventory remains persisted.
+const NORMAL_TREE_DEF_ID: &str = "tree_normal";
+const NORMAL_TREE_DISPLAY_NAME: &str = "Tree";
+const NORMAL_TREE_REQUIRED_LEVEL: u32 = 1;
+const NORMAL_TREE_SUCCESS_CHANCE: f32 = 0.62;
+const NORMAL_TREE_CHARGES: u32 = 4;
+const NORMAL_TREE_RESPAWN_SECS: u32 = 20;
+const NORMAL_TREE_LOOT_TABLE_ID: &str = "woodcutting_tree_normal";
+const NORMAL_TREE_LOOT_ITEM_ID: &str = "log";
+const NORMAL_TREE_LOOT_MIN: u32 = 1;
+const NORMAL_TREE_LOOT_MAX: u32 = 1;
+const NORMAL_TREE_LOOT_WEIGHT: u32 = 100;
+
+const DEMO_TREE_A_NODE_ID: &str = "demo_tree_2_0";
+const DEMO_TREE_B_NODE_ID: &str = "demo_tree_4_1";
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
     Woodcutting,
@@ -70,47 +92,54 @@ pub struct HarvestCatalog {
 }
 
 impl HarvestCatalog {
+
     pub fn demo() -> Self {
         let mut node_defs = HashMap::new();
         node_defs.insert(
-            "tree_normal",
+            NORMAL_TREE_DEF_ID,
             HarvestNodeDef {
-                id: "tree_normal",
-                display_name: "Tree",
+                id: NORMAL_TREE_DEF_ID,
+                display_name: NORMAL_TREE_DISPLAY_NAME,
                 skill: HarvestSkill::Woodcutting,
-                required_level: 1,
-                base_success_chance: 0.55,
-                charges: 3,
-                respawn_secs: 30,
-                loot_table: "woodcutting_tree_normal",
+                required_level: NORMAL_TREE_REQUIRED_LEVEL,
+                base_success_chance: NORMAL_TREE_SUCCESS_CHANCE,
+                charges: NORMAL_TREE_CHARGES,
+                respawn_secs: NORMAL_TREE_RESPAWN_SECS,
+                loot_table: NORMAL_TREE_LOOT_TABLE_ID,
             },
         );
 
         let mut loot_tables = HashMap::new();
         loot_tables.insert(
-            "woodcutting_tree_normal",
+            NORMAL_TREE_LOOT_TABLE_ID,
             LootTable {
-                id: "woodcutting_tree_normal",
+                id: NORMAL_TREE_LOOT_TABLE_ID,
                 entries: vec![LootEntry {
-                    item_id: "log",
-                    min: 1,
-                    max: 1,
-                    weight: 100,
+                    item_id: NORMAL_TREE_LOOT_ITEM_ID,
+                    min: NORMAL_TREE_LOOT_MIN,
+                    max: NORMAL_TREE_LOOT_MAX,
+                    weight: NORMAL_TREE_LOOT_WEIGHT,
                 }],
             },
         );
 
         let mut node_instances_by_tile = HashMap::new();
-        node_instances_by_tile.insert(
-            TilePos::new(2, 0),
-            HarvestNodeInstance {
-                node_id: "demo_tree_2_0",
-                def_id: "tree_normal",
-                tile: TilePos::new(2, 0),
-                charges_remaining: 3,
-                depleted_until_tick: None,
-            },
-        );
+
+        for (node_id, tile) in [
+            (DEMO_TREE_A_NODE_ID, TilePos::new(2, 0)),
+            (DEMO_TREE_B_NODE_ID, TilePos::new(4, 1)),
+        ] {
+            node_instances_by_tile.insert(
+                tile,
+                HarvestNodeInstance {
+                    node_id,
+                    def_id: NORMAL_TREE_DEF_ID,
+                    tile,
+                    charges_remaining: NORMAL_TREE_CHARGES,
+                    depleted_until_tick: None,
+                },
+            );
+        }
 
         Self {
             node_defs,
@@ -118,6 +147,7 @@ impl HarvestCatalog {
             node_instances_by_tile,
         }
     }
+
 
     pub fn node_at(&self, tile: TilePos) -> Option<&HarvestNodeInstance> {
         self.node_instances_by_tile.get(&tile)
