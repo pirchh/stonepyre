@@ -1,28 +1,161 @@
-# Images / source art
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
-*.xcf
+# ============================================================
+# Stonepyre .gitignore
+# ============================================================
 
+
+# ------------------------------------------------------------
 # Rust build output
+# ------------------------------------------------------------
 target/
+**/target/
 
-# Build/output
+
+# ------------------------------------------------------------
+# General build/output folders
+# ------------------------------------------------------------
 build/
 dist/
 out/
+tmp/
+temp/
 
+
+# ------------------------------------------------------------
+# Runtime/generated local data
+# ------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+
+# ------------------------------------------------------------
 # Logs
+# ------------------------------------------------------------
 *.log
 
+
+# ------------------------------------------------------------
+# Env / secrets
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+
+# ------------------------------------------------------------
 # OS/editor junk
+# ------------------------------------------------------------
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# Env / secrets
-.env
-.env.*
+
+# ------------------------------------------------------------
+# Art source files
+#
+# Final exported runtime assets SHOULD be committed under:
+#   game/assets/**
+#
+# Do not ignore .png globally.
+# ------------------------------------------------------------
+*.xcf
+*.psd
+*.kra
+*.clip
+*.ase
+*.aseprite
+*.blend
+
+
+# ------------------------------------------------------------
+# Art working/source folders
+#
+# These are for generation/editing sources, not runtime game assets.
+# Keep final exported PNGs in game/assets.
+# ------------------------------------------------------------
+art-source/
+art_sources/
+asset-source/
+asset_sources/
+asset-working/
+asset_working/
+working-art/
+working_art/
+source-art/
+source_art/
+
+
+# ------------------------------------------------------------
+# Generated art/output folders
+# ------------------------------------------------------------
+exports/
+generated/
+generated-assets/
+generated_assets/
+
+libs/generated_runtime/
+
+tools/greyscale_outputs/
+tools/layered_outputs/
+tools/raw_layer_exports/
+
+tools/exports/
+tools/generated/
+tools/generated-assets/
+tools/generated_assets/
+tools/generated_runtime/
+tools/working/
+tools/workspace/
+
+
+# ------------------------------------------------------------
+# Project art/tooling templates and palettes
+#
+# Ignore the source/template material, not final game assets.
+# ------------------------------------------------------------
+libs/templates/
+libs/palettes/
+
+tools/templates/
+tools/palettes/
+tools/libs/templates/
+
+
+# ------------------------------------------------------------
+# Nested tool scratch folders
+#
+# This catches generated/template/output folders created deeper inside
+# tools without ignoring the tools folder itself.
+# ------------------------------------------------------------
+tools/**/outputs/
+tools/**/exports/
+tools/**/generated/
+tools/**/generated_runtime/
+tools/**/templates/
+tools/**/working/
+tools/**/workspace/
+
+
+# ------------------------------------------------------------
+# Large/raw media source files
+# ------------------------------------------------------------
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wav
+*.flac
+
+
+# ------------------------------------------------------------
+# Keep final game assets trackable
+#
+# These negations make the intention explicit in case a broader rule
+# gets added later.
+# ------------------------------------------------------------
+!game/assets/**/*.png
+!game/assets/**/*.jpg
+!game/assets/**/*.jpeg
+!game/assets/**/*.gif
+!game/assets/**/*.svg
