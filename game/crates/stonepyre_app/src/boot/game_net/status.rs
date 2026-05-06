@@ -76,6 +76,15 @@ pub enum GameNetCommand {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct SkillXpFeedbackEntry {
+    pub skill_id: String,
+    pub display_name: String,
+    pub xp_delta: i64,
+    pub new_xp: i64,
+    pub new_level: u32,
+}
+
 #[derive(Resource, Debug, Clone)]
 pub struct GameNetStatus {
     pub connected: bool,
@@ -96,6 +105,7 @@ pub struct GameNetStatus {
     pub inventory_dirty: bool,
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
+    pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -126,6 +136,7 @@ impl Default for GameNetStatus {
             inventory_dirty: false,
             skill_entries: Vec::new(),
             skills_dirty: false,
+            xp_feedback_queue: Vec::new(),
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

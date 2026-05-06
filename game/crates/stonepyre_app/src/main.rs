@@ -37,6 +37,7 @@ fn main() {
             (
                 enable_game_ui_on_enter_world,
                 boot::game_net::spawn_game_net_overlay,
+                boot::game_net::spawn_xp_feedback_layer,
                 start_world_on_enter,
             ),
         )
@@ -46,6 +47,9 @@ fn main() {
                 boot::game_net::pump_game_net_results,
                 boot::game_net::sync_inventory_from_server
                     .after(boot::game_net::pump_game_net_results),
+                boot::game_net::update_xp_feedback_layer
+                    .after(boot::game_net::pump_game_net_results),
+                boot::game_net::tick_xp_feedback_toasts,
                 boot::game_net::sync_harvest_node_visuals_from_server
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_walk_intents_to_server_runtime
@@ -73,6 +77,7 @@ fn main() {
             (
                 disable_game_ui_on_exit_world,
                 boot::game_net::despawn_game_net_overlay,
+                boot::game_net::despawn_xp_feedback_layer,
                 boot::game_net::despawn_remote_players,
             ),
         )
