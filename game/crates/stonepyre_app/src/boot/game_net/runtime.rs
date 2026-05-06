@@ -465,6 +465,8 @@ pub fn pump_game_net_results(
                     max_charges: event.max_charges,
                     depleted,
                     depleted_until_tick: event.depleted_until_tick,
+                    available_sprite: event.available_sprite.clone(),
+                    depleted_sprite: event.depleted_sprite.clone(),
                 };
 
                 if let Some(existing) = status

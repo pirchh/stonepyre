@@ -4,31 +4,57 @@ use stonepyre_world::TilePos;
 
 use crate::game::protocol::HarvestNodeSnapshot;
 
-
-// Phase 7j demo tuning.
+// Phase 7k-a demo content tuning.
 //
-// Keep these server-side/content-side for now. The DB should not become the map
+// Keep this content/server-side for now. The DB should not become the map
 // editor: placement comes from content/runtime data, live depletion state stays
 // in server memory, and only inventory remains persisted.
-const NORMAL_TREE_DEF_ID: &str = "tree_normal";
-const NORMAL_TREE_DISPLAY_NAME: &str = "Tree";
+//
+// XP and level requirements are intentionally content-authored on the harvest
+// node definition so future nodes can vary cleanly:
+//
+// oak_tree    -> Woodcutting, level 1, 10 XP
+// willow_tree -> Woodcutting, level 20, 25 XP
+const NORMAL_TREE_DEF_ID: &str = "oak_tree";
+const NORMAL_TREE_DISPLAY_NAME: &str = "Oak Tree";
 const NORMAL_TREE_REQUIRED_LEVEL: u32 = 1;
+const NORMAL_TREE_XP_ON_SUCCESS: u32 = 10;
 const NORMAL_TREE_SUCCESS_CHANCE: f32 = 0.62;
 const NORMAL_TREE_CHARGES: u32 = 4;
 const NORMAL_TREE_RESPAWN_SECS: u32 = 20;
-const NORMAL_TREE_LOOT_TABLE_ID: &str = "woodcutting_tree_normal";
+const NORMAL_TREE_LOOT_TABLE_ID: &str = "woodcutting_oak_tree";
+const NORMAL_TREE_AVAILABLE_SPRITE: &str = "world/harvest/oak_tree.png";
+const NORMAL_TREE_DEPLETED_SPRITE: &str = "world/harvest/oak_tree_stump.png";
+
 const NORMAL_TREE_LOOT_ITEM_ID: &str = "log";
 const NORMAL_TREE_LOOT_MIN: u32 = 1;
 const NORMAL_TREE_LOOT_MAX: u32 = 1;
 const NORMAL_TREE_LOOT_WEIGHT: u32 = 100;
 
+const LOG_ITEM_DISPLAY_NAME: &str = "Log";
+const LOG_ITEM_INVENTORY_ICON: &str = "items/log.png";
+const LOG_ITEM_STACKABLE: bool = true;
+
 const DEMO_TREE_A_NODE_ID: &str = "demo_tree_2_0";
 const DEMO_TREE_B_NODE_ID: &str = "demo_tree_4_1";
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
     Woodcutting,
+}
+
+impl HarvestSkill {
+    pub fn id(self) -> &'static str {
+        match self {
+            HarvestSkill::Woodcutting => "woodcutting",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            HarvestSkill::Woodcutting => "Woodcutting",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -37,10 +63,13 @@ pub struct HarvestNodeDef {
     pub display_name: &'static str,
     pub skill: HarvestSkill,
     pub required_level: u32,
+    pub xp_on_success: u32,
     pub base_success_chance: f32,
     pub charges: u32,
     pub respawn_secs: u32,
     pub loot_table: &'static str,
+    pub available_sprite: &'static str,
+    pub depleted_sprite: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +84,14 @@ pub struct LootEntry {
     pub min: u32,
     pub max: u32,
     pub weight: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct ItemDef {
+    pub id: &'static str,
+    pub display_name: &'static str,
+    pub inventory_icon: &'static str,
+    pub stackable: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +114,8 @@ pub struct HarvestRollOutcome {
     pub node_id: &'static str,
     pub def_id: &'static str,
     pub display_name: &'static str,
+    pub skill: HarvestSkill,
+    pub xp_gained: u32,
     pub success: bool,
     pub depleted: bool,
     pub charges_remaining: u32,
@@ -88,11 +127,11 @@ pub struct HarvestRollOutcome {
 pub struct HarvestCatalog {
     node_defs: HashMap<&'static str, HarvestNodeDef>,
     loot_tables: HashMap<&'static str, LootTable>,
+    item_defs: HashMap<&'static str, ItemDef>,
     node_instances_by_tile: HashMap<TilePos, HarvestNodeInstance>,
 }
 
 impl HarvestCatalog {
-
     pub fn demo() -> Self {
         let mut node_defs = HashMap::new();
         node_defs.insert(
@@ -102,10 +141,13 @@ impl HarvestCatalog {
                 display_name: NORMAL_TREE_DISPLAY_NAME,
                 skill: HarvestSkill::Woodcutting,
                 required_level: NORMAL_TREE_REQUIRED_LEVEL,
+                xp_on_success: NORMAL_TREE_XP_ON_SUCCESS,
                 base_success_chance: NORMAL_TREE_SUCCESS_CHANCE,
                 charges: NORMAL_TREE_CHARGES,
                 respawn_secs: NORMAL_TREE_RESPAWN_SECS,
                 loot_table: NORMAL_TREE_LOOT_TABLE_ID,
+                available_sprite: NORMAL_TREE_AVAILABLE_SPRITE,
+                depleted_sprite: NORMAL_TREE_DEPLETED_SPRITE,
             },
         );
 
@@ -120,6 +162,17 @@ impl HarvestCatalog {
                     max: NORMAL_TREE_LOOT_MAX,
                     weight: NORMAL_TREE_LOOT_WEIGHT,
                 }],
+            },
+        );
+
+        let mut item_defs = HashMap::new();
+        item_defs.insert(
+            NORMAL_TREE_LOOT_ITEM_ID,
+            ItemDef {
+                id: NORMAL_TREE_LOOT_ITEM_ID,
+                display_name: LOG_ITEM_DISPLAY_NAME,
+                inventory_icon: LOG_ITEM_INVENTORY_ICON,
+                stackable: LOG_ITEM_STACKABLE,
             },
         );
 
@@ -144,10 +197,10 @@ impl HarvestCatalog {
         Self {
             node_defs,
             loot_tables,
+            item_defs,
             node_instances_by_tile,
         }
     }
-
 
     pub fn node_at(&self, tile: TilePos) -> Option<&HarvestNodeInstance> {
         self.node_instances_by_tile.get(&tile)
@@ -155,6 +208,10 @@ impl HarvestCatalog {
 
     pub fn node_def(&self, def_id: &str) -> Option<&HarvestNodeDef> {
         self.node_defs.get(def_id)
+    }
+
+    pub fn item_def(&self, item_id: &str) -> Option<&ItemDef> {
+        self.item_defs.get(item_id)
     }
 
     pub fn loot_table(&self, table_id: &str) -> Option<&LootTable> {
@@ -199,6 +256,8 @@ impl HarvestCatalog {
             max_charges: def.charges,
             depleted: node.charges_remaining == 0 || node.depleted_until_tick.is_some(),
             depleted_until_tick: node.depleted_until_tick,
+            available_sprite: def.available_sprite.to_string(),
+            depleted_sprite: def.depleted_sprite.to_string(),
         })
     }
 
@@ -230,6 +289,8 @@ impl HarvestCatalog {
                 max_charges: def.charges,
                 depleted: false,
                 depleted_until_tick: None,
+                available_sprite: def.available_sprite.to_string(),
+                depleted_sprite: def.depleted_sprite.to_string(),
             });
         }
 
@@ -296,6 +357,8 @@ impl HarvestCatalog {
             node_id,
             def_id,
             display_name: def.display_name,
+            skill: def.skill,
+            xp_gained: if success { def.xp_on_success } else { 0 },
             success,
             depleted: node.charges_remaining == 0,
             charges_remaining: node.charges_remaining,
