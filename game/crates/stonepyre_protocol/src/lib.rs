@@ -111,6 +111,16 @@ pub struct HarvestNodeSnapshot {
     pub max_charges: u32,
     pub depleted: bool,
     pub depleted_until_tick: Option<u64>,
+
+    /// Content-authored world sprite path for the available/harvestable state.
+    ///
+    /// The current client may still use color placeholders, but this lets the
+    /// server snapshot carry the tree/stump presentation data before art is
+    /// fully wired in.
+    pub available_sprite: String,
+
+    /// Content-authored world sprite path for the depleted state.
+    pub depleted_sprite: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,6 +148,12 @@ pub struct HarvestNodeEvent {
     pub charges_remaining: u32,
     pub max_charges: u32,
     pub depleted_until_tick: Option<u64>,
+
+    /// Content-authored world sprite path for the available/harvestable state.
+    pub available_sprite: String,
+
+    /// Content-authored world sprite path for the depleted state.
+    pub depleted_sprite: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

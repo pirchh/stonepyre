@@ -342,6 +342,18 @@ impl GameSim {
 
             match result {
                 Ok(outcome) => {
+                    if outcome.success && outcome.xp_gained > 0 {
+                        // Phase 7k-a only makes the XP grant content-driven.
+                        // The DB-backed skill XP write/delta comes in the next pass.
+                        tracing::debug!(
+                            "harvest xp preview character_id={} skill={} xp_gained={} node={}",
+                            character_id,
+                            outcome.skill.id(),
+                            outcome.xp_gained,
+                            outcome.node_id
+                        );
+                    }
+
                     if let Some(loot) = outcome.loot_preview.as_ref() {
                         events.push(GameSimEvent::InventoryGrant(InventoryGrantRequest {
                             player_id,
@@ -383,16 +395,12 @@ impl GameSim {
                             message: "ChopDown complete".to_string(),
                         }.into());
 
-                        events.push(ServerMsg::HarvestNodeEvent(HarvestNodeEvent {
-                            kind: HarvestNodeEventKind::Depleted,
-                            node_id: outcome.node_id.to_string(),
-                            node_def_id: outcome.def_id.to_string(),
-                            display_name: outcome.display_name.to_string(),
-                            tile: target,
-                            charges_remaining: outcome.charges_remaining,
-                            max_charges: outcome.max_charges,
-                            depleted_until_tick: outcome.depleted_until_tick,
-                        }).into());
+                        if let Some(snapshot) = self.world.harvest.snapshot_at(target) {
+                            events.push(ServerMsg::HarvestNodeEvent(node_event_from_snapshot(
+                                HarvestNodeEventKind::Depleted,
+                                snapshot,
+                            )).into());
+                        }
                     } else if let Some(p) = self.world.players.get_mut(&player_id) {
                         if let Some(action) = p.action.as_mut() {
                             action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
@@ -455,6 +463,8 @@ fn node_event_from_snapshot(kind: HarvestNodeEventKind, node: HarvestNodeSnapsho
         charges_remaining: node.charges_remaining,
         max_charges: node.max_charges,
         depleted_until_tick: node.depleted_until_tick,
+        available_sprite: node.available_sprite,
+        depleted_sprite: node.depleted_sprite,
     }
 }
 
