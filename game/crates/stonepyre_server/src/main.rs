@@ -128,6 +128,8 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             game.hub.broadcast(msg);
                         }
                         game::sim::GameSimEvent::SkillXpGrant(grant) => {
+                            let source = Some(grant.source.clone());
+
                             match game::sim::skills::grant_character_skill_xp(
                                 &db,
                                 grant.character_id,
@@ -139,7 +141,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             {
                                 Ok(result) => {
                                     game.hub.broadcast(crate::game::protocol::ServerMsg::SkillDelta(
-                                        game::sim::skills::skill_delta_from_result(result),
+                                        game::sim::skills::skill_delta_from_result(result, source),
                                     ));
                                 }
                                 Err(e) => {

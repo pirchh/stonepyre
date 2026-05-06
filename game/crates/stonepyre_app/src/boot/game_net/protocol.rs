@@ -16,6 +16,7 @@ pub(super) use stonepyre_protocol::{
     SkillDelta,
     SkillSnapshot,
     SkillSnapshotEntry,
+    SkillXpSource,
     WorldSnapshot,
 };
 

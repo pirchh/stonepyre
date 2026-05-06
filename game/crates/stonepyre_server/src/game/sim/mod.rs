@@ -9,7 +9,7 @@ use self::skills::SkillXpGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
     ActionState, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot, HarvestResult,
-    InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, WorldSnapshot,
+    InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, SkillXpSource, WorldSnapshot,
 };
 use stonepyre_world::TilePos;
 use uuid::Uuid;
@@ -367,6 +367,10 @@ impl GameSim {
                             node_id: outcome.node_id.to_string(),
                             harvest_display_name: outcome.display_name.to_string(),
                             charges_remaining: outcome.charges_remaining,
+                            source: SkillXpSource::HarvestNode {
+                                node_id: outcome.node_id.to_string(),
+                                tile: target,
+                            },
                         }));
                     }
 
