@@ -8,6 +8,7 @@ mod remote_players;
 mod runtime;
 mod status;
 mod target_marker;
+mod xp_feedback;
 
 pub use action_visuals::play_server_authoritative_action_visuals;
 pub use harvest_nodes::sync_harvest_node_visuals_from_server;
@@ -38,3 +39,9 @@ pub use status::{
     GameNetStatus,
 };
 pub use target_marker::sync_network_target_marker_from_last_move;
+pub use xp_feedback::{
+    despawn_xp_feedback_layer,
+    spawn_xp_feedback_layer,
+    tick_xp_feedback_toasts,
+    update_xp_feedback_layer,
+};

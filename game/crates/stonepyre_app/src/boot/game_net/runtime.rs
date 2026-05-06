@@ -48,6 +48,7 @@ pub fn spawn_game_ws(
     status.inventory_dirty = true;
     status.skill_entries.clear();
     status.skills_dirty = true;
+    status.xp_feedback_queue.clear();
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -575,6 +576,16 @@ pub fn pump_game_net_results(
 
                 status.skill_entries.sort_by(|a, b| a.skill_id.cmp(&b.skill_id));
                 status.skills_dirty = true;
+
+                if delta.xp_delta > 0 {
+                    status.xp_feedback_queue.push(super::status::SkillXpFeedbackEntry {
+                        skill_id: delta.skill_id,
+                        display_name: delta.display_name,
+                        xp_delta: delta.xp_delta,
+                        new_xp: delta.new_xp,
+                        new_level: delta.new_level,
+                    });
+                }
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
@@ -593,6 +604,7 @@ pub fn pump_game_net_results(
                 status.inventory_dirty = true;
                 status.skill_entries.clear();
                 status.skills_dirty = true;
+                status.xp_feedback_queue.clear();
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
