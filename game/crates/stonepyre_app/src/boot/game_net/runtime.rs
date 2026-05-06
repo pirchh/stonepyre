@@ -584,6 +584,7 @@ pub fn pump_game_net_results(
                         xp_delta: delta.xp_delta,
                         new_xp: delta.new_xp,
                         new_level: delta.new_level,
+                        source: delta.source,
                     });
                 }
             }

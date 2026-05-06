@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::game::protocol::{SkillDelta, SkillSnapshot, SkillSnapshotEntry};
+use crate::game::protocol::{SkillDelta, SkillSnapshot, SkillSnapshotEntry, SkillXpSource};
 
 pub const WOODCUTTING_SKILL_ID: &str = "woodcutting";
 pub const WOODCUTTING_DISPLAY_NAME: &str = "Woodcutting";
@@ -20,6 +20,7 @@ pub struct SkillXpGrantRequest {
     pub node_id: String,
     pub harvest_display_name: String,
     pub charges_remaining: u32,
+    pub source: SkillXpSource,
 }
 
 #[derive(Clone, Debug)]
@@ -129,7 +130,10 @@ pub async fn grant_character_skill_xp(
     })
 }
 
-pub fn skill_delta_from_result(result: SkillXpGrantResult) -> SkillDelta {
+pub fn skill_delta_from_result(
+    result: SkillXpGrantResult,
+    source: Option<SkillXpSource>,
+) -> SkillDelta {
     SkillDelta {
         character_id: result.character_id,
         skill_id: result.skill_id,
@@ -138,6 +142,7 @@ pub fn skill_delta_from_result(result: SkillXpGrantResult) -> SkillDelta {
         new_xp: result.new_xp,
         new_level: result.new_level,
         xp_for_next_level: result.xp_for_next_level,
+        source,
     }
 }
 

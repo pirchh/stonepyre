@@ -210,6 +210,21 @@ pub struct SkillDelta {
     pub new_xp: i64,
     pub new_level: u32,
     pub xp_for_next_level: Option<i64>,
+
+    /// Optional presentation source for client-side feedback.
+    ///
+    /// XP remains server-authoritative. This only tells the client where to
+    /// place short-lived feedback such as floating harvest XP text.
+    pub source: Option<SkillXpSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum SkillXpSource {
+    HarvestNode {
+        node_id: String,
+        tile: TilePos,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

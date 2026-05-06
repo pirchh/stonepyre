@@ -22,6 +22,7 @@ use super::protocol::{
     SkillDelta,
     SkillSnapshot,
     SkillSnapshotEntry,
+    SkillXpSource,
 };
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ pub struct SkillXpFeedbackEntry {
     pub xp_delta: i64,
     pub new_xp: i64,
     pub new_level: u32,
+    pub source: Option<SkillXpSource>,
 }
 
 #[derive(Resource, Debug, Clone)]
