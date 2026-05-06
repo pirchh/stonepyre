@@ -46,6 +46,8 @@ pub fn spawn_game_ws(
     status.server_action = None;
     status.inventory_items.clear();
     status.inventory_dirty = true;
+    status.skill_entries.clear();
+    status.skills_dirty = true;
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -264,6 +266,12 @@ fn run_game_ws(
                     }
                     Ok(ServerMsg::InventoryDelta(delta)) => {
                         let _ = tx.send(GameNetEvent::InventoryDelta(delta));
+                    }
+                    Ok(ServerMsg::SkillSnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::SkillSnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::SkillDelta(delta)) => {
+                        let _ = tx.send(GameNetEvent::SkillDelta(delta));
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -520,6 +528,54 @@ pub fn pump_game_net_results(
                 status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
                 status.inventory_dirty = true;
             }
+            GameNetEvent::SkillSnapshot(snapshot) => {
+                info!(
+                    "game net skill snapshot character_id={} skills={}",
+                    snapshot.character_id,
+                    snapshot.skills.len()
+                );
+
+                if status.character_id == Some(snapshot.character_id) {
+                    status.skill_entries = snapshot.skills;
+                    status.skills_dirty = true;
+                }
+            }
+            GameNetEvent::SkillDelta(delta) => {
+                info!(
+                    "game net skill delta character_id={} skill={} xp_delta={} new_xp={} new_level={}",
+                    delta.character_id,
+                    delta.skill_id,
+                    delta.xp_delta,
+                    delta.new_xp,
+                    delta.new_level
+                );
+
+                if status.character_id != Some(delta.character_id) {
+                    continue;
+                }
+
+                if let Some(skill) = status
+                    .skill_entries
+                    .iter_mut()
+                    .find(|skill| skill.skill_id == delta.skill_id)
+                {
+                    skill.display_name = delta.display_name.clone();
+                    skill.xp = delta.new_xp;
+                    skill.level = delta.new_level;
+                    skill.xp_for_next_level = delta.xp_for_next_level;
+                } else {
+                    status.skill_entries.push(super::protocol::SkillSnapshotEntry {
+                        skill_id: delta.skill_id.clone(),
+                        display_name: delta.display_name.clone(),
+                        xp: delta.new_xp,
+                        level: delta.new_level,
+                        xp_for_next_level: delta.xp_for_next_level,
+                    });
+                }
+
+                status.skill_entries.sort_by(|a, b| a.skill_id.cmp(&b.skill_id));
+                status.skills_dirty = true;
+            }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
                 warn!("game net error: {}", msg);
@@ -535,6 +591,8 @@ pub fn pump_game_net_results(
                 status.server_action = None;
                 status.inventory_items.clear();
                 status.inventory_dirty = true;
+                status.skill_entries.clear();
+                status.skills_dirty = true;
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
                 warn!("game net disconnected");
