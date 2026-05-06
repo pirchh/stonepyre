@@ -1,9 +1,11 @@
 pub mod harvest;
 pub mod inventory;
+pub mod skills;
 pub mod world;
 
 use self::harvest::HarvestSkill;
 use self::inventory::InventoryGrantRequest;
+use self::skills::SkillXpGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
     ActionState, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot, HarvestResult,
@@ -20,6 +22,7 @@ const HARVEST_ROLL_SECS: f32 = 1.25;
 pub enum GameSimEvent {
     Server(ServerMsg),
     InventoryGrant(InventoryGrantRequest),
+    SkillXpGrant(SkillXpGrantRequest),
 }
 
 impl From<ServerMsg> for GameSimEvent {
@@ -115,6 +118,7 @@ impl GameSim {
         &mut self,
         player_id: Uuid,
         target: TilePos,
+        character_skill_level: u32,
     ) -> Result<(ActionState, String), String> {
         let (target_name, target_def_id) = {
             let Some(def) = self.world.harvest_node_def_at(target) else {
@@ -123,6 +127,15 @@ impl GameSim {
 
             if def.skill != HarvestSkill::Woodcutting {
                 return Err(format!("{} cannot be chopped down", def.display_name));
+            }
+
+            if character_skill_level < def.required_level {
+                return Err(format!(
+                    "You need {} level {} to chop {}.",
+                    def.skill.display_name(),
+                    def.required_level,
+                    def.display_name
+                ));
             }
 
             if !self.world.harvest.can_harvest_at(target) {
@@ -343,15 +356,18 @@ impl GameSim {
             match result {
                 Ok(outcome) => {
                     if outcome.success && outcome.xp_gained > 0 {
-                        // Phase 7k-a only makes the XP grant content-driven.
-                        // The DB-backed skill XP write/delta comes in the next pass.
-                        tracing::debug!(
-                            "harvest xp preview character_id={} skill={} xp_gained={} node={}",
+                        events.push(GameSimEvent::SkillXpGrant(SkillXpGrantRequest {
+                            player_id,
                             character_id,
-                            outcome.skill.id(),
-                            outcome.xp_gained,
-                            outcome.node_id
-                        );
+                            skill_id: outcome.skill.id().to_string(),
+                            display_name: outcome.skill.display_name().to_string(),
+                            xp_delta: outcome.xp_gained,
+                            action: InteractionAction::ChopDown,
+                            target: InteractionTarget::Tile(target),
+                            node_id: outcome.node_id.to_string(),
+                            harvest_display_name: outcome.display_name.to_string(),
+                            charges_remaining: outcome.charges_remaining,
+                        }));
                     }
 
                     if let Some(loot) = outcome.loot_preview.as_ref() {

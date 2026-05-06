@@ -19,6 +19,9 @@ use super::protocol::{
     InventorySnapshot,
     NetPlayerSnapshot,
     PlayerActionSnapshot,
+    SkillDelta,
+    SkillSnapshot,
+    SkillSnapshotEntry,
 };
 
 #[derive(Debug)]
@@ -58,6 +61,8 @@ pub enum GameNetEvent {
     HarvestNodeEvent(HarvestNodeEvent),
     InventorySnapshot(InventorySnapshot),
     InventoryDelta(InventoryDelta),
+    SkillSnapshot(SkillSnapshot),
+    SkillDelta(SkillDelta),
     Error(String),
     Disconnected,
 }
@@ -89,6 +94,8 @@ pub struct GameNetStatus {
     pub server_action: Option<PlayerActionSnapshot>,
     pub inventory_items: Vec<InventoryItemSnapshot>,
     pub inventory_dirty: bool,
+    pub skill_entries: Vec<SkillSnapshotEntry>,
+    pub skills_dirty: bool,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -117,6 +124,8 @@ impl Default for GameNetStatus {
             server_action: None,
             inventory_items: Vec::new(),
             inventory_dirty: false,
+            skill_entries: Vec::new(),
+            skills_dirty: false,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

@@ -169,6 +169,26 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                                 });
                             }
                         }
+
+                        match crate::game::sim::skills::load_character_skills_snapshot(
+                            &state.db,
+                            requested_character_id,
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => {
+                                let _ = out_tx.send(ServerMsg::SkillSnapshot(snapshot));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "game ws skill snapshot failed account_id={} character_id={} error={:?}",
+                                    ctx.account_id, requested_character_id, e
+                                );
+                                let _ = out_tx.send(ServerMsg::Error {
+                                    message: "failed to load skills".to_string(),
+                                });
+                            }
+                        }
                     }
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
@@ -190,7 +210,14 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
 
-                        handle_interaction(&state, pid, action, target, &out_tx).await;
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before sending interactions".to_string(),
+                            });
+                            continue;
+                        };
+
+                        handle_interaction(&state, pid, cid, action, target, &out_tx).await;
                     }
                 }
             }
@@ -227,6 +254,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 async fn handle_interaction(
     state: &AppState,
     player_id: Uuid,
+    character_id: Uuid,
     action: InteractionAction,
     target: InteractionTarget,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
@@ -250,9 +278,58 @@ async fn handle_interaction(
             });
         }
         (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
+            let skill_requirement = {
+                let sim = state.game.sim.read().await;
+                sim.world.harvest_node_def_at(tile).map(|def| {
+                    (
+                        def.skill.id().to_string(),
+                        def.skill.display_name().to_string(),
+                    )
+                })
+            };
+
+            let skill_level = if let Some((skill_id, skill_display_name)) = skill_requirement {
+                match crate::game::sim::skills::load_character_skill_progress(
+                    &state.db,
+                    character_id,
+                    &skill_id,
+                )
+                .await
+                {
+                    Ok(progress) => progress.level,
+                    Err(e) => {
+                        warn!(
+                            "game ws skill level check failed character_id={} skill_id={} error={:?}",
+                            character_id, skill_id, e
+                        );
+
+                        let message = format!("failed to load {} level", skill_display_name);
+
+                        let _ = out_tx.send(ServerMsg::InteractionAck {
+                            accepted: false,
+                            action,
+                            target: target.clone(),
+                            message: message.clone(),
+                        });
+
+                        let _ = out_tx.send(ServerMsg::ActionState {
+                            player_id,
+                            action,
+                            target,
+                            state: ActionState::Rejected,
+                            message,
+                        });
+
+                        return;
+                    }
+                }
+            } else {
+                1
+            };
+
             let validation = {
                 let mut sim = state.game.sim.write().await;
-                sim.queue_chop_down(player_id, tile)
+                sim.queue_chop_down(player_id, tile, skill_level)
             };
 
             match validation {

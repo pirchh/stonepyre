@@ -127,6 +127,32 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                         game::sim::GameSimEvent::Server(msg) => {
                             game.hub.broadcast(msg);
                         }
+                        game::sim::GameSimEvent::SkillXpGrant(grant) => {
+                            match game::sim::skills::grant_character_skill_xp(
+                                &db,
+                                grant.character_id,
+                                &grant.skill_id,
+                                &grant.display_name,
+                                grant.xp_delta,
+                            )
+                            .await
+                            {
+                                Ok(result) => {
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::SkillDelta(
+                                        game::sim::skills::skill_delta_from_result(result),
+                                    ));
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "persistent skill xp grant failed character_id={} skill_id={} xp_delta={} error={:?}",
+                                        grant.character_id,
+                                        grant.skill_id,
+                                        grant.xp_delta,
+                                        e
+                                    );
+                                }
+                            }
+                        }
                         game::sim::GameSimEvent::InventoryGrant(grant) => {
                             match game::sim::inventory::grant_character_item(
                                 &db,

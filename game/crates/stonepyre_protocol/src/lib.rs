@@ -61,6 +61,10 @@ pub enum ServerMsg {
 
     InventoryDelta(InventoryDelta),
 
+    SkillSnapshot(SkillSnapshot),
+
+    SkillDelta(SkillDelta),
+
     Error {
         message: String,
     },
@@ -180,6 +184,32 @@ pub struct InventoryDelta {
     pub item_id: String,
     pub quantity_delta: i64,
     pub new_quantity: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillSnapshot {
+    pub character_id: Uuid,
+    pub skills: Vec<SkillSnapshotEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillSnapshotEntry {
+    pub skill_id: String,
+    pub display_name: String,
+    pub xp: i64,
+    pub level: u32,
+    pub xp_for_next_level: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillDelta {
+    pub character_id: Uuid,
+    pub skill_id: String,
+    pub display_name: String,
+    pub xp_delta: i64,
+    pub new_xp: i64,
+    pub new_level: u32,
+    pub xp_for_next_level: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

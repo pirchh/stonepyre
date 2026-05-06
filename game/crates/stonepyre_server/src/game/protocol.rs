@@ -13,5 +13,8 @@ pub use stonepyre_protocol::{
     PlayerActionSnapshot,
     PlayerSnapshot,
     ServerMsg,
+    SkillDelta,
+    SkillSnapshot,
+    SkillSnapshotEntry,
     WorldSnapshot,
 };
