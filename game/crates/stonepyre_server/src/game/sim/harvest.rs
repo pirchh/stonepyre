@@ -23,8 +23,10 @@ const NORMAL_TREE_SUCCESS_CHANCE: f32 = 0.62;
 const NORMAL_TREE_CHARGES: u32 = 4;
 const NORMAL_TREE_RESPAWN_SECS: u32 = 20;
 const NORMAL_TREE_LOOT_TABLE_ID: &str = "woodcutting_oak_tree";
-const NORMAL_TREE_AVAILABLE_SPRITE: &str = "world/harvest/oak_tree.png";
-const NORMAL_TREE_DEPLETED_SPRITE: &str = "world/harvest/oak_tree_stump.png";
+const NORMAL_TREE_AVAILABLE_SPRITE: &str =
+    "world/skills/woodcutting/harvest_nodes/oak_tree/available.png";
+const NORMAL_TREE_DEPLETED_SPRITE: &str =
+    "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png";
 
 const NORMAL_TREE_LOOT_ITEM_ID: &str = "log";
 const NORMAL_TREE_LOOT_MIN: u32 = 1;

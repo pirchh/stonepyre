@@ -68,6 +68,10 @@ fn main() {
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::sync_remote_players_from_snapshots,
                 boot::game_net::animate_remote_players_from_snapshots,
+                boot::game_net::update_world_object_depths
+                    .after(stonepyre_engine::plugins::movement::follow_path_to_next_tile)
+                    .after(boot::game_net::animate_remote_players_from_snapshots)
+                    .after(boot::game_net::sync_harvest_node_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
             )
                 .run_if(in_state(Screen::InWorld)),
