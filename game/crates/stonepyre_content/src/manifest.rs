@@ -15,7 +15,8 @@ pub struct ContentDb {
 pub fn default_item_defs() -> ItemDefs {
     let mut defs = ItemDefs::default();
 
-    // Basic log yielded by current woodcutting harvest nodes.
+    // Generic/basic log kept for compatibility while older inventory rows and
+    // tests may still reference the original runtime item id.
     defs.items.insert(
         "log".to_string(),
         ItemDef {
@@ -29,26 +30,43 @@ pub fn default_item_defs() -> ItemDefs {
             },
             equipment: None,
             bag_upgrade: None,
-            tags: vec!["material".to_string(), "wood".to_string()],
+            tags: vec!["material".to_string(), "wood".to_string(), "legacy".to_string()],
         },
     );
 
-    // Legacy/content example: Oak log. Keep this available while harvest output
-    // remains on the current runtime "log" item id.
+    // Oak log yielded by oak_tree.
     defs.items.insert(
         "log_oak".to_string(),
         ItemDef {
             id: "log_oak".to_string(),
             name: "Oak Log".to_string(),
             stack_policy: StackPolicy {
-                stack_in_inventory: false,
+                stack_in_inventory: true,
                 stack_in_bank: true,
-                stack_in_containers: false,
+                stack_in_containers: true,
                 max_stack: 99_999,
             },
             equipment: None,
             bag_upgrade: None,
-            tags: vec!["material".to_string(), "wood".to_string()],
+            tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
+        },
+    );
+
+    // Willow log yielded by willow_tree.
+    defs.items.insert(
+        "log_willow".to_string(),
+        ItemDef {
+            id: "log_willow".to_string(),
+            name: "Willow Log".to_string(),
+            stack_policy: StackPolicy {
+                stack_in_inventory: true,
+                stack_in_bank: true,
+                stack_in_containers: true,
+                max_stack: 99_999,
+            },
+            equipment: None,
+            bag_upgrade: None,
+            tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
         },
     );
 
@@ -134,11 +152,6 @@ pub fn default_harvest_defs() -> HarvestDefs {
         },
     );
 
-    // Phase 8c: second content-defined harvest node.
-    //
-    // Willow intentionally reuses the current oak runtime art for now so this
-    // pass proves the content/world/server split without adding new art files.
-    // A later art/content pass can replace these paths with real willow sprites.
     defs.nodes.insert(
         "willow_tree".to_string(),
         HarvestNodeDef {
@@ -154,6 +167,7 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 5,
             respawn_seconds: 30.0,
             loot_table: "woodcutting_willow_tree".to_string(),
+            // Temporary: willow reuses oak art until a dedicated willow asset exists.
             available_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/available.png".to_string(),
             depleted_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png".to_string(),
         },
@@ -164,7 +178,7 @@ pub fn default_harvest_defs() -> HarvestDefs {
         LootTableDef {
             id: "woodcutting_oak_tree".to_string(),
             entries: vec![LootEntryDef {
-                item_id: "log".to_string(),
+                item_id: "log_oak".to_string(),
                 min: 1,
                 max: 1,
                 weight: 100,
@@ -172,15 +186,12 @@ pub fn default_harvest_defs() -> HarvestDefs {
         },
     );
 
-    // Willow keeps yielding the existing runtime `log` item for now. This avoids
-    // expanding item/inventory behavior in the same pass and keeps 8c focused on
-    // multiple harvest-node definitions and placements.
     defs.loot_tables.insert(
         "woodcutting_willow_tree".to_string(),
         LootTableDef {
             id: "woodcutting_willow_tree".to_string(),
             entries: vec![LootEntryDef {
-                item_id: "log".to_string(),
+                item_id: "log_willow".to_string(),
                 min: 1,
                 max: 1,
                 weight: 100,
