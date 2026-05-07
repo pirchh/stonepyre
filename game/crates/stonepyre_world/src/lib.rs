@@ -8,7 +8,9 @@ pub use tile::{neighbors_4, tile_to_world_center, world_to_tile, TilePos, TILE_S
 pub use world::WorldGrid;
 
 pub use objects::{
+    demo_harvest_node_placements,
     demo_objects,
+    HarvestNodePlacement,
     ObjectId,
     ObjectState,
     PlacedObject,

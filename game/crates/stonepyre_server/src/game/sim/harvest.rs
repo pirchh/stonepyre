@@ -1,44 +1,10 @@
 use std::collections::HashMap;
 
-use stonepyre_world::TilePos;
+use stonepyre_content::{default_content_db, ContentDb};
+use stonepyre_world::{demo_harvest_node_placements, HarvestNodePlacement, TilePos};
 
 use crate::game::protocol::HarvestNodeSnapshot;
 
-// Phase 7k-a demo content tuning.
-//
-// Keep this content/server-side for now. The DB should not become the map
-// editor: placement comes from content/runtime data, live depletion state stays
-// in server memory, and only inventory remains persisted.
-//
-// XP and level requirements are intentionally content-authored on the harvest
-// node definition so future nodes can vary cleanly:
-//
-// oak_tree    -> Woodcutting, level 1, 10 XP
-// willow_tree -> Woodcutting, level 20, 25 XP
-const NORMAL_TREE_DEF_ID: &str = "oak_tree";
-const NORMAL_TREE_DISPLAY_NAME: &str = "Oak Tree";
-const NORMAL_TREE_REQUIRED_LEVEL: u32 = 1;
-const NORMAL_TREE_XP_ON_SUCCESS: u32 = 10;
-const NORMAL_TREE_SUCCESS_CHANCE: f32 = 0.62;
-const NORMAL_TREE_CHARGES: u32 = 4;
-const NORMAL_TREE_RESPAWN_SECS: u32 = 20;
-const NORMAL_TREE_LOOT_TABLE_ID: &str = "woodcutting_oak_tree";
-const NORMAL_TREE_AVAILABLE_SPRITE: &str =
-    "world/skills/woodcutting/harvest_nodes/oak_tree/available.png";
-const NORMAL_TREE_DEPLETED_SPRITE: &str =
-    "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png";
-
-const NORMAL_TREE_LOOT_ITEM_ID: &str = "log";
-const NORMAL_TREE_LOOT_MIN: u32 = 1;
-const NORMAL_TREE_LOOT_MAX: u32 = 1;
-const NORMAL_TREE_LOOT_WEIGHT: u32 = 100;
-
-const LOG_ITEM_DISPLAY_NAME: &str = "Log";
-const LOG_ITEM_INVENTORY_ICON: &str = "items/log.png";
-const LOG_ITEM_STACKABLE: bool = true;
-
-const DEMO_TREE_A_NODE_ID: &str = "demo_tree_2_0";
-const DEMO_TREE_B_NODE_ID: &str = "demo_tree_4_1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
@@ -55,6 +21,13 @@ impl HarvestSkill {
     pub fn display_name(self) -> &'static str {
         match self {
             HarvestSkill::Woodcutting => "Woodcutting",
+        }
+    }
+
+    fn from_content_id(id: &str) -> Option<Self> {
+        match id {
+            "woodcutting" => Some(HarvestSkill::Woodcutting),
+            _ => None,
         }
     }
 }
@@ -101,6 +74,7 @@ pub struct HarvestNodeInstance {
     pub node_id: &'static str,
     pub def_id: &'static str,
     pub tile: TilePos,
+    pub blocks_movement: bool,
     pub charges_remaining: u32,
     pub depleted_until_tick: Option<u64>,
 }
@@ -135,62 +109,86 @@ pub struct HarvestCatalog {
 
 impl HarvestCatalog {
     pub fn demo() -> Self {
+        Self::from_content_and_placements(default_content_db(), demo_harvest_node_placements())
+    }
+
+    fn from_content_and_placements(content: ContentDb, placements: Vec<HarvestNodePlacement>) -> Self {
         let mut node_defs = HashMap::new();
-        node_defs.insert(
-            NORMAL_TREE_DEF_ID,
-            HarvestNodeDef {
-                id: NORMAL_TREE_DEF_ID,
-                display_name: NORMAL_TREE_DISPLAY_NAME,
-                skill: HarvestSkill::Woodcutting,
-                required_level: NORMAL_TREE_REQUIRED_LEVEL,
-                xp_on_success: NORMAL_TREE_XP_ON_SUCCESS,
-                base_success_chance: NORMAL_TREE_SUCCESS_CHANCE,
-                charges: NORMAL_TREE_CHARGES,
-                respawn_secs: NORMAL_TREE_RESPAWN_SECS,
-                loot_table: NORMAL_TREE_LOOT_TABLE_ID,
-                available_sprite: NORMAL_TREE_AVAILABLE_SPRITE,
-                depleted_sprite: NORMAL_TREE_DEPLETED_SPRITE,
-            },
-        );
+
+        for (id, def) in content.harvest.nodes {
+            let Some(skill) = HarvestSkill::from_content_id(&def.skill_id) else {
+                continue;
+            };
+
+            let id = leak_str(id);
+            node_defs.insert(
+                id,
+                HarvestNodeDef {
+                    id: leak_str(def.id),
+                    display_name: leak_str(def.display_name),
+                    skill,
+                    required_level: def.required_level,
+                    xp_on_success: def.xp_on_success,
+                    base_success_chance: def.base_success_chance,
+                    charges: def.charges.max(0) as u32,
+                    respawn_secs: def.respawn_seconds.round().max(0.0) as u32,
+                    loot_table: leak_str(def.loot_table),
+                    available_sprite: leak_str(def.available_sprite),
+                    depleted_sprite: leak_str(def.depleted_sprite),
+                },
+            );
+        }
 
         let mut loot_tables = HashMap::new();
-        loot_tables.insert(
-            NORMAL_TREE_LOOT_TABLE_ID,
-            LootTable {
-                id: NORMAL_TREE_LOOT_TABLE_ID,
-                entries: vec![LootEntry {
-                    item_id: NORMAL_TREE_LOOT_ITEM_ID,
-                    min: NORMAL_TREE_LOOT_MIN,
-                    max: NORMAL_TREE_LOOT_MAX,
-                    weight: NORMAL_TREE_LOOT_WEIGHT,
-                }],
-            },
-        );
+        for (id, table) in content.harvest.loot_tables {
+            let id = leak_str(id);
+            loot_tables.insert(
+                id,
+                LootTable {
+                    id: leak_str(table.id),
+                    entries: table
+                        .entries
+                        .into_iter()
+                        .map(|entry| LootEntry {
+                            item_id: leak_str(entry.item_id),
+                            min: entry.min,
+                            max: entry.max,
+                            weight: entry.weight,
+                        })
+                        .collect(),
+                },
+            );
+        }
 
         let mut item_defs = HashMap::new();
-        item_defs.insert(
-            NORMAL_TREE_LOOT_ITEM_ID,
-            ItemDef {
-                id: NORMAL_TREE_LOOT_ITEM_ID,
-                display_name: LOG_ITEM_DISPLAY_NAME,
-                inventory_icon: LOG_ITEM_INVENTORY_ICON,
-                stackable: LOG_ITEM_STACKABLE,
-            },
-        );
+        for (id, item) in content.items.items {
+            let id = leak_str(id);
+            item_defs.insert(
+                id,
+                ItemDef {
+                    id: leak_str(item.id),
+                    display_name: leak_str(item.name),
+                    inventory_icon: "",
+                    stackable: item.stack_policy.stack_in_inventory,
+                },
+            );
+        }
 
         let mut node_instances_by_tile = HashMap::new();
 
-        for (node_id, tile) in [
-            (DEMO_TREE_A_NODE_ID, TilePos::new(2, 0)),
-            (DEMO_TREE_B_NODE_ID, TilePos::new(4, 1)),
-        ] {
+        for placement in placements {
+            let Some(def) = node_defs.get(placement.node_def_id) else {
+                continue;
+            };
+
             node_instances_by_tile.insert(
-                tile,
+                placement.tile,
                 HarvestNodeInstance {
-                    node_id,
-                    def_id: NORMAL_TREE_DEF_ID,
-                    tile,
-                    charges_remaining: NORMAL_TREE_CHARGES,
+                    node_id: placement.node_id,
+                    def_id: placement.node_def_id,
+                    tile: placement.tile,
+                    blocks_movement: placement.blocks_movement,
+                    charges_remaining: def.charges,
                     depleted_until_tick: None,
                 },
             );
@@ -232,7 +230,10 @@ impl HarvestCatalog {
     }
 
     pub fn blocking_tiles(&self) -> impl Iterator<Item = TilePos> + '_ {
-        self.node_instances_by_tile.keys().copied()
+        self.node_instances_by_tile
+            .values()
+            .filter(|node| node.blocks_movement)
+            .map(|node| node.tile)
     }
 
     pub fn snapshots(&self) -> Vec<HarvestNodeSnapshot> {
@@ -369,4 +370,9 @@ impl HarvestCatalog {
             loot_preview,
         })
     }
+}
+
+
+fn leak_str(value: String) -> &'static str {
+    Box::leak(value.into_boxed_str())
 }

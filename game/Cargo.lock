@@ -5594,6 +5594,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "stonepyre_content",
  "stonepyre_market",
  "stonepyre_protocol",
  "stonepyre_world",

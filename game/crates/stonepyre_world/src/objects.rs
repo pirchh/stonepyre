@@ -64,6 +64,51 @@ impl WorldObjectDef {
     }
 }
 
+/// Placement data for a harvest-node instance in a world/map.
+///
+/// The behavior definition itself lives in `stonepyre_content` under the stable
+/// `node_def_id` (for example, `oak_tree`). The server combines these world
+/// placements with content definitions to build live runtime harvest state.
+#[derive(Clone, Copy, Debug)]
+pub struct HarvestNodePlacement {
+    /// Stable per-instance id, for example `demo_tree_2_0`.
+    pub node_id: &'static str,
+
+    /// Stable content definition id, for example `oak_tree`.
+    pub node_def_id: &'static str,
+
+    pub tile: TilePos,
+    pub blocks_movement: bool,
+}
+
+impl HarvestNodePlacement {
+    pub const fn new(
+        node_id: &'static str,
+        node_def_id: &'static str,
+        tile: TilePos,
+        blocks_movement: bool,
+    ) -> Self {
+        Self {
+            node_id,
+            node_def_id,
+            tile,
+            blocks_movement,
+        }
+    }
+}
+
+/// Demo harvest-node placements for the current test scene.
+///
+/// This is intentionally world/map data, not server gameplay definition data.
+/// Future passes can replace this with loaded map/content files without changing
+/// the server harvest runtime model again.
+pub fn demo_harvest_node_placements() -> Vec<HarvestNodePlacement> {
+    vec![
+        HarvestNodePlacement::new("demo_tree_2_0", "oak_tree", TilePos::new(2, 0), true),
+        HarvestNodePlacement::new("demo_tree_4_1", "oak_tree", TilePos::new(4, 1), true),
+    ]
+}
+
 /// Demo world objects (authoritative source of truth for your test scene).
 pub fn demo_objects() -> Vec<WorldObjectDef> {
     vec![
