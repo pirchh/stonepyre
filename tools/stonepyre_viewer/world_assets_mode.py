@@ -32,6 +32,7 @@ ASSET_CATEGORY = "harvest_nodes"
 AVAILABLE_NAME = "available.png"
 DEPLETED_NAME = "depleted.png"
 MANIFEST_NAME = "manifest.json"
+DEFAULT_ANCHOR = (0.5, 0.88)
 
 BG = (16, 16, 24)
 PANEL = (26, 26, 38)
@@ -73,6 +74,7 @@ class WorldAssetState:
     status: str = "World Assets mode ready. Select or create a skill, then create a node."
     status_ok: bool = True
     surfaces: Dict[str, Optional[pygame.Surface]] = field(default_factory=lambda: {"available": None, "depleted": None})
+    anchors: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {"available": DEFAULT_ANCHOR, "depleted": DEFAULT_ANCHOR})
 
     def selected_skill_id(self) -> str:
         if not self.skill_ids:
@@ -256,6 +258,7 @@ def handle_click(pos: Tuple[int, int], state: WorldAssetState, ui_rects: Dict[st
         "send_to_game": lambda: send_to_game_assets(state),
         "open_tool_folder": lambda: open_folder(current_tool_folder(state), state),
         "open_game_folder": lambda: open_folder(current_game_folder(state), state),
+        "copy_available_anchor": lambda: copy_available_anchor_to_depleted(state),
         "refresh": lambda: refresh_all(state),
     }
     for key, callback in action_map.items():
@@ -265,6 +268,11 @@ def handle_click(pos: Tuple[int, int], state: WorldAssetState, ui_rects: Dict[st
             state.node_dropdown_open = False
             callback()
             return
+
+    if set_anchor_from_preview_click(state, ui_rects, pos, "available"):
+        return
+    if set_anchor_from_preview_click(state, ui_rects, pos, "depleted"):
+        return
 
     # Click outside closes dropdowns but keeps create panels open.
     state.skill_dropdown_open = False
@@ -294,7 +302,7 @@ def render(
 
     draw_library_column(screen, font, font_sm, font_mid, left, state, rects, mouse)
     draw_asset_column(screen, font, font_sm, font_mid, center, state, rects, mouse)
-    draw_preview_column(screen, font, font_sm, font_mid, right, state)
+    draw_preview_column(screen, font, font_sm, font_mid, right, state, rects)
 
     return rects
 
@@ -409,8 +417,12 @@ def draw_asset_column(screen, font, font_sm, font_mid, panel, state, rects, mous
     rects["assign_depleted"] = assign_d
     draw_button(screen, font_sm, assign_d, "Assign PNG", hovered=assign_d.collidepoint(mouse), active=bool(skill and node))
 
-    y = slot_d.bottom + 22
-    export = pygame.Rect(panel.x + 18, y, panel.w - 36, 224)
+    y = slot_d.bottom + 18
+    anchor_card = pygame.Rect(panel.x + 18, y, panel.w - 36, 106)
+    draw_anchor_card(screen, font, font_sm, anchor_card, state, rects, mouse)
+
+    y = anchor_card.bottom + 18
+    export = pygame.Rect(panel.x + 18, y, panel.w - 36, 194)
     draw_card(screen, export)
     screen.blit(font_mid.render("Export", True, TEXT), (export.x + 20, export.y + 16))
     ready = bool(skill and node and available_path.exists() and depleted_path.exists())
@@ -440,24 +452,24 @@ def draw_asset_column(screen, font, font_sm, font_mid, panel, state, rects, mous
     draw_wrapped_text(screen, font, state.status, status.x + 20, divider_y + 52, status.w - 40, OK if state.status_ok else BAD, line_h=21, max_lines=4)
 
 
-def draw_preview_column(screen, font, font_sm, font_mid, panel, state):
+def draw_preview_column(screen, font, font_sm, font_mid, panel, state, rects):
     y = panel.y + 22
     screen.blit(font_mid.render("Preview", True, TEXT), (panel.x + 22, y))
     y += 42
     card_w = panel.w - 36
     card_h = 330
     preview_a = pygame.Rect(panel.x + 18, y, card_w, card_h)
-    draw_sprite_preview(screen, font, font_sm, preview_a, "Available", state.surfaces.get("available"), available_tool_path(state.selected_skill_id(), state.selected_node_id()))
+    draw_sprite_preview(screen, font, font_sm, preview_a, "Available", state.surfaces.get("available"), available_tool_path(state.selected_skill_id(), state.selected_node_id()), state, "available", rects=rects)
     y = preview_a.bottom + 18
     preview_d = pygame.Rect(panel.x + 18, y, card_w, card_h)
-    draw_sprite_preview(screen, font, font_sm, preview_d, "Depleted", state.surfaces.get("depleted"), depleted_tool_path(state.selected_skill_id(), state.selected_node_id()))
+    draw_sprite_preview(screen, font, font_sm, preview_d, "Depleted", state.surfaces.get("depleted"), depleted_tool_path(state.selected_skill_id(), state.selected_node_id()), state, "depleted", rects=rects)
     y = preview_d.bottom + 18
     note = pygame.Rect(panel.x + 18, y, card_w, panel.bottom - y - 18)
     draw_card(screen, note)
-    screen.blit(font_mid.render("Folder Meaning", True, TEXT), (note.x + 20, note.y + 16))
-    draw_inline_hint(screen, font_sm, note.x + 20, note.y + 58, "Open Source", "tool-owned working folder in libs/world_assets")
-    draw_inline_hint(screen, font_sm, note.x + 20, note.y + 92, "Open Game", "export folder under game/assets used by Bevy")
-    draw_inline_hint(screen, font_sm, note.x + 20, note.y + 126, "Export", "copies available/depleted PNGs from source to game assets")
+    screen.blit(font_mid.render("Anchor Editing", True, TEXT), (note.x + 20, note.y + 16))
+    draw_wrapped_text(screen, font_sm, "Click inside either preview image to set that sprite anchor. Use the bottom-center trunk/root point for trees and stumps.", note.x + 20, note.y + 58, note.w - 40, MUTED, line_h=18, max_lines=3)
+    draw_inline_hint(screen, font_sm, note.x + 20, note.y + 128, "Open Source", "tool-owned working folder")
+    draw_inline_hint(screen, font_sm, note.x + 20, note.y + 158, "Open Game", "export folder used by Bevy")
 
 
 def draw_panel(screen, rect):
@@ -539,21 +551,63 @@ def draw_slot_card(screen, font, font_sm, rect, title, path, exists, description
     draw_wrapped_text(screen, font_sm, compact_path(path), rect.x + 20, rect.y + 82, rect.w - 220, DIM, line_h=17, max_lines=2)
 
 
-def draw_sprite_preview(screen, font, font_sm, rect, title, surface, path):
+def draw_anchor_card(screen, font, font_sm, rect, state, rects, mouse):
+    draw_card(screen, rect)
+    screen.blit(font.render("Sprite Anchors", True, TEXT), (rect.x + 20, rect.y + 16))
+    draw_wrapped_text(
+        screen,
+        font_sm,
+        "Click the preview image at the trunk/stump base. Anchors are saved in manifest.json and exported with the sprites.",
+        rect.x + 20,
+        rect.y + 48,
+        rect.w - 210,
+        MUTED,
+        line_h=17,
+        max_lines=2,
+    )
+    ax, ay = state.anchors.get("available", DEFAULT_ANCHOR)
+    dx, dy = state.anchors.get("depleted", DEFAULT_ANCHOR)
+    screen.blit(font_sm.render(f"Available: x={ax:.2f}, y={ay:.2f}", True, OK), (rect.right - 196, rect.y + 18))
+    screen.blit(font_sm.render(f"Depleted:  x={dx:.2f}, y={dy:.2f}", True, OK), (rect.right - 196, rect.y + 42))
+    btn = pygame.Rect(rect.right - 196, rect.bottom - 40, 176, 30)
+    rects["copy_available_anchor"] = btn
+    draw_button(screen, font_sm, btn, "Copy Avail -> Depl", hovered=btn.collidepoint(mouse), subtle=True)
+
+
+def draw_sprite_preview(screen, font, font_sm, rect, title, surface, path, state, slot, rects):
     draw_card(screen, rect)
     screen.blit(font.render(title, True, TEXT), (rect.x + 20, rect.y + 18))
     draw_chip(screen, font_sm, pygame.Rect(rect.right - 126, rect.y + 16, 94, 28), "assigned" if surface else "missing", OK if surface else BAD)
     preview = pygame.Rect(rect.x + 24, rect.y + 58, rect.w - 48, rect.h - 118)
     pygame.draw.rect(screen, CARD_DARK, preview, border_radius=12)
     pygame.draw.rect(screen, BORDER, preview, width=1, border_radius=12)
+
+    image_rect = preview
     if surface is None:
         t = font.render("Missing PNG", True, BAD)
         screen.blit(t, t.get_rect(center=preview.center))
     else:
         fitted = fit_surface(surface, preview.w - 28, preview.h - 28)
-        screen.blit(fitted, fitted.get_rect(center=preview.center))
-    draw_wrapped_text(screen, font_sm, compact_path(path), rect.x + 20, rect.bottom - 46, rect.w - 40, DIM, line_h=16, max_lines=2)
+        image_rect = fitted.get_rect(center=preview.center)
+        screen.blit(fitted, image_rect)
+        if rects is not None:
+            rects[f"{slot}_image_rect"] = image_rect
+        draw_anchor_marker(screen, image_rect, state.anchors.get(slot, DEFAULT_ANCHOR))
 
+    ax, ay = state.anchors.get(slot, DEFAULT_ANCHOR)
+    anchor_label = f"anchor x={ax:.2f}, y={ay:.2f}"
+    screen.blit(font_sm.render(anchor_label, True, OK), (rect.x + 20, rect.bottom - 64))
+    draw_wrapped_text(screen, font_sm, compact_path(path), rect.x + 20, rect.bottom - 42, rect.w - 40, DIM, line_h=16, max_lines=2)
+
+
+def draw_anchor_marker(screen, image_rect, anchor):
+    ax, ay = anchor
+    px = int(image_rect.x + ax * image_rect.w)
+    py = int(image_rect.y + ay * image_rect.h)
+    pygame.draw.circle(screen, (255, 226, 92), (px, py), 8, width=2)
+    pygame.draw.line(screen, (255, 226, 92), (px - 14, py), (px + 14, py), 2)
+    pygame.draw.line(screen, (255, 226, 92), (px, py - 14), (px, py + 14), 2)
+    pygame.draw.circle(screen, (20, 20, 28), (px, py), 3)
 
 def draw_wrapped_text(screen, font, text, x, y, width, color, line_h=22, max_lines=None):
     words = str(text).split()
@@ -586,6 +640,37 @@ def fit_surface(surface, max_w, max_h):
     return pygame.transform.scale(surface, size)
 
 
+def set_anchor_from_preview_click(state, ui_rects, pos, slot):
+    skill_id = state.selected_skill_id()
+    node_id = state.selected_node_id()
+    if not skill_id or not node_id:
+        return False
+    rect = ui_rects.get(f"{slot}_image_rect")
+    if rect is None or not rect.collidepoint(pos):
+        return False
+    x = (pos[0] - rect.x) / max(1, rect.w)
+    y = (pos[1] - rect.y) / max(1, rect.h)
+    state.anchors[slot] = (clamp01(x), clamp01(y))
+    write_manifest(skill_id, node_id, state)
+    set_status(state, f"Set {slot} anchor to x={state.anchors[slot][0]:.2f}, y={state.anchors[slot][1]:.2f}.", True)
+    return True
+
+
+def copy_available_anchor_to_depleted(state):
+    skill_id = state.selected_skill_id()
+    node_id = state.selected_node_id()
+    if not skill_id or not node_id:
+        set_status(state, "Create/select a skill and node before copying anchors.", False)
+        return
+    state.anchors["depleted"] = state.anchors.get("available", DEFAULT_ANCHOR)
+    write_manifest(skill_id, node_id, state)
+    set_status(state, "Copied available anchor to depleted sprite.", True)
+
+
+def clamp01(value):
+    return max(0.0, min(1.0, float(value)))
+
+
 def next_action_text(state):
     if not state.selected_skill_id():
         return "Create a skill, or select one from the Skill dropdown."
@@ -595,7 +680,7 @@ def next_action_text(state):
         return "Assign the available sprite PNG."
     if not depleted_tool_path(state.selected_skill_id(), state.selected_node_id()).exists():
         return "Assign the depleted/stump sprite PNG."
-    return "Both sprites are assigned. Send them to game/assets."
+    return "Both sprites are assigned. Check anchors in preview, then send to game/assets."
 
 
 def close_create_panel(state):
@@ -667,7 +752,7 @@ def ensure_node_from_draft(state):
         set_status(state, "Node id cannot be empty. Use lowercase letters, numbers, underscores, or hyphens.", False)
         return
     node_tool_dir(skill_id, node_id).mkdir(parents=True, exist_ok=True)
-    write_manifest(skill_id, node_id)
+    write_manifest(skill_id, node_id, state)
     refresh_nodes(state)
     if node_id in state.node_ids:
         state.selected_node_index = state.node_ids.index(node_id)
@@ -690,7 +775,7 @@ def assign_sprite(state, slot):
     dst = available_tool_path(skill_id, node_id) if slot == "available" else depleted_tool_path(skill_id, node_id)
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
-    write_manifest(skill_id, node_id)
+    write_manifest(skill_id, node_id, state)
     reload_previews(state)
     set_status(state, f"Assigned {slot} sprite from {safe_rel(src)}.", True)
 
@@ -711,7 +796,8 @@ def send_to_game_assets(state):
     game_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src_available, game_dir / AVAILABLE_NAME)
     shutil.copy2(src_depleted, game_dir / DEPLETED_NAME)
-    write_manifest(skill_id, node_id)
+    write_manifest(skill_id, node_id, state)
+    shutil.copy2(node_tool_dir(skill_id, node_id) / MANIFEST_NAME, game_dir / MANIFEST_NAME)
     set_status(state, f"Copied {skill_id}/{node_id} sprites to game/assets.", True)
 
 
@@ -740,6 +826,7 @@ def sys_platform_is_mac():
 def reload_previews(state):
     skill_id = state.selected_skill_id()
     node_id = state.selected_node_id()
+    state.anchors = read_manifest_anchors(skill_id, node_id) if skill_id and node_id else {"available": DEFAULT_ANCHOR, "depleted": DEFAULT_ANCHOR}
     state.surfaces["available"] = load_surface(available_tool_path(skill_id, node_id)) if skill_id and node_id else None
     state.surfaces["depleted"] = load_surface(depleted_tool_path(skill_id, node_id)) if skill_id and node_id else None
 
@@ -766,9 +853,30 @@ def pick_png_file():
     return Path(selected) if selected else None
 
 
-def write_manifest(skill_id, node_id):
+def read_manifest_anchors(skill_id, node_id):
+    out = {"available": DEFAULT_ANCHOR, "depleted": DEFAULT_ANCHOR}
+    if not skill_id or not node_id:
+        return out
+    path = node_tool_dir(skill_id, node_id) / MANIFEST_NAME
+    if not path.exists():
+        return out
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        visuals = data.get("visuals", {})
+        for slot in ("available", "depleted"):
+            anchor = visuals.get(slot, {}).get("anchor", {})
+            x = clamp01(anchor.get("x", out[slot][0]))
+            y = clamp01(anchor.get("y", out[slot][1]))
+            out[slot] = (x, y)
+    except Exception:
+        pass
+    return out
+
+
+def write_manifest(skill_id, node_id, state=None):
     node_dir = node_tool_dir(skill_id, node_id)
     node_dir.mkdir(parents=True, exist_ok=True)
+    anchors = (state.anchors if state is not None else read_manifest_anchors(skill_id, node_id))
     data = {
         "skill_id": skill_id,
         "node_id": node_id,
@@ -782,6 +890,24 @@ def write_manifest(skill_id, node_id):
         "game_asset_paths": {
             "available": game_asset_rel_path(skill_id, node_id, "available"),
             "depleted": game_asset_rel_path(skill_id, node_id, "depleted"),
+        },
+        "visuals": {
+            "available": {
+                "file": AVAILABLE_NAME,
+                "anchor": {
+                    "x": round(anchors.get("available", DEFAULT_ANCHOR)[0], 4),
+                    "y": round(anchors.get("available", DEFAULT_ANCHOR)[1], 4),
+                },
+                "scale": 1.0,
+            },
+            "depleted": {
+                "file": DEPLETED_NAME,
+                "anchor": {
+                    "x": round(anchors.get("depleted", DEFAULT_ANCHOR)[0], 4),
+                    "y": round(anchors.get("depleted", DEFAULT_ANCHOR)[1], 4),
+                },
+                "scale": 1.0,
+            },
         },
     }
     (node_dir / MANIFEST_NAME).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
