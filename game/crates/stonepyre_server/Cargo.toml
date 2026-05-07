@@ -31,6 +31,7 @@ hex = "0.4"
 
 futures-util = "0.3"
 
+stonepyre_content = { path = "../stonepyre_content" }
 stonepyre_market = { path = "../stonepyre_market" }
 stonepyre_world = { path = "../stonepyre_world" }
 stonepyre_protocol = { path = "../stonepyre_protocol" }
