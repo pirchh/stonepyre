@@ -159,3 +159,21 @@ tools/**/workspace/
 !game/assets/**/*.jpeg
 !game/assets/**/*.gif
 !game/assets/**/*.svg
+
+# ------------------------------------------------------------
+# Python cache files
+# ------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+
+# ------------------------------------------------------------
+# World asset manager local workspace
+#
+# The viewer uses this as a tool/source workspace.
+# Commit exported runtime assets under:
+#   game/assets/**
+# ------------------------------------------------------------
+libs/world_assets/

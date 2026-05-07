@@ -19,16 +19,16 @@
     "available": {
       "file": "available.png",
       "anchor": {
-        "x": 0.4855,
-        "y": 0.7011
+        "x": 0.4819,
+        "y": 0.7826
       },
       "scale": 1.0
     },
     "depleted": {
       "file": "depleted.png",
       "anchor": {
-        "x": 0.4855,
-        "y": 0.7011
+        "x": 0.4819,
+        "y": 0.7826
       },
       "scale": 1.0
     }
