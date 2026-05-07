@@ -106,6 +106,7 @@ pub fn demo_harvest_node_placements() -> Vec<HarvestNodePlacement> {
     vec![
         HarvestNodePlacement::new("demo_tree_2_0", "oak_tree", TilePos::new(2, 0), true),
         HarvestNodePlacement::new("demo_tree_4_1", "oak_tree", TilePos::new(4, 1), true),
+        HarvestNodePlacement::new("demo_willow_6_1", "willow_tree", TilePos::new(6, 1), true),
     ]
 }
 
