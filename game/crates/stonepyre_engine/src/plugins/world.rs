@@ -68,12 +68,18 @@ pub fn player_feet_world(xform: &Transform) -> Vec2 {
     Vec2::new(xform.translation.x, xform.translation.y - FOOT_OFFSET_Y)
 }
 
-/// Spawn the demo world + camera for a selected character.
-/// Called by the app on entering AppMode::InWorld.
+/// Spawn the demo world shell + camera for a selected character.
+///
+/// Harvest-node visuals/click targets are intentionally not hardcoded here
+/// anymore. In server-authoritative mode, the client spawns harvest-node shells
+/// from the server's `WorldSnapshot.harvest_nodes` list. This keeps the client
+/// presentation path aligned with the long-term world/chunk streaming direction:
+/// the server says which harvest nodes exist, and the client renders those
+/// authoritative instances.
 pub fn spawn_demo_world_for_character(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    harvest_defs: Option<&crate::plugins::skills::HarvestDb>,
+    _harvest_defs: Option<&crate::plugins::skills::HarvestDb>,
     _character_id: Uuid,
 ) {
     commands.spawn(Camera2d);
@@ -121,25 +127,10 @@ pub fn spawn_demo_world_for_character(
         EquippedBackpack::default(),
     ));
 
-    // Demo harvest nodes.
-    //
-    // Keep these positions aligned with the server-side HarvestCatalog::demo()
-    // nodes:
-    // - demo_tree_2_0 at TilePos::new(2, 0)
-    // - demo_tree_4_1 at TilePos::new(4, 1)
-    //
-    // The Transform controls where the square is drawn.
-    // GridPos controls the logical tile used by interaction/visual sync.
-    // These must match or depletion tinting/click targets become confusing.
-    if let Some(defs) = harvest_defs {
-        spawn_demo_tree_with_harvest_node(commands, defs, TilePos::new(2, 0));
-        spawn_demo_tree_with_harvest_node(commands, defs, TilePos::new(4, 1));
-    } else {
-        spawn_demo_tree_without_harvest_node(commands, TilePos::new(2, 0));
-        spawn_demo_tree_without_harvest_node(commands, TilePos::new(4, 1));
-    }
-
     // Demo NPC (blue).
+    //
+    // This is still a local demo shell until NPCs/world objects are also driven
+    // from server/world snapshots.
     commands.spawn((
         Sprite::from_color(Color::srgb(0.2, 0.4, 0.9), Vec2::splat(TILE_SIZE)),
         Transform::from_xyz(-2.0 * TILE_SIZE, 1.0 * TILE_SIZE, 5.0),
@@ -154,43 +145,6 @@ pub fn spawn_demo_world_for_character(
         Transform::from_xyz(0.0, 0.0, 9.0),
         TargetMarker::default(),
         Visibility::Hidden,
-    ));
-}
-
-fn spawn_demo_tree_with_harvest_node(
-    commands: &mut Commands,
-    defs: &crate::plugins::skills::HarvestDb,
-    tile: TilePos,
-) {
-    let node = crate::plugins::skills::harvest::HarvestNode::from_def_id("oak_tree", &defs.0);
-
-    commands.spawn((
-        Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
-        Transform::from_xyz(
-            tile.x as f32 * TILE_SIZE,
-            tile.y as f32 * TILE_SIZE,
-            5.0,
-        ),
-        GridPos(tile),
-        BlocksMovement,
-        InteractableKind::Tree,
-        Visibility::Visible,
-        node,
-    ));
-}
-
-fn spawn_demo_tree_without_harvest_node(commands: &mut Commands, tile: TilePos) {
-    commands.spawn((
-        Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::splat(TILE_SIZE)),
-        Transform::from_xyz(
-            tile.x as f32 * TILE_SIZE,
-            tile.y as f32 * TILE_SIZE,
-            5.0,
-        ),
-        GridPos(tile),
-        BlocksMovement,
-        InteractableKind::Tree,
-        Visibility::Visible,
     ));
 }
 

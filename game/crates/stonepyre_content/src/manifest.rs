@@ -134,10 +134,51 @@ pub fn default_harvest_defs() -> HarvestDefs {
         },
     );
 
+    // Phase 8c: second content-defined harvest node.
+    //
+    // Willow intentionally reuses the current oak runtime art for now so this
+    // pass proves the content/world/server split without adding new art files.
+    // A later art/content pass can replace these paths with real willow sprites.
+    defs.nodes.insert(
+        "willow_tree".to_string(),
+        HarvestNodeDef {
+            id: "willow_tree".to_string(),
+            display_name: "Willow Tree".to_string(),
+            skill_id: "woodcutting".to_string(),
+            skill_display_name: "Woodcutting".to_string(),
+            verb: "ChopDown".to_string(),
+            clip: "woodcutting".to_string(),
+            required_level: 1,
+            xp_on_success: 25,
+            base_success_chance: 0.45,
+            charges: 5,
+            respawn_seconds: 30.0,
+            loot_table: "woodcutting_willow_tree".to_string(),
+            available_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/available.png".to_string(),
+            depleted_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png".to_string(),
+        },
+    );
+
     defs.loot_tables.insert(
         "woodcutting_oak_tree".to_string(),
         LootTableDef {
             id: "woodcutting_oak_tree".to_string(),
+            entries: vec![LootEntryDef {
+                item_id: "log".to_string(),
+                min: 1,
+                max: 1,
+                weight: 100,
+            }],
+        },
+    );
+
+    // Willow keeps yielding the existing runtime `log` item for now. This avoids
+    // expanding item/inventory behavior in the same pass and keeps 8c focused on
+    // multiple harvest-node definitions and placements.
+    defs.loot_tables.insert(
+        "woodcutting_willow_tree".to_string(),
+        LootTableDef {
+            id: "woodcutting_willow_tree".to_string(),
             entries: vec![LootEntryDef {
                 item_id: "log".to_string(),
                 min: 1,
