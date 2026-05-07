@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
 use stonepyre_content::{default_content_db, ContentDb};
-use stonepyre_world::TilePos;
+use stonepyre_world::{demo_harvest_node_placements, HarvestNodePlacement, TilePos};
 
 use crate::game::protocol::HarvestNodeSnapshot;
 
-const DEMO_TREE_A_NODE_ID: &str = "demo_tree_2_0";
-const DEMO_TREE_B_NODE_ID: &str = "demo_tree_4_1";
-const DEMO_TREE_DEF_ID: &str = "oak_tree";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
@@ -77,6 +74,7 @@ pub struct HarvestNodeInstance {
     pub node_id: &'static str,
     pub def_id: &'static str,
     pub tile: TilePos,
+    pub blocks_movement: bool,
     pub charges_remaining: u32,
     pub depleted_until_tick: Option<u64>,
 }
@@ -100,13 +98,6 @@ pub struct HarvestRollOutcome {
     pub max_charges: u32,
     pub depleted_until_tick: Option<u64>,
     pub loot_preview: Option<HarvestLootPreview>,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct HarvestNodePlacement {
-    node_id: &'static str,
-    def_id: &'static str,
-    tile: TilePos,
 }
 
 pub struct HarvestCatalog {
@@ -186,7 +177,7 @@ impl HarvestCatalog {
         let mut node_instances_by_tile = HashMap::new();
 
         for placement in placements {
-            let Some(def) = node_defs.get(placement.def_id) else {
+            let Some(def) = node_defs.get(placement.node_def_id) else {
                 continue;
             };
 
@@ -194,8 +185,9 @@ impl HarvestCatalog {
                 placement.tile,
                 HarvestNodeInstance {
                     node_id: placement.node_id,
-                    def_id: placement.def_id,
+                    def_id: placement.node_def_id,
                     tile: placement.tile,
+                    blocks_movement: placement.blocks_movement,
                     charges_remaining: def.charges,
                     depleted_until_tick: None,
                 },
@@ -238,7 +230,10 @@ impl HarvestCatalog {
     }
 
     pub fn blocking_tiles(&self) -> impl Iterator<Item = TilePos> + '_ {
-        self.node_instances_by_tile.keys().copied()
+        self.node_instances_by_tile
+            .values()
+            .filter(|node| node.blocks_movement)
+            .map(|node| node.tile)
     }
 
     pub fn snapshots(&self) -> Vec<HarvestNodeSnapshot> {
@@ -377,20 +372,6 @@ impl HarvestCatalog {
     }
 }
 
-fn demo_harvest_node_placements() -> Vec<HarvestNodePlacement> {
-    vec![
-        HarvestNodePlacement {
-            node_id: DEMO_TREE_A_NODE_ID,
-            def_id: DEMO_TREE_DEF_ID,
-            tile: TilePos::new(2, 0),
-        },
-        HarvestNodePlacement {
-            node_id: DEMO_TREE_B_NODE_ID,
-            def_id: DEMO_TREE_DEF_ID,
-            tile: TilePos::new(4, 1),
-        },
-    ]
-}
 
 fn leak_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
