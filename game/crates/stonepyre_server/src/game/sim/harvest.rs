@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use stonepyre_content::{default_content_db, ContentDb};
 use stonepyre_world::{demo_harvest_node_placements, HarvestNodePlacement, TilePos};
+use tracing::warn;
 
 use crate::game::protocol::HarvestNodeSnapshot;
 
@@ -113,10 +114,19 @@ impl HarvestCatalog {
     }
 
     fn from_content_and_placements(content: ContentDb, placements: Vec<HarvestNodePlacement>) -> Self {
+        let known_item_ids: HashSet<String> = content.items.items.keys().cloned().collect();
+        let known_loot_table_ids: HashSet<String> = content.harvest.loot_tables.keys().cloned().collect();
+        let known_node_def_ids: HashSet<String> = content.harvest.nodes.keys().cloned().collect();
         let mut node_defs = HashMap::new();
 
         for (id, def) in content.harvest.nodes {
+            validate_harvest_node_def(&id, &def, &known_loot_table_ids);
+
             let Some(skill) = HarvestSkill::from_content_id(&def.skill_id) else {
+                warn!(
+                    "harvest content skipped node_def_id={} display_name={:?}: unsupported skill_id={}",
+                    id, def.display_name, def.skill_id
+                );
                 continue;
             };
 
@@ -141,6 +151,8 @@ impl HarvestCatalog {
 
         let mut loot_tables = HashMap::new();
         for (id, table) in content.harvest.loot_tables {
+            validate_loot_table_def(&id, &table, &known_item_ids);
+
             let id = leak_str(id);
             loot_tables.insert(
                 id,
@@ -162,6 +174,13 @@ impl HarvestCatalog {
 
         let mut item_defs = HashMap::new();
         for (id, item) in content.items.items {
+            if id != item.id {
+                warn!("item content id mismatch: map_key={} item.id={}", id, item.id);
+            }
+            if item.name.trim().is_empty() {
+                warn!("item content item_id={} has an empty display name", id);
+            }
+
             let id = leak_str(id);
             item_defs.insert(
                 id,
@@ -174,12 +193,39 @@ impl HarvestCatalog {
             );
         }
 
-        let mut node_instances_by_tile = HashMap::new();
+        let mut node_instances_by_tile: HashMap<TilePos, HarvestNodeInstance> = HashMap::new();
+        let mut seen_node_ids = HashSet::new();
 
         for placement in placements {
+            validate_harvest_node_placement(&placement, &known_node_def_ids);
+
+            if !seen_node_ids.insert(placement.node_id) {
+                warn!(
+                    "harvest placement duplicate node_id={} at tile={},{}",
+                    placement.node_id, placement.tile.x, placement.tile.y
+                );
+            }
+
             let Some(def) = node_defs.get(placement.node_def_id) else {
+                warn!(
+                    "harvest placement skipped node_id={} tile={},{}: missing node_def_id={}",
+                    placement.node_id,
+                    placement.tile.x,
+                    placement.tile.y,
+                    placement.node_def_id
+                );
                 continue;
             };
+
+            if let Some(existing) = node_instances_by_tile.get(&placement.tile) {
+                warn!(
+                    "harvest placement tile collision tile={},{}: replacing node_id={} with node_id={}",
+                    placement.tile.x,
+                    placement.tile.y,
+                    existing.node_id,
+                    placement.node_id
+                );
+            }
 
             node_instances_by_tile.insert(
                 placement.tile,
@@ -372,6 +418,137 @@ impl HarvestCatalog {
     }
 }
 
+fn validate_harvest_node_def(
+    map_key: &str,
+    def: &stonepyre_content::objects::HarvestNodeDef,
+    known_loot_table_ids: &HashSet<String>,
+) {
+    if map_key != def.id {
+        warn!("harvest content node id mismatch: map_key={} def.id={}", map_key, def.id);
+    }
+
+    if def.display_name.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty display name", map_key);
+    }
+
+    if def.skill_id.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty skill_id", map_key);
+    }
+
+    if def.skill_display_name.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty skill_display_name", map_key);
+    }
+
+    if def.verb.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty verb", map_key);
+    }
+
+    if def.clip.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty clip", map_key);
+    }
+
+    if def.charges <= 0 {
+        warn!("harvest content node_def_id={} has non-positive charges={}", map_key, def.charges);
+    }
+
+    if def.respawn_seconds <= 0.0 {
+        warn!(
+            "harvest content node_def_id={} has non-positive respawn_seconds={}",
+            map_key, def.respawn_seconds
+        );
+    }
+
+    if !(0.0..=1.0).contains(&def.base_success_chance) {
+        warn!(
+            "harvest content node_def_id={} has out-of-range base_success_chance={}",
+            map_key, def.base_success_chance
+        );
+    }
+
+    if def.loot_table.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty loot_table", map_key);
+    } else if !known_loot_table_ids.contains(&def.loot_table) {
+        warn!(
+            "harvest content node_def_id={} references missing loot_table={}",
+            map_key, def.loot_table
+        );
+    }
+
+    if def.available_sprite.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty available_sprite", map_key);
+    }
+
+    if def.depleted_sprite.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty depleted_sprite", map_key);
+    }
+}
+
+fn validate_loot_table_def(
+    map_key: &str,
+    table: &stonepyre_content::objects::LootTableDef,
+    known_item_ids: &HashSet<String>,
+) {
+    if map_key != table.id {
+        warn!("harvest loot table id mismatch: map_key={} table.id={}", map_key, table.id);
+    }
+
+    if table.entries.is_empty() {
+        warn!("harvest loot table id={} has no entries", map_key);
+    }
+
+    for (index, entry) in table.entries.iter().enumerate() {
+        if entry.item_id.trim().is_empty() {
+            warn!("harvest loot table id={} entry_index={} has an empty item_id", map_key, index);
+        } else if !known_item_ids.contains(&entry.item_id) {
+            warn!(
+                "harvest loot table id={} entry_index={} references missing item_id={}",
+                map_key, index, entry.item_id
+            );
+        }
+
+        if entry.min == 0 {
+            warn!("harvest loot table id={} entry_index={} has min=0", map_key, index);
+        }
+
+        if entry.max < entry.min {
+            warn!(
+                "harvest loot table id={} entry_index={} has max={} below min={}",
+                map_key, index, entry.max, entry.min
+            );
+        }
+
+        if entry.weight == 0 {
+            warn!("harvest loot table id={} entry_index={} has weight=0", map_key, index);
+        }
+    }
+}
+
+fn validate_harvest_node_placement(
+    placement: &HarvestNodePlacement,
+    known_node_def_ids: &HashSet<String>,
+) {
+    if placement.node_id.trim().is_empty() {
+        warn!(
+            "harvest placement at tile={},{} has an empty node_id",
+            placement.tile.x, placement.tile.y
+        );
+    }
+
+    if placement.node_def_id.trim().is_empty() {
+        warn!(
+            "harvest placement node_id={} tile={},{} has an empty node_def_id",
+            placement.node_id, placement.tile.x, placement.tile.y
+        );
+    } else if !known_node_def_ids.contains(placement.node_def_id) {
+        warn!(
+            "harvest placement node_id={} tile={},{} references missing node_def_id={}",
+            placement.node_id,
+            placement.tile.x,
+            placement.tile.y,
+            placement.node_def_id
+        );
+    }
+}
 
 fn leak_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
