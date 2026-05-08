@@ -1,5 +1,6 @@
 pub mod atlas;
 pub mod defs;
+pub mod files;
 pub mod items;
 pub mod manifest;
 pub mod objects;

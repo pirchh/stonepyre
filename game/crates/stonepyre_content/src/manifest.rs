@@ -23,9 +23,9 @@ pub fn default_item_defs() -> ItemDefs {
             id: "log".to_string(),
             name: "Log".to_string(),
             stack_policy: StackPolicy {
-                stack_in_inventory: true,
+                stack_in_inventory: false,
                 stack_in_bank: true,
-                stack_in_containers: true,
+                stack_in_containers: false,
                 max_stack: 99_999,
             },
             equipment: None,
@@ -41,9 +41,9 @@ pub fn default_item_defs() -> ItemDefs {
             id: "log_oak".to_string(),
             name: "Oak Log".to_string(),
             stack_policy: StackPolicy {
-                stack_in_inventory: true,
+                stack_in_inventory: false,
                 stack_in_bank: true,
-                stack_in_containers: true,
+                stack_in_containers: false,
                 max_stack: 99_999,
             },
             equipment: None,
@@ -59,9 +59,9 @@ pub fn default_item_defs() -> ItemDefs {
             id: "log_willow".to_string(),
             name: "Willow Log".to_string(),
             stack_policy: StackPolicy {
-                stack_in_inventory: true,
+                stack_in_inventory: false,
                 stack_in_bank: true,
-                stack_in_containers: true,
+                stack_in_containers: false,
                 max_stack: 99_999,
             },
             equipment: None,
@@ -202,9 +202,13 @@ pub fn default_harvest_defs() -> HarvestDefs {
 }
 
 pub fn default_content_db() -> ContentDb {
-    ContentDb {
+    let mut db = ContentDb {
         items: default_item_defs(),
         containers: default_container_defs(),
         harvest: default_harvest_defs(),
-    }
+    };
+
+    crate::files::overlay_content_files(&mut db);
+
+    db
 }
