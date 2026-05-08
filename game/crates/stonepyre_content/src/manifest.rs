@@ -167,9 +167,8 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 5,
             respawn_seconds: 30.0,
             loot_table: "woodcutting_willow_tree".to_string(),
-            // Temporary: willow reuses oak art until a dedicated willow asset exists.
-            available_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/available.png".to_string(),
-            depleted_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png".to_string(),
+            available_sprite: "world/skills/woodcutting/harvest_nodes/willow_tree/available.png".to_string(),
+            depleted_sprite: "world/skills/woodcutting/harvest_nodes/willow_tree/depleted.png".to_string(),
         },
     );
 
