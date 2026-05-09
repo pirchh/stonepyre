@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use stonepyre_content::{default_content_db, ContentDb};
-use stonepyre_world::{demo_harvest_node_placements, HarvestNodePlacement, TilePos};
+use stonepyre_world::{load_demo_harvest_node_placements, HarvestNodePlacement, TilePos};
 use tracing::warn;
 
 use crate::game::protocol::HarvestNodeSnapshot;
@@ -110,7 +110,7 @@ pub struct HarvestCatalog {
 
 impl HarvestCatalog {
     pub fn demo() -> Self {
-        Self::from_content_and_placements(default_content_db(), demo_harvest_node_placements())
+        Self::from_content_and_placements(default_content_db(), load_demo_harvest_node_placements())
     }
 
     fn from_content_and_placements(content: ContentDb, placements: Vec<HarvestNodePlacement>) -> Self {

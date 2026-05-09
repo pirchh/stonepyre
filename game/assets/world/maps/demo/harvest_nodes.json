@@ -1,0 +1,29 @@
+[
+  {
+    "node_id": "demo_tree_2_0",
+    "node_def_id": "oak_tree",
+    "tile": {
+      "x": 2,
+      "y": 0
+    },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_tree_4_1",
+    "node_def_id": "oak_tree",
+    "tile": {
+      "x": 4,
+      "y": 1
+    },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_willow_6_1",
+    "node_def_id": "willow_tree",
+    "tile": {
+      "x": 6,
+      "y": 1
+    },
+    "blocks_movement": true
+  }
+]
