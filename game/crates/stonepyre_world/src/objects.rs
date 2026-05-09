@@ -99,9 +99,9 @@ impl HarvestNodePlacement {
 
 /// Demo harvest-node placements for the current test scene.
 ///
-/// This is intentionally world/map data, not server gameplay definition data.
-/// Future passes can replace this with loaded map/content files without changing
-/// the server harvest runtime model again.
+/// This remains as fallback/bootstrap data. The preferred path is now
+/// `assets/world/maps/demo/harvest_nodes.json`, loaded by
+/// `load_demo_harvest_node_placements()`.
 pub fn demo_harvest_node_placements() -> Vec<HarvestNodePlacement> {
     vec![
         HarvestNodePlacement::new("demo_tree_2_0", "oak_tree", TilePos::new(2, 0), true),
