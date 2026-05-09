@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use crate::game::protocol::{InventoryItemSnapshot, InventorySnapshot};
 
+const BASE_INVENTORY_SLOTS: i64 = 16;
+
 /// Server-owned inventory grant produced by the live game simulation.
 ///
 /// Persistence is handled outside the simulation tick so the game loop can keep
@@ -28,10 +30,12 @@ pub struct InventoryGrantResult {
     pub new_quantity: i64,
 }
 
-/// Persist an item grant for a character and return the authoritative stack count.
+/// Persist an item grant for a character and return the authoritative item count.
 ///
-/// This uses an atomic upsert so repeated successful harvest rolls cannot lose
-/// quantity updates when they land close together.
+/// The current database table stores one aggregate quantity per item id. Stack
+/// policy is applied when building inventory snapshots so non-stackable content
+/// can occupy separate visible inventory slots without requiring the full slot
+/// persistence migration yet.
 pub async fn grant_character_item(
     pool: &PgPool,
     character_id: Uuid,
@@ -66,6 +70,11 @@ pub async fn grant_character_item(
 }
 
 /// Load the DB-authoritative inventory snapshot for a character.
+///
+/// Stackable item rows are exposed as a single stack entry. Non-stackable item
+/// rows are expanded into one visible inventory entry per quantity so OSRS-style
+/// gathered resources can occupy separate slots while persistence still uses the
+/// existing aggregate table.
 pub async fn load_character_inventory_snapshot(
     pool: &PgPool,
     character_id: Uuid,
@@ -85,9 +94,44 @@ pub async fn load_character_inventory_snapshot(
 
     Ok(InventorySnapshot {
         character_id,
-        items: rows
-            .into_iter()
-            .map(|(item_id, quantity)| InventoryItemSnapshot { item_id, quantity })
-            .collect(),
+        items: expand_inventory_rows_for_snapshot(rows),
     })
+}
+
+fn expand_inventory_rows_for_snapshot(rows: Vec<(String, i64)>) -> Vec<InventoryItemSnapshot> {
+    let content = stonepyre_content::default_content_db();
+    let mut items = Vec::new();
+
+    for (item_id, quantity) in rows {
+        let quantity = quantity.max(0);
+        if quantity == 0 {
+            continue;
+        }
+
+        let stackable = content
+            .items
+            .get(&item_id)
+            .map(|def| def.stack_policy.can_stack_in(stonepyre_content::items::StorageKind::Inventory))
+            .unwrap_or(true);
+
+        if stackable {
+            items.push(InventoryItemSnapshot { item_id, quantity });
+            continue;
+        }
+
+        // The client inventory panel currently owns the visible slot cap. Avoid
+        // producing an unbounded snapshot if a legacy aggregate row has grown
+        // very large before stack policy was introduced.
+        let remaining_visible_slots = BASE_INVENTORY_SLOTS.saturating_sub(items.len() as i64);
+        let visible_quantity = quantity.min(remaining_visible_slots);
+
+        for _ in 0..visible_quantity {
+            items.push(InventoryItemSnapshot {
+                item_id: item_id.clone(),
+                quantity: 1,
+            });
+        }
+    }
+
+    items
 }

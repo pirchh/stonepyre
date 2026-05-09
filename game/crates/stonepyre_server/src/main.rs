@@ -181,14 +181,24 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         },
                                     ));
 
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::InventoryDelta(
-                                        crate::game::protocol::InventoryDelta {
-                                            character_id: result.character_id,
-                                            item_id: result.item_id.clone(),
-                                            quantity_delta: i64::from(result.quantity),
-                                            new_quantity: result.new_quantity,
-                                        },
-                                    ));
+                                    match game::sim::inventory::load_character_inventory_snapshot(
+                                        &db,
+                                        result.character_id,
+                                    )
+                                    .await
+                                    {
+                                        Ok(snapshot) => {
+                                            game.hub.broadcast(crate::game::protocol::ServerMsg::InventorySnapshot(snapshot));
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "inventory snapshot refresh failed after grant character_id={} item_id={} error={:?}",
+                                                result.character_id,
+                                                result.item_id,
+                                                e
+                                            );
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     warn!(
