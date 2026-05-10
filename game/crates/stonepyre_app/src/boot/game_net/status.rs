@@ -80,6 +80,10 @@ pub enum GameNetCommand {
         action: InteractionAction,
         target: InteractionTarget,
     },
+    DropItem {
+        item_id: String,
+        quantity: u32,
+    },
 }
 
 #[derive(Debug, Clone)]
