@@ -94,6 +94,19 @@ pub fn send_interaction_to_server(
     tx.send(GameNetCommand::Interact { action, target }).is_ok()
 }
 
+pub fn send_drop_item_to_server(
+    game_net: &GameNetRuntime,
+    item_id: String,
+    quantity: u32,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::DropItem { item_id, quantity }).is_ok()
+}
+
 fn run_game_ws(
     url: String,
     token: String,
@@ -162,6 +175,14 @@ fn run_game_ws(
                             let _ = tx.send(GameNetEvent::MoveSent { tile });
                         }
                     }
+                }
+                GameNetCommand::DropItem { item_id, quantity } => {
+                    let msg = ClientMsg::DropItem { item_id, quantity };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws drop item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws drop item send failed: {e}"))?;
                 }
             }
         }
