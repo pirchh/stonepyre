@@ -200,7 +200,42 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         }
                                     }
                                 }
-                                Err(e) => {
+                                Err(game::sim::inventory::InventoryGrantError::InventoryFull {
+                                    item_id,
+                                    quantity,
+                                    slots_used,
+                                    slots_total,
+                                }) => {
+                                    info!(
+                                        "inventory grant rejected because inventory is full character_id={} item_id={} quantity={} slots_used={} slots_total={}",
+                                        grant.character_id,
+                                        item_id,
+                                        quantity,
+                                        slots_used,
+                                        slots_total
+                                    );
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::HarvestResult(
+                                        crate::game::protocol::HarvestResult {
+                                            player_id: grant.player_id,
+                                            character_id: grant.character_id,
+                                            action: grant.action,
+                                            target: grant.target.clone(),
+                                            node_id: grant.node_id.clone(),
+                                            display_name: grant.display_name.clone(),
+                                            success: false,
+                                            item_id: Some(item_id),
+                                            quantity: 0,
+                                            inventory_quantity: None,
+                                            charges_remaining: grant.charges_remaining,
+                                        },
+                                    ));
+
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error {
+                                        message: "Inventory full".to_string(),
+                                    });
+                                }
+                                Err(game::sim::inventory::InventoryGrantError::Db(e)) => {
                                     warn!(
                                         "persistent inventory grant failed character_id={} item_id={} quantity={} error={:?}",
                                         grant.character_id,
