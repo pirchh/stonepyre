@@ -13,10 +13,7 @@ mod target_marker;
 mod xp_feedback;
 
 pub use action_visuals::play_server_authoritative_action_visuals;
-pub use ground_items::{
-    sync_ground_item_visuals_from_server,
-    ServerGroundItemVisual,
-};
+pub use ground_items::sync_ground_item_visuals_from_server;
 pub use harvest_nodes::{
     sync_harvest_node_visuals_from_server,
     update_world_object_depths,
