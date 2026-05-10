@@ -107,6 +107,18 @@ pub fn send_drop_item_to_server(
     tx.send(GameNetCommand::DropItem { item_id, quantity }).is_ok()
 }
 
+pub fn send_pickup_ground_item_to_server(
+    game_net: &GameNetRuntime,
+    ground_item_id: Uuid,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::PickupGroundItem { ground_item_id }).is_ok()
+}
+
 fn run_game_ws(
     url: String,
     token: String,
@@ -183,6 +195,14 @@ fn run_game_ws(
                     socket
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws drop item send failed: {e}"))?;
+                }
+                GameNetCommand::PickupGroundItem { ground_item_id } => {
+                    let msg = ClientMsg::PickupGroundItem { ground_item_id };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws pickup ground item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws pickup ground item send failed: {e}"))?;
                 }
             }
         }
@@ -690,6 +710,7 @@ pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
     grid_pos_q: Query<&GridPos>,
+    ground_item_q: Query<&super::ground_items::ServerGroundItemVisual>,
 ) {
     for ev in intents.read() {
         match ev.intent.verb {
@@ -714,6 +735,24 @@ pub fn send_walk_intents_to_server_runtime(
                     InteractionTarget::Tile(tile),
                 ) {
                     warn!("game net chopdown target dropped; websocket is not ready");
+                }
+            }
+            Verb::Take => {
+                let Target::Entity(entity) = ev.intent.target else {
+                    warn!("game net take target dropped; target was not an entity");
+                    continue;
+                };
+
+                let Ok(ground_item) = ground_item_q.get(entity) else {
+                    warn!("game net take target dropped; entity was not a ground item");
+                    continue;
+                };
+
+                if !send_pickup_ground_item_to_server(&game_net, ground_item.ground_item_id) {
+                    warn!(
+                        "game net pickup ground item dropped; websocket is not ready ground_item_id={}",
+                        ground_item.ground_item_id
+                    );
                 }
             }
             Verb::TalkTo | Verb::Examine => {}
