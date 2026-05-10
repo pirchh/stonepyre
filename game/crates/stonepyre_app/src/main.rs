@@ -47,6 +47,7 @@ fn main() {
                 boot::game_net::pump_game_net_results,
                 boot::game_net::sync_inventory_from_server
                     .after(boot::game_net::pump_game_net_results),
+                boot::game_net::send_inventory_item_actions_to_server,
                 boot::game_net::update_xp_feedback_layer
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::tick_xp_feedback_toasts,
