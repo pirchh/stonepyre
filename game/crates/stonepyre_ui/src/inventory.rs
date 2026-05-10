@@ -114,7 +114,6 @@ pub(crate) fn inventory_panel_sync_system(
 pub(crate) fn inventory_item_context_menu_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mouse: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<InventoryUiState>,
     mut action_queue: ResMut<InventoryItemActionQueue>,
     player_q: Query<&Inventory>,
@@ -128,7 +127,7 @@ pub(crate) fn inventory_item_context_menu_system(
     let Ok(inv) = player_q.single() else { return; };
 
     for (interaction, slot) in &mut slot_q {
-        if *interaction != Interaction::Pressed || !mouse.just_pressed(MouseButton::Right) {
+        if *interaction != Interaction::Pressed {
             continue;
         }
 
@@ -303,7 +302,7 @@ fn spawn_inventory_panel(
 
     let hint = commands
         .spawn((
-            Text::new("Right-click an item for Use / Drop / Examine."),
+            Text::new("Click an item for Use / Drop / Examine."),
             TextFont {
                 font: font.clone(),
                 font_size: 13.0,
