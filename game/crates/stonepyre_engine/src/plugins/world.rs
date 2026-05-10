@@ -62,6 +62,7 @@ pub struct BlocksMovement;
 pub enum InteractableKind {
     Tree,
     Npc,
+    GroundItem,
 }
 
 pub fn player_feet_world(xform: &Transform) -> Vec2 {
