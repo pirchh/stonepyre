@@ -7,14 +7,14 @@ use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
 
 use crate::config::UiBindings;
 
-const PANEL_WIDTH: f32 = 356.0;
-const PANEL_HEIGHT: f32 = 450.0;
-const PANEL_PADDING: f32 = 12.0;
+const PANEL_WIDTH: f32 = 316.0;
+const PANEL_HEIGHT: f32 = 344.0;
+const PANEL_PADDING: f32 = 14.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
-const GRID_TOP_OFFSET: f32 = 58.0;
-const SLOT_SIZE: f32 = 76.0;
-const SLOT_GAP: f32 = 8.0;
+const GRID_TOP_OFFSET: f32 = PANEL_PADDING;
+const SLOT_SIZE: f32 = 58.0;
+const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
 const GRID_ROWS: usize = 4;
 const MENU_WIDTH: f32 = 220.0;
@@ -148,6 +148,15 @@ pub(crate) fn inventory_item_context_menu_system(
 
     let Ok(inv) = player_q.single() else { return; };
 
+    // OSRS-ish fallback: clicking the world while an item is selected cancels Use,
+    // but does not block the world click from walking/interacting.
+    if mouse.just_pressed(MouseButton::Left) && !cursor_over_inventory_panel(&windows) {
+        state.selected_use_item = None;
+        state.status_message.clear();
+        close_context_menu(&mut commands, &mut state);
+        return;
+    }
+
     // OSRS-ish primary action: left-click uses/selects the item.
     for (interaction, slot) in &mut slot_q {
         if *interaction != Interaction::Pressed {
@@ -237,32 +246,18 @@ fn spawn_inventory_panel(
                 padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(10.0),
-                border_radius: BorderRadius::all(Val::Px(10.0)),
+                row_gap: Val::Px(8.0),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.045, 0.042, 0.038, 0.94)),
-            Name::new("inventory_panel".to_string()),
+            BackgroundColor(Color::srgba(0.030, 0.028, 0.025, 0.94)),
+            Name::new("inventory_tab_panel".to_string()),
         ))
         .id();
 
     commands.entity(root).add_child(panel);
 
     let font = asset_server.load("fonts/ui.ttf");
-
-    let title = commands
-        .spawn((
-            Text::new("Inventory"),
-            TextFont {
-                font: font.clone(),
-                font_size: 22.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.95, 0.90, 0.78)),
-            Name::new("inventory_title".to_string()),
-        ))
-        .id();
-    commands.entity(panel).add_child(title);
 
     let grid = commands
         .spawn((
@@ -272,6 +267,7 @@ fn spawn_inventory_panel(
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(SLOT_GAP),
+                align_items: AlignItems::Center,
                 ..default()
             },
             Name::new("inventory_grid".to_string()),
@@ -290,6 +286,7 @@ fn spawn_inventory_panel(
                     display: Display::Flex,
                     flex_direction: FlexDirection::Row,
                     column_gap: Val::Px(SLOT_GAP),
+                    justify_content: JustifyContent::Center,
                     ..default()
                 },
                 Name::new(format!("inv_row_{r}")),
@@ -307,12 +304,12 @@ fn spawn_inventory_panel(
                         display: Display::Flex,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
-                        padding: UiRect::all(Val::Px(6.0)),
+                        padding: UiRect::all(Val::Px(4.0)),
                         border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(6.0)),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.095, 0.083, 0.070, 0.96)),
+                    BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96)),
                     InventorySlotButton { idx },
                     Name::new(format!("inv_slot_{r}_{c}")),
                 ))
@@ -323,10 +320,10 @@ fn spawn_inventory_panel(
                     Text::new(""),
                     TextFont {
                         font: font.clone(),
-                        font_size: 12.0,
+                        font_size: 10.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.84, 0.80, 0.72)),
+                    TextColor(Color::srgb(0.82, 0.78, 0.68)),
                     SlotLabel { idx },
                     Name::new(format!("inv_slot_label_{idx}")),
                 ))
@@ -341,13 +338,13 @@ fn spawn_inventory_panel(
 
     let hint = commands
         .spawn((
-            Text::new("Left-click Use · Right-click Options · I to close"),
+            Text::new("Left-click Use · Right-click Options"),
             TextFont {
                 font: font.clone(),
-                font_size: 12.0,
+                font_size: 10.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.66, 0.62, 0.55)),
+            TextColor(Color::srgb(0.55, 0.51, 0.45)),
             Name::new("inventory_hint".to_string()),
         ))
         .id();
@@ -358,7 +355,7 @@ fn spawn_inventory_panel(
             Text::new(""),
             TextFont {
                 font,
-                font_size: 13.0,
+                font_size: 12.0,
                 ..default()
             },
             TextColor(Color::srgb(0.90, 0.82, 0.58)),
@@ -497,9 +494,9 @@ fn update_slot_highlights(
 
     for (slot, mut bg) in slot_bg_q.iter_mut() {
         *bg = if Some(slot.idx) == selected_slot_idx {
-            BackgroundColor(Color::srgba(0.15, 0.18, 0.30, 0.98))
+            BackgroundColor(Color::srgba(0.16, 0.18, 0.30, 0.98))
         } else {
-            BackgroundColor(Color::srgba(0.095, 0.083, 0.070, 0.96))
+            BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96))
         };
     }
 }
@@ -530,7 +527,8 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
 
     let panel_left = inventory_panel_left(window);
     let panel_top = inventory_panel_top(window);
-    let grid_left = panel_left + PANEL_PADDING;
+    let grid_width = (GRID_COLS as f32 * SLOT_SIZE) + ((GRID_COLS - 1) as f32 * SLOT_GAP);
+    let grid_left = panel_left + ((PANEL_WIDTH - grid_width) * 0.5);
     let grid_top = panel_top + GRID_TOP_OFFSET;
 
     let local_x = cursor.x - grid_left;
@@ -562,7 +560,7 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
 }
 
 fn item_stack_label(stk: &ItemStack) -> String {
-    let name = item_display_name(&stk.id);
+    let name = item_display_name(&stk.id).replace(' ', "\n");
     if stk.qty > 1 {
         format!("{}\nx{}", name, stk.qty)
     } else {
