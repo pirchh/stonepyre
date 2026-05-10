@@ -43,7 +43,15 @@ impl Plugin for StonepyreUiPlugin {
 
             // Inventory panel (render-only; HUD controls open/close)
             .insert_resource(inventory::InventoryUiState::default())
-            .add_systems(Update, inventory::inventory_panel_sync_system.run_if(game_ui_enabled))
+            .insert_resource(inventory::InventoryItemActionQueue::default())
+            .add_systems(
+                Update,
+                (
+                    inventory::inventory_panel_sync_system,
+                    inventory::inventory_item_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character::CharacterUiState::default())
