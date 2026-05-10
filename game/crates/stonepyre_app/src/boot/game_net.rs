@@ -1,4 +1,5 @@
 mod action_visuals;
+mod ground_items;
 mod harvest_nodes;
 mod inventory_actions;
 mod inventory_sync;
@@ -12,6 +13,10 @@ mod target_marker;
 mod xp_feedback;
 
 pub use action_visuals::play_server_authoritative_action_visuals;
+pub use ground_items::{
+    sync_ground_item_visuals_from_server,
+    ServerGroundItemVisual,
+};
 pub use harvest_nodes::{
     sync_harvest_node_visuals_from_server,
     update_world_object_depths,
@@ -35,6 +40,7 @@ pub use runtime::{
     send_drop_item_to_server,
     send_interaction_to_server,
     send_move_to_server,
+    send_pickup_ground_item_to_server,
     send_walk_intents_to_server_runtime,
     spawn_game_ws,
 };
