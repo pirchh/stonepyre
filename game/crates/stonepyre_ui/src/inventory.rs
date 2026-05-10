@@ -162,7 +162,7 @@ pub(crate) fn inventory_item_context_menu_system(
         close_context_menu(&mut commands, &mut state);
     }
 
-    // Secondary action: right-click opens the item context menu near the cursor.
+    // Secondary action: right-click opens the item context menu beside the slot.
     if mouse.just_pressed(MouseButton::Right) {
         if let Some((slot_idx, menu_pos)) = inventory_slot_at_cursor(&windows) {
             match inventory_item_for_slot(inv, slot_idx) {
@@ -547,8 +547,10 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     }
 
     let slot_idx = row * GRID_COLS + col;
-    let menu_x = (cursor.x + 8.0).min((window.width() - MENU_WIDTH).max(0.0));
-    let menu_y = (window.height() - cursor.y + 8.0).max(0.0);
+    let slot_right = grid_left + (col as f32 * pitch) + SLOT_SIZE;
+    let slot_top = grid_top + (row as f32 * pitch);
+    let menu_x = (slot_right + 8.0).min((window.width() - MENU_WIDTH).max(0.0));
+    let menu_y = slot_top.max(0.0);
 
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
