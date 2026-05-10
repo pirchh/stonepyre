@@ -33,6 +33,7 @@ pub use remote_players::{
     RemoteNetPlayer,
 };
 pub use runtime::{
+    process_pending_ground_item_pickups,
     pump_game_net_results,
     send_drop_item_to_server,
     send_interaction_to_server,
@@ -40,6 +41,7 @@ pub use runtime::{
     send_pickup_ground_item_to_server,
     send_walk_intents_to_server_runtime,
     spawn_game_ws,
+    PendingGroundItemPickup,
 };
 pub use status::{
     GameNetCommand,
