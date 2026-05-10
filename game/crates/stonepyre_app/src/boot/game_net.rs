@@ -1,5 +1,6 @@
 mod action_visuals;
 mod harvest_nodes;
+mod inventory_actions;
 mod inventory_sync;
 mod overlay;
 mod protocol;
@@ -15,6 +16,7 @@ pub use harvest_nodes::{
     sync_harvest_node_visuals_from_server,
     update_world_object_depths,
 };
+pub use inventory_actions::send_inventory_item_actions_to_server;
 pub use inventory_sync::sync_inventory_from_server;
 pub use overlay::{
     despawn_game_net_overlay,
@@ -30,6 +32,7 @@ pub use remote_players::{
 };
 pub use runtime::{
     pump_game_net_results,
+    send_drop_item_to_server,
     send_interaction_to_server,
     send_move_to_server,
     send_walk_intents_to_server_runtime,
