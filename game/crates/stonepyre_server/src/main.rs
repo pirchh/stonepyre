@@ -127,6 +127,98 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                         game::sim::GameSimEvent::Server(msg) => {
                             game.hub.broadcast(msg);
                         }
+                        game::sim::GameSimEvent::HarvestCapacityCheck(check) => {
+                            let loot_preview = {
+                                let sim = game.sim.read().await;
+                                match check.target.clone() {
+                                    crate::game::protocol::InteractionTarget::Tile(tile) => {
+                                        sim.world.harvest_loot_preview_at(tile)
+                                    }
+                                }
+                            };
+
+                            let Some(loot) = loot_preview else {
+                                let message = "No harvest loot available".to_string();
+                                if let Some(msg) = {
+                                    let mut sim = game.sim.write().await;
+                                    sim.reject_harvest_capacity_check(
+                                        check.player_id,
+                                        check.target.clone(),
+                                        message.clone(),
+                                    )
+                                } {
+                                    game.hub.broadcast(msg);
+                                }
+                                game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                continue;
+                            };
+
+                            match game::sim::inventory::can_character_inventory_accept_item(
+                                &db,
+                                check.character_id,
+                                loot.item_id,
+                                loot.quantity,
+                            )
+                            .await
+                            {
+                                Ok(result) if result.can_accept => {
+                                    if let Some(msg) = {
+                                        let mut sim = game.sim.write().await;
+                                        sim.approve_harvest_capacity_check(
+                                            check.player_id,
+                                            check.target.clone(),
+                                        )
+                                    } {
+                                        game.hub.broadcast(msg);
+                                    }
+                                }
+                                Ok(result) => {
+                                    info!(
+                                        "harvest action rejected at node because inventory is full character_id={} item_id={} quantity={} slots_used={} slots_total={} additional_slots_required={}",
+                                        check.character_id,
+                                        result.item_id,
+                                        result.quantity,
+                                        result.slots_used,
+                                        result.slots_total,
+                                        result.additional_slots_required
+                                    );
+
+                                    let message = "Inventory full".to_string();
+                                    if let Some(msg) = {
+                                        let mut sim = game.sim.write().await;
+                                        sim.reject_harvest_capacity_check(
+                                            check.player_id,
+                                            check.target.clone(),
+                                            message.clone(),
+                                        )
+                                    } {
+                                        game.hub.broadcast(msg);
+                                    }
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "harvest inventory capacity check failed character_id={} target={:?} error={:?}",
+                                        check.character_id,
+                                        check.target,
+                                        e
+                                    );
+
+                                    let message = "failed to check inventory capacity".to_string();
+                                    if let Some(msg) = {
+                                        let mut sim = game.sim.write().await;
+                                        sim.reject_harvest_capacity_check(
+                                            check.player_id,
+                                            check.target.clone(),
+                                            message.clone(),
+                                        )
+                                    } {
+                                        game.hub.broadcast(msg);
+                                    }
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                }
+                            }
+                        }
                         game::sim::GameSimEvent::SkillXpGrant(grant) => {
                             let source = Some(grant.source.clone());
 
