@@ -11,6 +11,7 @@ use stonepyre_world::TilePos;
 use super::protocol::{
     ActionState,
     ClientMsg,
+    GroundItemEventKind,
     InteractionAction,
     InteractionTarget,
     NetPlayerSnapshot,
@@ -39,6 +40,8 @@ pub fn spawn_game_ws(
     status.snapshot_players = 0;
     status.latest_players.clear();
     status.harvest_nodes.clear();
+    status.ground_items.clear();
+    status.ground_items_dirty = true;
     status.server_tile = None;
     status.server_next_tile = None;
     status.server_goal = None;
@@ -267,6 +270,12 @@ fn run_game_ws(
                     }
                     Ok(ServerMsg::InventoryDelta(delta)) => {
                         let _ = tx.send(GameNetEvent::InventoryDelta(delta));
+                    }
+                    Ok(ServerMsg::GroundItemsSnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::GroundItemsSnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::GroundItemEvent(event)) => {
+                        let _ = tx.send(GameNetEvent::GroundItemEvent(event));
                     }
                     Ok(ServerMsg::SkillSnapshot(snapshot)) => {
                         let _ = tx.send(GameNetEvent::SkillSnapshot(snapshot));
@@ -529,6 +538,46 @@ pub fn pump_game_net_results(
                 status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
                 status.inventory_dirty = true;
             }
+            GameNetEvent::GroundItemsSnapshot(snapshot) => {
+                info!("game net ground items snapshot items={}", snapshot.items.len());
+                status.ground_items = snapshot.items;
+                status.ground_items_dirty = true;
+            }
+            GameNetEvent::GroundItemEvent(event) => {
+                match event.kind {
+                    GroundItemEventKind::Spawned => {
+                        if let Some(item) = event.item {
+                            info!(
+                                "game net ground item spawned id={} item={} quantity={} tile={},{}",
+                                item.ground_item_id,
+                                item.item_id,
+                                item.quantity,
+                                item.tile.x,
+                                item.tile.y
+                            );
+                            if let Some(existing) = status
+                                .ground_items
+                                .iter_mut()
+                                .find(|existing| existing.ground_item_id == item.ground_item_id)
+                            {
+                                *existing = item;
+                            } else {
+                                status.ground_items.push(item);
+                            }
+                        }
+                    }
+                    GroundItemEventKind::PickedUp | GroundItemEventKind::Despawned => {
+                        info!(
+                            "game net ground item removed kind={:?} id={}",
+                            event.kind, event.ground_item_id
+                        );
+                        status
+                            .ground_items
+                            .retain(|item| item.ground_item_id != event.ground_item_id);
+                    }
+                }
+                status.ground_items_dirty = true;
+            }
             GameNetEvent::SkillSnapshot(snapshot) => {
                 info!(
                     "game net skill snapshot character_id={} skills={}",
@@ -597,6 +646,8 @@ pub fn pump_game_net_results(
                 status.connecting = false;
                 status.latest_players.clear();
                 status.harvest_nodes.clear();
+                status.ground_items.clear();
+                status.ground_items_dirty = true;
                 status.server_next_tile = None;
                 status.server_goal = None;
                 status.server_moving = false;
