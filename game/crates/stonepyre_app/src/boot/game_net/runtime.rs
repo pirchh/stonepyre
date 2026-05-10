@@ -19,6 +19,17 @@ use super::protocol::{
 };
 use super::status::{GameNetCommand, GameNetEvent, GameNetRuntime, GameNetStatus};
 
+#[derive(Resource, Default, Debug, Clone)]
+pub struct PendingGroundItemPickup {
+    pub request: Option<PendingGroundItemPickupRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingGroundItemPickupRequest {
+    pub ground_item_id: Uuid,
+    pub tile: TilePos,
+}
+
 pub fn spawn_game_ws(
     game_net: &mut GameNetRuntime,
     status: &mut GameNetStatus,
@@ -709,8 +720,9 @@ pub fn pump_game_net_results(
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    mut pending_pickup: ResMut<PendingGroundItemPickup>,
     grid_pos_q: Query<&GridPos>,
-    ground_item_q: Query<&super::ground_items::ServerGroundItemVisual>,
+    ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
 ) {
     for ev in intents.read() {
         match ev.intent.verb {
@@ -718,6 +730,8 @@ pub fn send_walk_intents_to_server_runtime(
                 let Target::Tile(tile) = ev.intent.target else {
                     continue;
                 };
+
+                pending_pickup.request = None;
 
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
@@ -728,6 +742,8 @@ pub fn send_walk_intents_to_server_runtime(
                     warn!("game net chopdown target dropped; target tile could not be resolved");
                     continue;
                 };
+
+                pending_pickup.request = None;
 
                 if !send_interaction_to_server(
                     &game_net,
@@ -743,14 +759,19 @@ pub fn send_walk_intents_to_server_runtime(
                     continue;
                 };
 
-                let Ok(ground_item) = ground_item_q.get(entity) else {
+                let Ok((ground_item, grid_pos)) = ground_item_q.get(entity) else {
                     warn!("game net take target dropped; entity was not a ground item");
                     continue;
                 };
 
-                if !send_pickup_ground_item_to_server(&game_net, ground_item.ground_item_id) {
+                pending_pickup.request = Some(PendingGroundItemPickupRequest {
+                    ground_item_id: ground_item.ground_item_id,
+                    tile: grid_pos.0,
+                });
+
+                if !send_move_to_server(&game_net, grid_pos.0) {
                     warn!(
-                        "game net pickup ground item dropped; websocket is not ready ground_item_id={}",
+                        "game net take move target dropped; websocket is not ready ground_item_id={}",
                         ground_item.ground_item_id
                     );
                 }
@@ -760,9 +781,50 @@ pub fn send_walk_intents_to_server_runtime(
     }
 }
 
+pub fn process_pending_ground_item_pickups(
+    game_net: Res<GameNetRuntime>,
+    status: Res<GameNetStatus>,
+    mut pending_pickup: ResMut<PendingGroundItemPickup>,
+) {
+    let Some(request) = pending_pickup.request.clone() else {
+        return;
+    };
+
+    let Some(server_tile) = status.server_tile else {
+        return;
+    };
+
+    let still_exists = status
+        .ground_items
+        .iter()
+        .any(|item| item.ground_item_id == request.ground_item_id);
+
+    if !still_exists {
+        pending_pickup.request = None;
+        return;
+    }
+
+    if manhattan(server_tile, request.tile) > 1 {
+        return;
+    }
+
+    if send_pickup_ground_item_to_server(&game_net, request.ground_item_id) {
+        pending_pickup.request = None;
+    } else {
+        warn!(
+            "game net pending pickup dropped; websocket is not ready ground_item_id={}",
+            request.ground_item_id
+        );
+    }
+}
+
 fn intent_target_tile(target: Target, grid_pos_q: &Query<&GridPos>) -> Option<TilePos> {
     match target {
         Target::Tile(tile) => Some(tile),
         Target::Entity(entity) => grid_pos_q.get(entity).ok().map(|gp| gp.0),
     }
+}
+
+fn manhattan(a: TilePos, b: TilePos) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }
