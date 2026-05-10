@@ -51,7 +51,7 @@ pub(crate) struct SlotLabel {
 }
 
 #[derive(Component)]
-struct InventorySlotButton {
+pub(crate) struct InventorySlotButton {
     idx: usize,
 }
 
@@ -59,19 +59,19 @@ struct InventorySlotButton {
 struct InventoryContextMenuRoot;
 
 #[derive(Component)]
-struct InventoryContextOptionButton {
+pub(crate) struct InventoryContextOptionButton {
     action: InventoryContextOption,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InventoryContextOption {
+pub(crate) enum InventoryContextOption {
     Use,
     Drop,
     Examine,
 }
 
 #[derive(Component)]
-struct InventoryStatusLabel;
+pub(crate) struct InventoryStatusLabel;
 
 pub fn inventory_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
