@@ -32,6 +32,7 @@ pub struct InteractionCandidate {
     pub target: Target,
     pub priority: i32,
     pub range: i32,
+    pub menu_label: Option<String>,
 }
 
 // ------------------------------------------------------------
@@ -131,6 +132,7 @@ pub fn handle_clicks_build_candidates(
             target: Target::Tile(clicked_tile),
             priority: 0,
             range: 0,
+            menu_label: Some("Walk here".to_string()),
         }];
 
         for (ent, gp, kind) in interactables.iter() {
@@ -144,12 +146,14 @@ pub fn handle_clicks_build_candidates(
                         target: Target::Entity(ent),
                         priority: 100,
                         range: 1,
+                        menu_label: Some("Chop down".to_string()),
                     });
                     cands.push(InteractionCandidate {
                         verb: Verb::Examine,
                         target: Target::Entity(ent),
                         priority: -10,
                         range: 1,
+                        menu_label: Some("Examine".to_string()),
                     });
                 }
                 InteractableKind::Npc => {
@@ -158,26 +162,30 @@ pub fn handle_clicks_build_candidates(
                         target: Target::Entity(ent),
                         priority: 90,
                         range: 1,
+                        menu_label: Some("Talk-to".to_string()),
                     });
                     cands.push(InteractionCandidate {
                         verb: Verb::Examine,
                         target: Target::Entity(ent),
                         priority: -10,
                         range: 1,
+                        menu_label: Some("Examine".to_string()),
                     });
                 }
-                InteractableKind::GroundItem => {
+                InteractableKind::GroundItem { display_name } => {
                     cands.push(InteractionCandidate {
                         verb: Verb::Take,
                         target: Target::Entity(ent),
-                        priority: 110,
+                        priority: -1,
                         range: 1,
+                        menu_label: Some(format!("Take {}", display_name)),
                     });
                     cands.push(InteractionCandidate {
                         verb: Verb::Examine,
                         target: Target::Entity(ent),
                         priority: -10,
                         range: 1,
+                        menu_label: Some(format!("Examine {}", display_name)),
                     });
                 }
             }
