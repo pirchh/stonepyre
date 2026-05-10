@@ -29,6 +29,7 @@ fn main() {
                     ..default()
                 }),
         )
+        .insert_resource(boot::game_net::PendingGroundItemPickup::default())
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
         .add_plugins(stonepyre_ui::StonepyreUiPlugin)
@@ -58,6 +59,9 @@ fn main() {
                 boot::game_net::send_walk_intents_to_server_runtime
                     .after(stonepyre_engine::plugins::interaction::plan_intents_to_actions)
                     .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                boot::game_net::process_pending_ground_item_pickups
+                    .after(boot::game_net::pump_game_net_results)
+                    .after(boot::game_net::reconcile_local_player_to_server),
                 boot::game_net::reconcile_local_player_to_server
                     .after(boot::game_net::pump_game_net_results)
                     .after(boot::game_net::send_walk_intents_to_server_runtime)
@@ -99,8 +103,10 @@ fn enable_game_ui_on_enter_world(mut enabled: ResMut<stonepyre_ui::GameUiEnabled
 fn disable_game_ui_on_exit_world(
     mut commands: Commands,
     mut enabled: ResMut<stonepyre_ui::GameUiEnabled>,
+    mut pending_pickup: ResMut<boot::game_net::PendingGroundItemPickup>,
 ) {
     enabled.0 = false;
+    pending_pickup.request = None;
     commands.insert_resource(
         stonepyre_engine::plugins::interaction::ServerAuthoritativeInteractions(false),
     );
