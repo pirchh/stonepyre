@@ -173,6 +173,10 @@ pub struct ServerAction {
     pub target: InteractionTarget,
     pub state: ActionState,
     pub next_harvest_tick: Option<u64>,
+
+    /// True while the server has asked the async DB layer whether expected
+    /// harvest loot can fit before allowing this action to become Active.
+    pub pending_harvest_capacity_check: bool,
 }
 
 impl ServerAction {
