@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{world_to_tile, TilePos, WorldGrid};
+use stonepyre_world::{world_to_tile, TilePos, WorldGrid, TILE_SIZE};
 
 use crate::plugins::input::ClickMsg;
 use crate::plugins::skills::{AnimClip, RequestedAnim};
@@ -89,6 +89,7 @@ pub struct WorldInteractionBlocker(pub bool);
 
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
+const GROUND_ITEM_CLICK_SIZE: f32 = TILE_SIZE * 0.36;
 
 // ------------------------------------------------------------
 // 1) Click -> candidates -> intent
@@ -100,7 +101,7 @@ pub fn handle_clicks_build_candidates(
     blocker: Option<Res<WorldInteractionBlocker>>,
     mut intent_writer: MessageWriter<IntentMsg>,
     player_q: Query<Entity, With<Player>>,
-    interactables: Query<(Entity, &GridPos, &InteractableKind)>,
+    interactables: Query<(Entity, &GridPos, &InteractableKind, Option<&Transform>)>,
 ) {
     let Some(mut menu) = menu else { return; };
     let Ok(player_ent) = player_q.single() else { return; };
@@ -135,7 +136,7 @@ pub fn handle_clicks_build_candidates(
             menu_label: Some("Walk here".to_string()),
         }];
 
-        for (ent, gp, kind) in interactables.iter() {
+        for (ent, gp, kind, transform) in interactables.iter() {
             if gp.0 != clicked_tile {
                 continue;
             }
@@ -173,10 +174,13 @@ pub fn handle_clicks_build_candidates(
                     });
                 }
                 InteractableKind::GroundItem { display_name } => {
+                    let clicked_item_body = transform
+                        .map(|t| point_inside_square(ev.cursor_world, t.translation.truncate(), GROUND_ITEM_CLICK_SIZE))
+                        .unwrap_or(false);
                     cands.push(InteractionCandidate {
                         verb: Verb::Take,
                         target: Target::Entity(ent),
-                        priority: -1,
+                        priority: if clicked_item_body { 110 } else { -1 },
                         range: 1,
                         menu_label: Some(format!("Take {}", display_name)),
                     });
@@ -572,6 +576,14 @@ pub fn debug_print_resolved_actions(mut reader: MessageReader<ActionResolvedMsg>
 
 fn timer_done(t: &Timer) -> bool {
     t.elapsed() >= t.duration()
+}
+
+fn point_inside_square(point: Vec2, center: Vec2, size: f32) -> bool {
+    let half = size * 0.5;
+    point.x >= center.x - half
+        && point.x <= center.x + half
+        && point.y >= center.y - half
+        && point.y <= center.y + half
 }
 
 fn facing_from_step(from: TilePos, to: TilePos) -> Facing {
