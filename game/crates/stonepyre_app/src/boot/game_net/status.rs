@@ -84,6 +84,9 @@ pub enum GameNetCommand {
         item_id: String,
         quantity: u32,
     },
+    PickupGroundItem {
+        ground_item_id: Uuid,
+    },
 }
 
 #[derive(Debug, Clone)]
