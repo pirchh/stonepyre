@@ -30,6 +30,16 @@ pub struct InventoryGrantResult {
     pub new_quantity: i64,
 }
 
+#[derive(Clone, Debug)]
+pub struct InventoryCapacityCheck {
+    pub can_accept: bool,
+    pub item_id: String,
+    pub quantity: u32,
+    pub slots_used: i64,
+    pub slots_total: i64,
+    pub additional_slots_required: i64,
+}
+
 #[derive(Debug)]
 pub enum InventoryGrantError {
     Db(sqlx::Error),
@@ -45,6 +55,32 @@ impl From<sqlx::Error> for InventoryGrantError {
     fn from(value: sqlx::Error) -> Self {
         Self::Db(value)
     }
+}
+
+/// Check whether a grant can fit before starting an action.
+///
+/// This is a preflight check for interaction rejection and UX. The persistent
+/// grant path still repeats the check inside a transaction so capacity remains
+/// authoritative even if another grant lands between click time and roll time.
+pub async fn can_character_inventory_accept_item(
+    pool: &PgPool,
+    character_id: Uuid,
+    item_id: &str,
+    quantity: u32,
+) -> Result<InventoryCapacityCheck, sqlx::Error> {
+    let content = stonepyre_content::default_content_db();
+    let rows = load_character_inventory_rows(pool, character_id).await?;
+    let slots_used = inventory_slots_used(&content, &rows);
+    let additional_slots_required = additional_slots_required_for_grant(&content, &rows, item_id, quantity);
+
+    Ok(InventoryCapacityCheck {
+        can_accept: slots_used + additional_slots_required <= BASE_INVENTORY_SLOTS,
+        item_id: item_id.to_string(),
+        quantity,
+        slots_used,
+        slots_total: BASE_INVENTORY_SLOTS,
+        additional_slots_required,
+    })
 }
 
 /// Persist an item grant for a character and return the authoritative item count.
@@ -135,7 +171,19 @@ pub async fn load_character_inventory_snapshot(
     pool: &PgPool,
     character_id: Uuid,
 ) -> Result<InventorySnapshot, sqlx::Error> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
+    let rows = load_character_inventory_rows(pool, character_id).await?;
+
+    Ok(InventorySnapshot {
+        character_id,
+        items: expand_inventory_rows_for_snapshot(rows),
+    })
+}
+
+async fn load_character_inventory_rows(
+    pool: &PgPool,
+    character_id: Uuid,
+) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    sqlx::query_as(
         r#"
         SELECT item_id, quantity
         FROM game.character_inventory
@@ -146,12 +194,7 @@ pub async fn load_character_inventory_snapshot(
     )
     .bind(character_id)
     .fetch_all(pool)
-    .await?;
-
-    Ok(InventorySnapshot {
-        character_id,
-        items: expand_inventory_rows_for_snapshot(rows),
-    })
+    .await
 }
 
 fn expand_inventory_rows_for_snapshot(rows: Vec<(String, i64)>) -> Vec<InventoryItemSnapshot> {
