@@ -1,10 +1,14 @@
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
 use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
 
 use crate::config::UiBindings;
+
+const PANEL_WIDTH: f32 = 560.0;
+const PANEL_HEIGHT: f32 = 680.0;
 
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
@@ -92,11 +96,12 @@ pub(crate) fn inventory_panel_sync_system(
     asset_server: Res<AssetServer>,
     mut state: ResMut<InventoryUiState>,
     mut blocker: ResMut<WorldInteractionBlocker>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
     slot_text_q: Query<(Entity, &SlotLabel)>,
     status_text_q: Query<Entity, With<InventoryStatusLabel>>,
 ) {
-    blocker.0 = state.open;
+    blocker.0 = state.open && cursor_over_inventory_panel(&windows);
 
     if !state.open {
         despawn_all(&mut commands, &mut state);
@@ -196,8 +201,8 @@ fn spawn_inventory_panel(
     let panel = commands
         .spawn((
             Node {
-                width: Val::Px(560.0),
-                height: Val::Px(680.0),
+                width: Val::Px(PANEL_WIDTH),
+                height: Val::Px(PANEL_HEIGHT),
                 margin: UiRect::all(Val::Auto),
                 padding: UiRect::all(Val::Px(16.0)),
                 display: Display::Flex,
@@ -504,6 +509,25 @@ fn examine_text(item_id: &str) -> String {
     } else {
         format!("You see {}.", def.name)
     }
+}
+
+fn cursor_over_inventory_panel(windows: &Query<&Window, With<PrimaryWindow>>) -> bool {
+    let Ok(window) = windows.single() else {
+        return false;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return false;
+    };
+
+    let panel_left = (window.width() - PANEL_WIDTH) * 0.5;
+    let panel_right = panel_left + PANEL_WIDTH;
+    let panel_top = (window.height() - PANEL_HEIGHT) * 0.5;
+    let panel_bottom = panel_top + PANEL_HEIGHT;
+
+    cursor.x >= panel_left
+        && cursor.x <= panel_right
+        && cursor.y >= panel_top
+        && cursor.y <= panel_bottom
 }
 
 fn despawn_all(commands: &mut Commands, state: &mut ResMut<InventoryUiState>) {
