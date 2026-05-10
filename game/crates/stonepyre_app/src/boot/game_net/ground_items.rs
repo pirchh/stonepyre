@@ -27,7 +27,16 @@ pub fn sync_ground_item_visuals_from_server(
     asset_server: Res<AssetServer>,
     status: Res<GameNetStatus>,
     ground_item_q: Query<(Entity, &ServerGroundItemVisual), Without<ServerGroundItemLabel>>,
+    label_q: Query<Entity, With<ServerGroundItemLabel>>,
 ) {
+    // Labels are cheap and derived from current ground-item state. Rebuild them each
+    // sync so piles never accumulate duplicate/overlapping text across frames.
+    for label_entity in label_q.iter() {
+        if let Ok(mut ec) = commands.get_entity(label_entity) {
+            ec.despawn();
+        }
+    }
+
     let dominant_ids = dominant_ground_item_ids_by_tile(&status.ground_items);
     let desired_ids: HashSet<Uuid> = status
         .ground_items
@@ -47,18 +56,14 @@ pub fn sync_ground_item_visuals_from_server(
     for item in &status.ground_items {
         let should_show_label = dominant_ids.get(&item.tile) == Some(&item.ground_item_id);
 
-        if let Some(entity) = existing.get(&item.ground_item_id).copied() {
-            update_existing_ground_item_label(
-                &mut commands,
-                entity,
-                &asset_server,
-                item,
-                should_show_label,
-            );
-            continue;
-        }
+        let root = existing
+            .get(&item.ground_item_id)
+            .copied()
+            .unwrap_or_else(|| spawn_ground_item_visual(&mut commands, item));
 
-        spawn_ground_item_visual(&mut commands, &asset_server, item, should_show_label);
+        if should_show_label {
+            spawn_ground_item_label(&mut commands, &asset_server, root, item);
+        }
     }
 }
 
@@ -91,17 +96,33 @@ fn is_more_dominant(candidate: &GroundItemSnapshot, current: &GroundItemSnapshot
         .is_gt()
 }
 
-fn update_existing_ground_item_label(
-    commands: &mut Commands,
-    root: Entity,
-    asset_server: &AssetServer,
-    item: &GroundItemSnapshot,
-    should_show_label: bool,
-) {
-    if !should_show_label {
-        return;
-    }
+fn spawn_ground_item_visual(commands: &mut Commands, item: &GroundItemSnapshot) -> Entity {
+    let world = tile_to_world_center(item.tile);
+    let display_name = item_display_name(&item.item_id);
 
+    commands
+        .spawn((
+            Sprite::from_color(GROUND_ITEM_COLOR, Vec2::splat(GROUND_ITEM_SIZE)),
+            Transform::from_xyz(world.x, world.y, GROUND_ITEM_DEPTH),
+            GridPos(item.tile),
+            InteractableKind::GroundItem {
+                display_name: display_name.clone(),
+            },
+            ServerGroundItemVisual {
+                ground_item_id: item.ground_item_id,
+            },
+            Visibility::Visible,
+            Name::new(format!("ground_item_{}", item.item_id)),
+        ))
+        .id()
+}
+
+fn spawn_ground_item_label(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    root: Entity,
+    item: &GroundItemSnapshot,
+) {
     let label = ground_item_label(item);
     let font: Handle<Font> = asset_server.load("fonts/ui.ttf");
     let text = commands
@@ -121,36 +142,6 @@ fn update_existing_ground_item_label(
         .id();
 
     commands.entity(root).add_child(text);
-}
-
-fn spawn_ground_item_visual(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    item: &GroundItemSnapshot,
-    should_show_label: bool,
-) {
-    let world = tile_to_world_center(item.tile);
-    let display_name = item_display_name(&item.item_id);
-
-    let root = commands
-        .spawn((
-            Sprite::from_color(GROUND_ITEM_COLOR, Vec2::splat(GROUND_ITEM_SIZE)),
-            Transform::from_xyz(world.x, world.y, GROUND_ITEM_DEPTH),
-            GridPos(item.tile),
-            InteractableKind::GroundItem {
-                display_name: display_name.clone(),
-            },
-            ServerGroundItemVisual {
-                ground_item_id: item.ground_item_id,
-            },
-            Visibility::Visible,
-            Name::new(format!("ground_item_{}", item.item_id)),
-        ))
-        .id();
-
-    if should_show_label {
-        update_existing_ground_item_label(commands, root, asset_server, item, true);
-    }
 }
 
 fn ground_item_label(item: &GroundItemSnapshot) -> String {
