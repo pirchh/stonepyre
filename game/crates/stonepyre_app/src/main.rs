@@ -53,6 +53,8 @@ fn main() {
                 boot::game_net::tick_xp_feedback_toasts,
                 boot::game_net::sync_harvest_node_visuals_from_server
                     .after(boot::game_net::pump_game_net_results),
+                boot::game_net::sync_ground_item_visuals_from_server
+                    .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_walk_intents_to_server_runtime
                     .after(stonepyre_engine::plugins::interaction::plan_intents_to_actions)
                     .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
@@ -72,7 +74,8 @@ fn main() {
                 boot::game_net::update_world_object_depths
                     .after(stonepyre_engine::plugins::movement::follow_path_to_next_tile)
                     .after(boot::game_net::animate_remote_players_from_snapshots)
-                    .after(boot::game_net::sync_harvest_node_visuals_from_server),
+                    .after(boot::game_net::sync_harvest_node_visuals_from_server)
+                    .after(boot::game_net::sync_ground_item_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
             )
                 .run_if(in_state(Screen::InWorld)),
