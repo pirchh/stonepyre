@@ -9,6 +9,9 @@ use stonepyre_world::TilePos;
 
 use super::protocol::{
     ActionState,
+    GroundItemEvent,
+    GroundItemSnapshot,
+    GroundItemsSnapshot,
     HarvestNodeEvent,
     HarvestNodeSnapshot,
     HarvestResult,
@@ -62,6 +65,8 @@ pub enum GameNetEvent {
     HarvestNodeEvent(HarvestNodeEvent),
     InventorySnapshot(InventorySnapshot),
     InventoryDelta(InventoryDelta),
+    GroundItemsSnapshot(GroundItemsSnapshot),
+    GroundItemEvent(GroundItemEvent),
     SkillSnapshot(SkillSnapshot),
     SkillDelta(SkillDelta),
     Error(String),
@@ -74,6 +79,13 @@ pub enum GameNetCommand {
     Interact {
         action: InteractionAction,
         target: InteractionTarget,
+    },
+    DropItem {
+        item_id: String,
+        quantity: u32,
+    },
+    PickupGroundItem {
+        ground_item_id: Uuid,
     },
 }
 
@@ -98,6 +110,8 @@ pub struct GameNetStatus {
     pub snapshot_players: usize,
     pub latest_players: Vec<NetPlayerSnapshot>,
     pub harvest_nodes: Vec<HarvestNodeSnapshot>,
+    pub ground_items: Vec<GroundItemSnapshot>,
+    pub ground_items_dirty: bool,
     pub server_tile: Option<TilePos>,
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
@@ -129,6 +143,8 @@ impl Default for GameNetStatus {
             snapshot_players: 0,
             latest_players: Vec::new(),
             harvest_nodes: Vec::new(),
+            ground_items: Vec::new(),
+            ground_items_dirty: false,
             server_tile: None,
             server_next_tile: None,
             server_goal: None,

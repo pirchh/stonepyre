@@ -12,6 +12,13 @@ pub enum ClientMsg {
         action: InteractionAction,
         target: InteractionTarget,
     },
+    DropItem {
+        item_id: String,
+        quantity: u32,
+    },
+    PickupGroundItem {
+        ground_item_id: Uuid,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +67,10 @@ pub enum ServerMsg {
     InventorySnapshot(InventorySnapshot),
 
     InventoryDelta(InventoryDelta),
+
+    GroundItemsSnapshot(GroundItemsSnapshot),
+
+    GroundItemEvent(GroundItemEvent),
 
     SkillSnapshot(SkillSnapshot),
 
@@ -184,6 +195,35 @@ pub struct InventoryDelta {
     pub item_id: String,
     pub quantity_delta: i64,
     pub new_quantity: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroundItemsSnapshot {
+    pub items: Vec<GroundItemSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroundItemSnapshot {
+    pub ground_item_id: Uuid,
+    pub item_id: String,
+    pub quantity: u32,
+    pub tile: TilePos,
+    pub owner_character_id: Option<Uuid>,
+    pub despawn_at_tick: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroundItemEvent {
+    pub kind: GroundItemEventKind,
+    pub item: Option<GroundItemSnapshot>,
+    pub ground_item_id: Uuid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GroundItemEventKind {
+    Spawned,
+    PickedUp,
+    Despawned,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

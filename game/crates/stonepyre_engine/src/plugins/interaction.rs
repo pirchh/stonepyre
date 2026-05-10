@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{world_to_tile, TilePos, WorldGrid};
+use stonepyre_world::{world_to_tile, TilePos, WorldGrid, TILE_SIZE};
 
 use crate::plugins::input::ClickMsg;
 use crate::plugins::skills::{AnimClip, RequestedAnim};
@@ -16,6 +16,7 @@ pub enum Verb {
     WalkHere,
     TalkTo,
     ChopDown,
+    Take,
     Examine,
 }
 
@@ -31,6 +32,7 @@ pub struct InteractionCandidate {
     pub target: Target,
     pub priority: i32,
     pub range: i32,
+    pub menu_label: Option<String>,
 }
 
 // ------------------------------------------------------------
@@ -81,8 +83,13 @@ pub struct ActionResolvedMsg {
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct ServerAuthoritativeInteractions(pub bool);
 
+/// Set by UI overlays that should consume clicks before world interaction logic.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct WorldInteractionBlocker(pub bool);
+
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
+const GROUND_ITEM_CLICK_SIZE: f32 = TILE_SIZE * 0.36;
 
 // ------------------------------------------------------------
 // 1) Click -> candidates -> intent
@@ -91,16 +98,24 @@ const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
 pub fn handle_clicks_build_candidates(
     mut click_reader: MessageReader<ClickMsg>,
     menu: Option<ResMut<ContextMenuState>>,
+    blocker: Option<Res<WorldInteractionBlocker>>,
     mut intent_writer: MessageWriter<IntentMsg>,
     player_q: Query<Entity, With<Player>>,
-    interactables: Query<(Entity, &GridPos, &InteractableKind)>,
+    interactables: Query<(Entity, &GridPos, &InteractableKind, Option<&Transform>)>,
 ) {
     let Some(mut menu) = menu else { return; };
     let Ok(player_ent) = player_q.single() else { return; };
 
     let consumed_left_click = menu.consumed_left_click;
+    let world_blocked = blocker.as_ref().map(|b| b.0).unwrap_or(false);
 
     for ev in click_reader.read() {
+        if world_blocked {
+            menu.open = false;
+            menu.dirty = true;
+            continue;
+        }
+
         // If the context menu handled this click, do NOT also treat it as a world click.
         if consumed_left_click && ev.button == MouseButton::Left {
             continue;
@@ -118,9 +133,10 @@ pub fn handle_clicks_build_candidates(
             target: Target::Tile(clicked_tile),
             priority: 0,
             range: 0,
+            menu_label: Some("Walk here".to_string()),
         }];
 
-        for (ent, gp, kind) in interactables.iter() {
+        for (ent, gp, kind, transform) in interactables.iter() {
             if gp.0 != clicked_tile {
                 continue;
             }
@@ -131,12 +147,14 @@ pub fn handle_clicks_build_candidates(
                         target: Target::Entity(ent),
                         priority: 100,
                         range: 1,
+                        menu_label: Some("Chop down".to_string()),
                     });
                     cands.push(InteractionCandidate {
                         verb: Verb::Examine,
                         target: Target::Entity(ent),
                         priority: -10,
                         range: 1,
+                        menu_label: Some("Examine".to_string()),
                     });
                 }
                 InteractableKind::Npc => {
@@ -145,12 +163,33 @@ pub fn handle_clicks_build_candidates(
                         target: Target::Entity(ent),
                         priority: 90,
                         range: 1,
+                        menu_label: Some("Talk-to".to_string()),
                     });
                     cands.push(InteractionCandidate {
                         verb: Verb::Examine,
                         target: Target::Entity(ent),
                         priority: -10,
                         range: 1,
+                        menu_label: Some("Examine".to_string()),
+                    });
+                }
+                InteractableKind::GroundItem { display_name } => {
+                    let clicked_item_body = transform
+                        .map(|t| point_inside_square(ev.cursor_world, t.translation.truncate(), GROUND_ITEM_CLICK_SIZE))
+                        .unwrap_or(false);
+                    cands.push(InteractionCandidate {
+                        verb: Verb::Take,
+                        target: Target::Entity(ent),
+                        priority: if clicked_item_body { 110 } else { -1 },
+                        range: 1,
+                        menu_label: Some(format!("Take {}", display_name)),
+                    });
+                    cands.push(InteractionCandidate {
+                        verb: Verb::Examine,
+                        target: Target::Entity(ent),
+                        priority: -10,
+                        range: 1,
+                        menu_label: Some(format!("Examine {}", display_name)),
                     });
                 }
             }
@@ -240,7 +279,7 @@ pub fn plan_intents_to_actions(
 
         // In networked/server-authoritative mode, gameplay interactions are owned by the server.
         // The local engine may still plan WalkHere for offline mode and target preview, but it must
-        // not resolve ChopDown/TalkTo/Examine locally because that would produce client-only effects.
+        // not resolve non-movement interactions locally because that would produce client-only effects.
         if server_authoritative && intent.verb != Verb::WalkHere {
             commands.entity(player_ent).remove::<CurrentAction>();
             commands.entity(player_ent).remove::<RequestedAnim>();
@@ -287,7 +326,7 @@ pub fn plan_intents_to_actions(
                 commands.entity(player_ent).remove::<RequestedAnim>();
             }
 
-            Verb::TalkTo | Verb::ChopDown | Verb::Examine => {
+            Verb::TalkTo | Verb::ChopDown | Verb::Take | Verb::Examine => {
                 let range = intent.range.max(1);
                 let Some(goal_tile) =
                     pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, range)
@@ -537,6 +576,14 @@ pub fn debug_print_resolved_actions(mut reader: MessageReader<ActionResolvedMsg>
 
 fn timer_done(t: &Timer) -> bool {
     t.elapsed() >= t.duration()
+}
+
+fn point_inside_square(point: Vec2, center: Vec2, size: f32) -> bool {
+    let half = size * 0.5;
+    point.x >= center.x - half
+        && point.x <= center.x + half
+        && point.y >= center.y - half
+        && point.y <= center.y + half
 }
 
 fn facing_from_step(from: TilePos, to: TilePos) -> Facing {

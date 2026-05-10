@@ -1,8 +1,21 @@
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
-use stonepyre_engine::plugins::inventory::Inventory;
+use stonepyre_content::default_item_defs;
+use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
+use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
 
 use crate::config::UiBindings;
+
+const PANEL_WIDTH: f32 = 560.0;
+const PANEL_HEIGHT: f32 = 680.0;
+const PANEL_PADDING: f32 = 16.0;
+const GRID_TOP_OFFSET: f32 = 82.0;
+const SLOT_SIZE: f32 = 104.0;
+const SLOT_GAP: f32 = 10.0;
+const GRID_COLS: usize = 4;
+const GRID_ROWS: usize = 4;
+const MENU_WIDTH: f32 = 220.0;
 
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
@@ -10,6 +23,35 @@ pub struct InventoryUiState {
     pub root: Option<Entity>,
     pub spawned: Vec<Entity>,
     pub needs_rebuild: bool,
+    pub context_menu_root: Option<Entity>,
+    pub context_item: Option<InventoryContextItem>,
+    pub selected_use_item: Option<InventoryContextItem>,
+    pub status_message: String,
+}
+
+#[derive(Resource, Default)]
+pub struct InventoryItemActionQueue {
+    pub actions: Vec<InventoryItemActionRequest>,
+}
+
+#[derive(Clone, Debug)]
+pub struct InventoryItemActionRequest {
+    pub action: InventoryItemAction,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InventoryItemAction {
+    Drop,
+}
+
+#[derive(Clone, Debug)]
+pub struct InventoryContextItem {
+    pub slot_idx: usize,
+    pub item_id: String,
+    pub display_name: String,
+    pub quantity: u32,
 }
 
 #[derive(Component)]
@@ -20,6 +62,29 @@ pub(crate) struct SlotLabel {
     idx: usize,
 }
 
+#[derive(Component)]
+pub(crate) struct InventorySlotButton {
+    idx: usize,
+}
+
+#[derive(Component)]
+struct InventoryContextMenuRoot;
+
+#[derive(Component)]
+pub(crate) struct InventoryContextOptionButton {
+    action: InventoryContextOption,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InventoryContextOption {
+    Use,
+    Drop,
+    Examine,
+}
+
+#[derive(Component)]
+pub(crate) struct InventoryStatusLabel;
+
 pub fn inventory_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<UiBindings>,
@@ -28,6 +93,8 @@ pub fn inventory_toggle_system(
     if keys.just_pressed(binds.toggle_inventory) {
         state.open = !state.open;
         state.needs_rebuild = true;
+        state.context_item = None;
+        state.context_menu_root = None;
     }
 }
 
@@ -35,9 +102,15 @@ pub(crate) fn inventory_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut state: ResMut<InventoryUiState>,
+    mut blocker: ResMut<WorldInteractionBlocker>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
     slot_text_q: Query<(Entity, &SlotLabel)>,
+    status_text_q: Query<Entity, With<InventoryStatusLabel>>,
+    mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
+    blocker.0 = state.open && cursor_over_inventory_panel(&windows);
+
     if !state.open {
         despawn_all(&mut commands, &mut state);
         return;
@@ -52,6 +125,86 @@ pub(crate) fn inventory_panel_sync_system(
     }
 
     update_slot_labels(&mut commands, &inv, slot_text_q);
+    update_slot_highlights(&state, &mut slot_bg_q);
+    update_status_label(&mut commands, &state, status_text_q);
+}
+
+pub(crate) fn inventory_item_context_menu_system(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut state: ResMut<InventoryUiState>,
+    mut action_queue: ResMut<InventoryItemActionQueue>,
+    player_q: Query<&Inventory>,
+    mut slot_q: Query<(&Interaction, &InventorySlotButton), (Changed<Interaction>, With<Button>)>,
+    mut option_q: Query<(&Interaction, &InventoryContextOptionButton), (Changed<Interaction>, With<Button>)>,
+) {
+    if !state.open {
+        return;
+    }
+
+    let Ok(inv) = player_q.single() else { return; };
+
+    // OSRS-ish primary action: left-click uses/selects the item.
+    for (interaction, slot) in &mut slot_q {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        let Some(item) = inventory_item_for_slot(inv, slot.idx) else {
+            close_context_menu(&mut commands, &mut state);
+            continue;
+        };
+
+        state.selected_use_item = Some(item.clone());
+        state.status_message = format!("Use {} ->", item.display_name);
+        close_context_menu(&mut commands, &mut state);
+    }
+
+    // Secondary action: right-click opens the item context menu beside the slot.
+    if mouse.just_pressed(MouseButton::Right) {
+        if let Some((slot_idx, menu_pos)) = inventory_slot_at_cursor(&windows) {
+            match inventory_item_for_slot(inv, slot_idx) {
+                Some(item) => open_context_menu(&mut commands, &asset_server, &mut state, item, menu_pos),
+                None => close_context_menu(&mut commands, &mut state),
+            }
+        } else if cursor_over_inventory_panel(&windows) {
+            close_context_menu(&mut commands, &mut state);
+        }
+    }
+
+    for (interaction, option) in &mut option_q {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        let Some(item) = state.context_item.clone() else {
+            close_context_menu(&mut commands, &mut state);
+            continue;
+        };
+
+        match option.action {
+            InventoryContextOption::Use => {
+                state.selected_use_item = Some(item.clone());
+                state.status_message = format!("Use {} ->", item.display_name);
+                close_context_menu(&mut commands, &mut state);
+            }
+            InventoryContextOption::Drop => {
+                action_queue.actions.push(InventoryItemActionRequest {
+                    action: InventoryItemAction::Drop,
+                    item_id: item.item_id.clone(),
+                    quantity: 1,
+                });
+                state.status_message = format!("Dropping {}...", item.display_name);
+                close_context_menu(&mut commands, &mut state);
+            }
+            InventoryContextOption::Examine => {
+                state.status_message = examine_text(&item.item_id);
+                close_context_menu(&mut commands, &mut state);
+            }
+        }
+    }
 }
 
 fn spawn_inventory_panel(
@@ -74,10 +227,10 @@ fn spawn_inventory_panel(
     let panel = commands
         .spawn((
             Node {
-                width: Val::Px(560.0),
-                height: Val::Px(620.0),
+                width: Val::Px(PANEL_WIDTH),
+                height: Val::Px(PANEL_HEIGHT),
                 margin: UiRect::all(Val::Auto),
-                padding: UiRect::all(Val::Px(16.0)),
+                padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(12.0),
@@ -113,7 +266,7 @@ fn spawn_inventory_panel(
                 height: Val::Auto,
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(10.0),
+                row_gap: Val::Px(SLOT_GAP),
                 ..default()
             },
             Name::new("inventory_grid".to_string()),
@@ -122,19 +275,16 @@ fn spawn_inventory_panel(
 
     commands.entity(panel).add_child(grid);
 
-    let slot_px: f32 = 104.0;
-    let gap: f32 = 10.0;
-
     let mut idx: usize = 0;
-    for r in 0..4 {
+    for r in 0..GRID_ROWS {
         let row = commands
             .spawn((
                 Node {
                     width: Val::Percent(100.0),
-                    height: Val::Px(slot_px),
+                    height: Val::Px(SLOT_SIZE),
                     display: Display::Flex,
                     flex_direction: FlexDirection::Row,
-                    column_gap: Val::Px(gap),
+                    column_gap: Val::Px(SLOT_GAP),
                     ..default()
                 },
                 Name::new(format!("inv_row_{r}")),
@@ -142,18 +292,22 @@ fn spawn_inventory_panel(
             .id();
         commands.entity(grid).add_child(row);
 
-        for c in 0..4 {
+        for c in 0..GRID_COLS {
             let slot = commands
                 .spawn((
+                    Button,
                     Node {
-                        width: Val::Px(slot_px),
-                        height: Val::Px(slot_px),
+                        width: Val::Px(SLOT_SIZE),
+                        height: Val::Px(SLOT_SIZE),
                         display: Display::Flex,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        border: UiRect::all(Val::Px(2.0)),
                         ..default()
                     },
                     BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.95)),
+                    InventorySlotButton { idx },
                     Name::new(format!("inv_slot_{r}_{c}")),
                 ))
                 .id();
@@ -163,7 +317,7 @@ fn spawn_inventory_panel(
                     Text::new("Empty"),
                     TextFont {
                         font: font.clone(),
-                        font_size: 16.0,
+                        font_size: 14.0,
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.85, 0.85)),
@@ -179,13 +333,139 @@ fn spawn_inventory_panel(
         }
     }
 
-    // Only track the root. Despawning the root removes the whole UI subtree.
-    //
-    // Tracking both the root and its descendants can queue duplicate despawn
-    // commands when the inventory closes or rebuilds, which triggers Bevy's
-    // "Entity despawned" warnings.
+    let hint = commands
+        .spawn((
+            Text::new("Left-click to use. Right-click for Drop / Examine."),
+            TextFont {
+                font: font.clone(),
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.72, 0.72, 0.74)),
+            Name::new("inventory_hint".to_string()),
+        ))
+        .id();
+    commands.entity(panel).add_child(hint);
+
+    let status = commands
+        .spawn((
+            Text::new(""),
+            TextFont {
+                font,
+                font_size: 14.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.90, 0.82, 0.58)),
+            InventoryStatusLabel,
+            Name::new("inventory_status".to_string()),
+        ))
+        .id();
+    commands.entity(panel).add_child(status);
+
     state.spawned.push(root);
     state.root = Some(root);
+}
+
+fn open_context_menu(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    state: &mut ResMut<InventoryUiState>,
+    item: InventoryContextItem,
+    menu_pos: Vec2,
+) {
+    close_context_menu(commands, state);
+
+    let Some(root) = state.root else {
+        return;
+    };
+
+    let menu = commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(menu_pos.x),
+                top: Val::Px(menu_pos.y),
+                width: Val::Px(MENU_WIDTH),
+                padding: UiRect::all(Val::Px(8.0)),
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.025, 0.025, 0.030, 0.98)),
+            InventoryContextMenuRoot,
+            Name::new("inventory_context_menu"),
+        ))
+        .id();
+
+    commands.entity(root).add_child(menu);
+
+    let font = asset_server.load("fonts/ui.ttf");
+    let title = commands
+        .spawn((
+            Text::new(item.display_name.clone()),
+            TextFont {
+                font: font.clone(),
+                font_size: 15.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.92, 0.86, 0.64)),
+            Name::new("inventory_context_title"),
+        ))
+        .id();
+    commands.entity(menu).add_child(title);
+
+    for (label, action) in [
+        ("Use", InventoryContextOption::Use),
+        ("Drop", InventoryContextOption::Drop),
+        ("Examine", InventoryContextOption::Examine),
+    ] {
+        let button = commands
+            .spawn((
+                Button,
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(30.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::horizontal(Val::Px(8.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.95)),
+                InventoryContextOptionButton { action },
+                Name::new(format!("inventory_context_option_{label}")),
+            ))
+            .id();
+
+        let text = commands
+            .spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                Name::new(format!("inventory_context_option_text_{label}")),
+            ))
+            .id();
+
+        commands.entity(button).add_child(text);
+        commands.entity(menu).add_child(button);
+    }
+
+    state.context_menu_root = Some(menu);
+    state.context_item = Some(item);
+}
+
+fn close_context_menu(commands: &mut Commands, state: &mut ResMut<InventoryUiState>) {
+    if let Some(menu) = state.context_menu_root.take() {
+        if let Ok(mut ec) = commands.get_entity(menu) {
+            ec.despawn();
+        }
+    }
+    state.context_item = None;
 }
 
 fn update_slot_labels(
@@ -197,16 +477,134 @@ fn update_slot_labels(
         let txt = match inv.container.slots.get(lab.idx) {
             None => "Empty".to_string(),
             Some(None) => "Empty".to_string(),
-            Some(Some(stk)) => {
-                if stk.qty > 1 {
-                    format!("{}\nx{}", stk.id, stk.qty)
-                } else {
-                    format!("{}", stk.id)
-                }
-            }
+            Some(Some(stk)) => item_stack_label(stk),
         };
         commands.entity(e).insert(Text::new(txt));
     }
+}
+
+fn update_slot_highlights(
+    state: &InventoryUiState,
+    slot_bg_q: &mut Query<(&InventorySlotButton, &mut BackgroundColor)>,
+) {
+    let selected_slot_idx = state.selected_use_item.as_ref().map(|item| item.slot_idx);
+
+    for (slot, mut bg) in slot_bg_q.iter_mut() {
+        *bg = if Some(slot.idx) == selected_slot_idx {
+            BackgroundColor(Color::srgba(0.13, 0.19, 0.34, 0.98))
+        } else {
+            BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.95))
+        };
+    }
+}
+
+fn update_status_label(
+    commands: &mut Commands,
+    state: &InventoryUiState,
+    status_text_q: Query<Entity, With<InventoryStatusLabel>>,
+) {
+    for e in status_text_q.iter() {
+        commands.entity(e).insert(Text::new(state.status_message.clone()));
+    }
+}
+
+fn inventory_item_for_slot(inv: &Inventory, idx: usize) -> Option<InventoryContextItem> {
+    let stk = inv.container.slots.get(idx)?.as_ref()?;
+    Some(InventoryContextItem {
+        slot_idx: idx,
+        item_id: stk.id.clone(),
+        display_name: item_display_name(&stk.id),
+        quantity: stk.qty,
+    })
+}
+
+fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Option<(usize, Vec2)> {
+    let window = windows.single().ok()?;
+    let cursor = window.cursor_position()?;
+
+    let panel_left = (window.width() - PANEL_WIDTH) * 0.5;
+    let panel_top = (window.height() - PANEL_HEIGHT) * 0.5;
+    let grid_left = panel_left + PANEL_PADDING;
+    let grid_top = panel_top + GRID_TOP_OFFSET;
+
+    let local_x = cursor.x - grid_left;
+    let local_y = cursor.y - grid_top;
+    if local_x < 0.0 || local_y < 0.0 {
+        return None;
+    }
+
+    let pitch = SLOT_SIZE + SLOT_GAP;
+    let col = (local_x / pitch).floor() as usize;
+    let row = (local_y / pitch).floor() as usize;
+    if col >= GRID_COLS || row >= GRID_ROWS {
+        return None;
+    }
+
+    let within_slot_x = local_x - (col as f32 * pitch);
+    let within_slot_y = local_y - (row as f32 * pitch);
+    if within_slot_x > SLOT_SIZE || within_slot_y > SLOT_SIZE {
+        return None;
+    }
+
+    let slot_idx = row * GRID_COLS + col;
+    let slot_right = grid_left + (col as f32 * pitch) + SLOT_SIZE;
+    let slot_top = grid_top + (row as f32 * pitch);
+    let menu_x = (slot_right + 8.0).min((window.width() - MENU_WIDTH).max(0.0));
+    let menu_y = slot_top.max(0.0);
+
+    Some((slot_idx, Vec2::new(menu_x, menu_y)))
+}
+
+fn item_stack_label(stk: &ItemStack) -> String {
+    let name = item_display_name(&stk.id);
+    if stk.qty > 1 {
+        format!("{}\nx{}", name, stk.qty)
+    } else {
+        name
+    }
+}
+
+fn item_display_name(item_id: &str) -> String {
+    default_item_defs()
+        .get(item_id)
+        .map(|def| def.name.clone())
+        .unwrap_or_else(|| item_id.to_string())
+}
+
+fn examine_text(item_id: &str) -> String {
+    let defs = default_item_defs();
+    let Some(def) = defs.get(item_id) else {
+        return format!("You see {}.", item_id);
+    };
+
+    if def.tags.iter().any(|tag| tag == "log") {
+        format!("A sturdy {}.", def.name.to_lowercase())
+    } else if def.tags.iter().any(|tag| tag == "backpack") {
+        format!("{} can be worn on your back.", def.name)
+    } else if def.tags.iter().any(|tag| tag == "bag_upgrade") {
+        format!("{} can upgrade a compatible backpack.", def.name)
+    } else {
+        format!("You see {}.", def.name)
+    }
+}
+
+fn cursor_over_inventory_panel(windows: &Query<&Window, With<PrimaryWindow>>) -> bool {
+    let Ok(window) = windows.single() else {
+        return false;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return false;
+    };
+
+    let panel_left = (window.width() - PANEL_WIDTH) * 0.5;
+    let panel_right = panel_left + PANEL_WIDTH;
+    let panel_top = (window.height() - PANEL_HEIGHT) * 0.5;
+    let panel_bottom = panel_top + PANEL_HEIGHT;
+
+    cursor.x >= panel_left
+        && cursor.x <= panel_right
+        && cursor.y >= panel_top
+        && cursor.y <= panel_bottom
 }
 
 fn despawn_all(commands: &mut Commands, state: &mut ResMut<InventoryUiState>) {
@@ -216,5 +614,7 @@ fn despawn_all(commands: &mut Commands, state: &mut ResMut<InventoryUiState>) {
         }
     }
     state.root = None;
+    state.context_menu_root = None;
+    state.context_item = None;
     state.needs_rebuild = false;
 }

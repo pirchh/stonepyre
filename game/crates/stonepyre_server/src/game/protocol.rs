@@ -1,6 +1,10 @@
 pub use stonepyre_protocol::{
     ActionState,
     ClientMsg,
+    GroundItemEvent,
+    GroundItemEventKind,
+    GroundItemSnapshot,
+    GroundItemsSnapshot,
     HarvestNodeEvent,
     HarvestNodeEventKind,
     HarvestNodeSnapshot,

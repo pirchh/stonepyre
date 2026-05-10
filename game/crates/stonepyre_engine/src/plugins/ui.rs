@@ -40,7 +40,7 @@ pub(crate) struct ContextMenuOverlayItem {
 
 const MENU_Z: f32 = 900.0;
 const ITEM_H: f32 = 22.0;
-const ITEM_W: f32 = 160.0;
+const ITEM_W: f32 = 190.0;
 const PAD: f32 = 6.0;
 
 fn screen_to_world_2d(
@@ -153,7 +153,10 @@ pub(crate) fn context_menu_overlay_system(
             .id();
         menu.spawned.push(row_ent);
 
-        let label = format!("{:?}", cand.verb);
+        let label = cand
+            .menu_label
+            .clone()
+            .unwrap_or_else(|| format!("{:?}", cand.verb));
         let text_ent = commands
             .spawn((
                 Text2d::new(label),

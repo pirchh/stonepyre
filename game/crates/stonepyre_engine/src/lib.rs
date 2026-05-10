@@ -22,6 +22,7 @@ impl Plugin for StonepyreEnginePlugin {
             // ------------------------------------------------------------
             .insert_resource(plugins::ui::ContextMenuState::default())
             .insert_resource(plugins::interaction::ServerAuthoritativeInteractions::default())
+            .insert_resource(plugins::interaction::WorldInteractionBlocker::default())
             .insert_resource(stonepyre_world::WorldGrid::new(
                 64,
                 Box::new(stonepyre_world::FlatWorldSource::new(1337, 0)),

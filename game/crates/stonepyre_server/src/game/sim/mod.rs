@@ -8,8 +8,9 @@ use self::inventory::InventoryGrantRequest;
 use self::skills::SkillXpGrantRequest;
 use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
 use crate::game::protocol::{
-    ActionState, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot, HarvestResult,
-    InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, SkillXpSource, WorldSnapshot,
+    ActionState, GroundItemEvent, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot,
+    HarvestResult, InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, SkillXpSource,
+    WorldSnapshot,
 };
 use stonepyre_world::TilePos;
 use uuid::Uuid;
@@ -82,6 +83,52 @@ impl GameSim {
 
     pub fn remove_player(&mut self, player_id: Uuid) {
         self.world.players.remove(&player_id);
+    }
+
+    pub fn player_tile(&self, player_id: Uuid) -> Option<TilePos> {
+        self.world.players.get(&player_id).map(|p| p.tile)
+    }
+
+    pub fn player_character_id(&self, player_id: Uuid) -> Option<Uuid> {
+        self.world.players.get(&player_id).map(|p| p.character_id)
+    }
+
+    pub fn ground_item_snapshots(&self) -> Vec<crate::game::protocol::GroundItemSnapshot> {
+        self.world.visible_ground_item_snapshots()
+    }
+
+    pub fn spawn_ground_item_for_player(
+        &mut self,
+        player_id: Uuid,
+        item_id: String,
+        quantity: u32,
+        owner_character_id: Option<Uuid>,
+    ) -> Result<GroundItemEvent, String> {
+        let tile = self
+            .player_tile(player_id)
+            .ok_or_else(|| "player is not in the world".to_string())?;
+
+        Ok(self
+            .world
+            .spawn_ground_item(item_id, quantity, tile, owner_character_id, self.tick))
+    }
+
+    pub fn take_ground_item_for_player(
+        &mut self,
+        player_id: Uuid,
+        character_id: Uuid,
+        ground_item_id: Uuid,
+    ) -> Result<self::world::GroundItemState, String> {
+        let player_tile = self
+            .player_tile(player_id)
+            .ok_or_else(|| "player is not in the world".to_string())?;
+
+        self.world
+            .take_ground_item(ground_item_id, character_id, player_tile)
+    }
+
+    pub fn restore_ground_item(&mut self, item: self::world::GroundItemState) {
+        self.world.restore_ground_item(item);
     }
 
     /// Client asks to move somewhere.
@@ -284,6 +331,10 @@ impl GameSim {
     pub fn step(&mut self) -> Vec<GameSimEvent> {
         self.tick += 1;
         let mut events = Vec::new();
+
+        for event in self.world.tick_ground_item_despawns(self.tick) {
+            events.push(ServerMsg::GroundItemEvent(event).into());
+        }
 
         for node in self.world.harvest.tick_respawns(self.tick) {
             events.push(ServerMsg::HarvestNodeEvent(node_event_from_snapshot(

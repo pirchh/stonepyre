@@ -13,7 +13,16 @@ use uuid::Uuid;
 use crate::{
     error::ApiError,
     game::{
-        protocol::{ActionState, ClientMsg, InteractionAction, InteractionTarget, ServerMsg},
+        protocol::{
+            ActionState,
+            ClientMsg,
+            GroundItemEvent,
+            GroundItemEventKind,
+            GroundItemsSnapshot,
+            InteractionAction,
+            InteractionTarget,
+            ServerMsg,
+        },
         ActiveCharacterJoinError,
     },
     http::middleware::AuthContext,
@@ -170,6 +179,14 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             }
                         }
 
+                        let ground_items = {
+                            let sim = state.game.sim.read().await;
+                            sim.ground_item_snapshots()
+                        };
+                        let _ = out_tx.send(ServerMsg::GroundItemsSnapshot(GroundItemsSnapshot {
+                            items: ground_items,
+                        }));
+
                         match crate::game::sim::skills::load_character_skills_snapshot(
                             &state.db,
                             requested_character_id,
@@ -218,6 +235,40 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         };
 
                         handle_interaction(&state, pid, cid, action, target, &out_tx).await;
+                    }
+                    ClientMsg::DropItem { item_id, quantity } => {
+                        let Some(pid) = player_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before dropping items".to_string(),
+                            });
+                            continue;
+                        };
+
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before dropping items".to_string(),
+                            });
+                            continue;
+                        };
+
+                        handle_drop_item(&state, pid, cid, item_id, quantity, &out_tx).await;
+                    }
+                    ClientMsg::PickupGroundItem { ground_item_id } => {
+                        let Some(pid) = player_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before picking up items".to_string(),
+                            });
+                            continue;
+                        };
+
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before picking up items".to_string(),
+                            });
+                            continue;
+                        };
+
+                        handle_pickup_ground_item(&state, pid, cid, ground_item_id, &out_tx).await;
                     }
                 }
             }
@@ -366,6 +417,171 @@ async fn handle_interaction(
                     });
                 }
             }
+        }
+    }
+}
+
+async fn handle_drop_item(
+    state: &AppState,
+    player_id: Uuid,
+    character_id: Uuid,
+    item_id: String,
+    quantity: u32,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::remove_character_item(
+        &state.db,
+        character_id,
+        &item_id,
+        quantity,
+    )
+    .await
+    {
+        Ok(result) => {
+            info!(
+                "game ws dropped item character_id={} item_id={} quantity={} new_quantity={}",
+                character_id, result.item_id, result.quantity_removed, result.new_quantity
+            );
+
+            let event = {
+                let mut sim = state.game.sim.write().await;
+                sim.spawn_ground_item_for_player(
+                    player_id,
+                    result.item_id.clone(),
+                    result.quantity_removed,
+                    Some(character_id),
+                )
+            };
+
+            match event {
+                Ok(event) => {
+                    state.game.hub.broadcast(ServerMsg::GroundItemEvent(event));
+                    send_inventory_snapshot(state, character_id, out_tx).await;
+                }
+                Err(message) => {
+                    warn!(
+                        "ground item spawn failed after inventory removal character_id={} item_id={} quantity={} error={}",
+                        character_id, result.item_id, result.quantity_removed, message
+                    );
+                    let _ = crate::game::sim::inventory::grant_character_item(
+                        &state.db,
+                        character_id,
+                        &result.item_id,
+                        result.quantity_removed,
+                    )
+                    .await;
+                    let _ = out_tx.send(ServerMsg::Error { message });
+                }
+            }
+        }
+        Err(crate::game::sim::inventory::InventoryRemoveError::InvalidQuantity) => {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: "drop quantity must be greater than zero".to_string(),
+            });
+        }
+        Err(crate::game::sim::inventory::InventoryRemoveError::InsufficientQuantity {
+            item_id,
+            requested,
+            available,
+        }) => {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: format!(
+                    "not enough {} to drop: requested {}, available {}",
+                    item_id, requested, available
+                ),
+            });
+        }
+        Err(crate::game::sim::inventory::InventoryRemoveError::Db(e)) => {
+            warn!(
+                "inventory drop removal failed character_id={} item_id={} quantity={} error={:?}",
+                character_id, item_id, quantity, e
+            );
+            let _ = out_tx.send(ServerMsg::Error {
+                message: "failed to drop item".to_string(),
+            });
+        }
+    }
+}
+
+async fn handle_pickup_ground_item(
+    state: &AppState,
+    player_id: Uuid,
+    character_id: Uuid,
+    ground_item_id: Uuid,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    let ground_item = {
+        let mut sim = state.game.sim.write().await;
+        sim.take_ground_item_for_player(player_id, character_id, ground_item_id)
+    };
+
+    let ground_item = match ground_item {
+        Ok(item) => item,
+        Err(message) => {
+            let _ = out_tx.send(ServerMsg::Error { message });
+            return;
+        }
+    };
+
+    match crate::game::sim::inventory::grant_character_item(
+        &state.db,
+        character_id,
+        &ground_item.item_id,
+        ground_item.quantity,
+    )
+    .await
+    {
+        Ok(_) => {
+            let picked_up = GroundItemEvent {
+                kind: GroundItemEventKind::PickedUp,
+                item: None,
+                ground_item_id,
+            };
+            state.game.hub.broadcast(ServerMsg::GroundItemEvent(picked_up));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(crate::game::sim::inventory::InventoryGrantError::InventoryFull { .. }) => {
+            {
+                let mut sim = state.game.sim.write().await;
+                sim.restore_ground_item(ground_item);
+            }
+            let _ = out_tx.send(ServerMsg::Error {
+                message: "Inventory full".to_string(),
+            });
+        }
+        Err(crate::game::sim::inventory::InventoryGrantError::Db(e)) => {
+            warn!(
+                "ground item pickup inventory grant failed character_id={} ground_item_id={} error={:?}",
+                character_id, ground_item_id, e
+            );
+            {
+                let mut sim = state.game.sim.write().await;
+                sim.restore_ground_item(ground_item);
+            }
+            let _ = out_tx.send(ServerMsg::Error {
+                message: "failed to pick up item".to_string(),
+            });
+        }
+    }
+}
+
+async fn send_inventory_snapshot(
+    state: &AppState,
+    character_id: Uuid,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::load_character_inventory_snapshot(&state.db, character_id).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::InventorySnapshot(snapshot));
+        }
+        Err(e) => {
+            warn!(
+                "inventory snapshot refresh failed character_id={} error={:?}",
+                character_id, e
+            );
+            let _ = out_tx.send(ServerMsg::Error {
+                message: "failed to refresh inventory".to_string(),
+            });
         }
     }
 }

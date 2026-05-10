@@ -31,6 +31,14 @@ pub struct InventoryGrantResult {
 }
 
 #[derive(Clone, Debug)]
+pub struct InventoryRemoveResult {
+    pub character_id: Uuid,
+    pub item_id: String,
+    pub quantity_removed: u32,
+    pub new_quantity: i64,
+}
+
+#[derive(Clone, Debug)]
 pub struct InventoryCapacityCheck {
     pub can_accept: bool,
     pub item_id: String,
@@ -52,6 +60,23 @@ pub enum InventoryGrantError {
 }
 
 impl From<sqlx::Error> for InventoryGrantError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Db(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum InventoryRemoveError {
+    Db(sqlx::Error),
+    InvalidQuantity,
+    InsufficientQuantity {
+        item_id: String,
+        requested: u32,
+        available: i64,
+    },
+}
+
+impl From<sqlx::Error> for InventoryRemoveError {
     fn from(value: sqlx::Error) -> Self {
         Self::Db(value)
     }
@@ -157,6 +182,90 @@ pub async fn grant_character_item(
         character_id,
         item_id: item_id.to_string(),
         quantity,
+        new_quantity,
+    })
+}
+
+/// Remove items from a character inventory, used by server-authoritative drop.
+pub async fn remove_character_item(
+    pool: &PgPool,
+    character_id: Uuid,
+    item_id: &str,
+    quantity: u32,
+) -> Result<InventoryRemoveResult, InventoryRemoveError> {
+    if quantity == 0 {
+        return Err(InventoryRemoveError::InvalidQuantity);
+    }
+
+    let quantity_i64 = i64::from(quantity);
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text)::bigint)")
+        .bind(character_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+    let current_quantity: i64 = sqlx::query_scalar(
+        r#"
+        SELECT quantity
+        FROM game.character_inventory
+        WHERE character_id = $1::uuid
+          AND item_id = $2::text
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(item_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(0);
+
+    if current_quantity < quantity_i64 {
+        tx.rollback().await?;
+        return Err(InventoryRemoveError::InsufficientQuantity {
+            item_id: item_id.to_string(),
+            requested: quantity,
+            available: current_quantity,
+        });
+    }
+
+    let new_quantity = current_quantity - quantity_i64;
+
+    if new_quantity == 0 {
+        sqlx::query(
+            r#"
+            DELETE FROM game.character_inventory
+            WHERE character_id = $1::uuid
+              AND item_id = $2::text
+            "#,
+        )
+        .bind(character_id)
+        .bind(item_id)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE game.character_inventory
+            SET quantity = $3::bigint,
+                updated_at = now()
+            WHERE character_id = $1::uuid
+              AND item_id = $2::text
+            "#,
+        )
+        .bind(character_id)
+        .bind(item_id)
+        .bind(new_quantity)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(InventoryRemoveResult {
+        character_id,
+        item_id: item_id.to_string(),
+        quantity_removed: quantity,
         new_quantity,
     })
 }

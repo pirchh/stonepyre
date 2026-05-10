@@ -4,11 +4,21 @@ use stonepyre_world::{neighbors_4, TilePos};
 use uuid::Uuid;
 
 use super::harvest::{HarvestCatalog, HarvestLootPreview, HarvestNodeDef, HarvestSkill};
-use crate::game::protocol::{ActionState, InteractionAction, InteractionTarget, PlayerActionSnapshot};
+use crate::game::protocol::{
+    ActionState,
+    GroundItemEvent,
+    GroundItemEventKind,
+    GroundItemSnapshot,
+    InteractionAction,
+    InteractionTarget,
+    PlayerActionSnapshot,
+};
 
 /// Server-side movement speed in tiles/sec.
 /// Keep this aligned with stonepyre_engine::plugins::world::MOVE_TILES_PER_SEC.
 pub const SERVER_MOVE_TILES_PER_SEC: f32 = 1.6;
+
+pub const GROUND_ITEM_DESPAWN_TICKS: u64 = 300;
 
 /// The server's world snapshot state (v0).
 /// - `blocked` is the authoritative unwalkable tile set.
@@ -17,6 +27,7 @@ pub struct WorldState {
     pub players: HashMap<Uuid, PlayerState>,
     pub blocked: HashSet<TilePos>,
     pub harvest: HarvestCatalog,
+    pub ground_items: HashMap<Uuid, GroundItemState>,
 }
 
 impl WorldState {
@@ -35,6 +46,7 @@ impl WorldState {
             players: HashMap::new(),
             blocked,
             harvest,
+            ground_items: HashMap::new(),
         }
     }
 
@@ -145,6 +157,89 @@ impl WorldState {
 
         VecDeque::new()
     }
+
+    pub fn spawn_ground_item(
+        &mut self,
+        item_id: String,
+        quantity: u32,
+        tile: TilePos,
+        owner_character_id: Option<Uuid>,
+        current_tick: u64,
+    ) -> GroundItemEvent {
+        let ground_item = GroundItemState {
+            ground_item_id: Uuid::new_v4(),
+            item_id,
+            quantity,
+            tile,
+            owner_character_id,
+            despawn_at_tick: current_tick + GROUND_ITEM_DESPAWN_TICKS,
+        };
+
+        let snapshot = ground_item.snapshot();
+        let ground_item_id = ground_item.ground_item_id;
+        self.ground_items.insert(ground_item_id, ground_item);
+
+        GroundItemEvent {
+            kind: GroundItemEventKind::Spawned,
+            item: Some(snapshot),
+            ground_item_id,
+        }
+    }
+
+    pub fn take_ground_item(
+        &mut self,
+        ground_item_id: Uuid,
+        character_id: Uuid,
+        player_tile: TilePos,
+    ) -> Result<GroundItemState, String> {
+        let Some(item) = self.ground_items.get(&ground_item_id) else {
+            return Err("ground item no longer exists".to_string());
+        };
+
+        if let Some(owner_character_id) = item.owner_character_id {
+            if owner_character_id != character_id {
+                return Err("ground item does not belong to this character yet".to_string());
+            }
+        }
+
+        if manhattan(player_tile, item.tile) > 1 {
+            return Err("too far away to pick up item".to_string());
+        }
+
+        self.ground_items
+            .remove(&ground_item_id)
+            .ok_or_else(|| "ground item no longer exists".to_string())
+    }
+
+    pub fn restore_ground_item(&mut self, item: GroundItemState) {
+        self.ground_items.insert(item.ground_item_id, item);
+    }
+
+    pub fn visible_ground_item_snapshots(&self) -> Vec<GroundItemSnapshot> {
+        self.ground_items
+            .values()
+            .map(GroundItemState::snapshot)
+            .collect()
+    }
+
+    pub fn tick_ground_item_despawns(&mut self, current_tick: u64) -> Vec<GroundItemEvent> {
+        let expired: Vec<Uuid> = self
+            .ground_items
+            .iter()
+            .filter_map(|(id, item)| (current_tick >= item.despawn_at_tick).then_some(*id))
+            .collect();
+
+        expired
+            .into_iter()
+            .filter_map(|ground_item_id| {
+                self.ground_items.remove(&ground_item_id).map(|_| GroundItemEvent {
+                    kind: GroundItemEventKind::Despawned,
+                    item: None,
+                    ground_item_id,
+                })
+            })
+            .collect()
+    }
 }
 
 fn reconstruct_path(
@@ -165,6 +260,29 @@ fn reconstruct_path(
     }
 
     out
+}
+
+#[derive(Clone, Debug)]
+pub struct GroundItemState {
+    pub ground_item_id: Uuid,
+    pub item_id: String,
+    pub quantity: u32,
+    pub tile: TilePos,
+    pub owner_character_id: Option<Uuid>,
+    pub despawn_at_tick: u64,
+}
+
+impl GroundItemState {
+    pub fn snapshot(&self) -> GroundItemSnapshot {
+        GroundItemSnapshot {
+            ground_item_id: self.ground_item_id,
+            item_id: self.item_id.clone(),
+            quantity: self.quantity,
+            tile: self.tile,
+            owner_character_id: self.owner_character_id,
+            despawn_at_tick: self.despawn_at_tick,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -210,4 +328,8 @@ pub struct PlayerState {
 
     /// Current server-owned non-movement action lifecycle.
     pub action: Option<ServerAction>,
+}
+
+fn manhattan(a: TilePos, b: TilePos) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }

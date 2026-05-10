@@ -11,12 +11,24 @@ use stonepyre_world::TilePos;
 use super::protocol::{
     ActionState,
     ClientMsg,
+    GroundItemEventKind,
     InteractionAction,
     InteractionTarget,
     NetPlayerSnapshot,
     ServerMsg,
 };
 use super::status::{GameNetCommand, GameNetEvent, GameNetRuntime, GameNetStatus};
+
+#[derive(Resource, Default, Debug, Clone)]
+pub struct PendingGroundItemPickup {
+    pub request: Option<PendingGroundItemPickupRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingGroundItemPickupRequest {
+    pub ground_item_id: Uuid,
+    pub tile: TilePos,
+}
 
 pub fn spawn_game_ws(
     game_net: &mut GameNetRuntime,
@@ -39,6 +51,8 @@ pub fn spawn_game_ws(
     status.snapshot_players = 0;
     status.latest_players.clear();
     status.harvest_nodes.clear();
+    status.ground_items.clear();
+    status.ground_items_dirty = true;
     status.server_tile = None;
     status.server_next_tile = None;
     status.server_goal = None;
@@ -89,6 +103,31 @@ pub fn send_interaction_to_server(
     };
 
     tx.send(GameNetCommand::Interact { action, target }).is_ok()
+}
+
+pub fn send_drop_item_to_server(
+    game_net: &GameNetRuntime,
+    item_id: String,
+    quantity: u32,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::DropItem { item_id, quantity }).is_ok()
+}
+
+pub fn send_pickup_ground_item_to_server(
+    game_net: &GameNetRuntime,
+    ground_item_id: Uuid,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else {
+        return false;
+    };
+
+    tx.send(GameNetCommand::PickupGroundItem { ground_item_id }).is_ok()
 }
 
 fn run_game_ws(
@@ -159,6 +198,22 @@ fn run_game_ws(
                             let _ = tx.send(GameNetEvent::MoveSent { tile });
                         }
                     }
+                }
+                GameNetCommand::DropItem { item_id, quantity } => {
+                    let msg = ClientMsg::DropItem { item_id, quantity };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws drop item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws drop item send failed: {e}"))?;
+                }
+                GameNetCommand::PickupGroundItem { ground_item_id } => {
+                    let msg = ClientMsg::PickupGroundItem { ground_item_id };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws pickup ground item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws pickup ground item send failed: {e}"))?;
                 }
             }
         }
@@ -267,6 +322,12 @@ fn run_game_ws(
                     }
                     Ok(ServerMsg::InventoryDelta(delta)) => {
                         let _ = tx.send(GameNetEvent::InventoryDelta(delta));
+                    }
+                    Ok(ServerMsg::GroundItemsSnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::GroundItemsSnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::GroundItemEvent(event)) => {
+                        let _ = tx.send(GameNetEvent::GroundItemEvent(event));
                     }
                     Ok(ServerMsg::SkillSnapshot(snapshot)) => {
                         let _ = tx.send(GameNetEvent::SkillSnapshot(snapshot));
@@ -529,6 +590,46 @@ pub fn pump_game_net_results(
                 status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
                 status.inventory_dirty = true;
             }
+            GameNetEvent::GroundItemsSnapshot(snapshot) => {
+                info!("game net ground items snapshot items={}", snapshot.items.len());
+                status.ground_items = snapshot.items;
+                status.ground_items_dirty = true;
+            }
+            GameNetEvent::GroundItemEvent(event) => {
+                match event.kind {
+                    GroundItemEventKind::Spawned => {
+                        if let Some(item) = event.item {
+                            info!(
+                                "game net ground item spawned id={} item={} quantity={} tile={},{}",
+                                item.ground_item_id,
+                                item.item_id,
+                                item.quantity,
+                                item.tile.x,
+                                item.tile.y
+                            );
+                            if let Some(existing) = status
+                                .ground_items
+                                .iter_mut()
+                                .find(|existing| existing.ground_item_id == item.ground_item_id)
+                            {
+                                *existing = item;
+                            } else {
+                                status.ground_items.push(item);
+                            }
+                        }
+                    }
+                    GroundItemEventKind::PickedUp | GroundItemEventKind::Despawned => {
+                        info!(
+                            "game net ground item removed kind={:?} id={}",
+                            event.kind, event.ground_item_id
+                        );
+                        status
+                            .ground_items
+                            .retain(|item| item.ground_item_id != event.ground_item_id);
+                    }
+                }
+                status.ground_items_dirty = true;
+            }
             GameNetEvent::SkillSnapshot(snapshot) => {
                 info!(
                     "game net skill snapshot character_id={} skills={}",
@@ -597,6 +698,8 @@ pub fn pump_game_net_results(
                 status.connecting = false;
                 status.latest_players.clear();
                 status.harvest_nodes.clear();
+                status.ground_items.clear();
+                status.ground_items_dirty = true;
                 status.server_next_tile = None;
                 status.server_goal = None;
                 status.server_moving = false;
@@ -617,7 +720,9 @@ pub fn pump_game_net_results(
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    mut pending_pickup: ResMut<PendingGroundItemPickup>,
     grid_pos_q: Query<&GridPos>,
+    ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
 ) {
     for ev in intents.read() {
         match ev.intent.verb {
@@ -625,6 +730,8 @@ pub fn send_walk_intents_to_server_runtime(
                 let Target::Tile(tile) = ev.intent.target else {
                     continue;
                 };
+
+                pending_pickup.request = None;
 
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
@@ -636,6 +743,8 @@ pub fn send_walk_intents_to_server_runtime(
                     continue;
                 };
 
+                pending_pickup.request = None;
+
                 if !send_interaction_to_server(
                     &game_net,
                     InteractionAction::ChopDown,
@@ -644,8 +753,68 @@ pub fn send_walk_intents_to_server_runtime(
                     warn!("game net chopdown target dropped; websocket is not ready");
                 }
             }
+            Verb::Take => {
+                let Target::Entity(entity) = ev.intent.target else {
+                    warn!("game net take target dropped; target was not an entity");
+                    continue;
+                };
+
+                let Ok((ground_item, grid_pos)) = ground_item_q.get(entity) else {
+                    warn!("game net take target dropped; entity was not a ground item");
+                    continue;
+                };
+
+                pending_pickup.request = Some(PendingGroundItemPickupRequest {
+                    ground_item_id: ground_item.ground_item_id,
+                    tile: grid_pos.0,
+                });
+
+                if !send_move_to_server(&game_net, grid_pos.0) {
+                    warn!(
+                        "game net take move target dropped; websocket is not ready ground_item_id={}",
+                        ground_item.ground_item_id
+                    );
+                }
+            }
             Verb::TalkTo | Verb::Examine => {}
         }
+    }
+}
+
+pub fn process_pending_ground_item_pickups(
+    game_net: Res<GameNetRuntime>,
+    status: Res<GameNetStatus>,
+    mut pending_pickup: ResMut<PendingGroundItemPickup>,
+) {
+    let Some(request) = pending_pickup.request.clone() else {
+        return;
+    };
+
+    let Some(server_tile) = status.server_tile else {
+        return;
+    };
+
+    let still_exists = status
+        .ground_items
+        .iter()
+        .any(|item| item.ground_item_id == request.ground_item_id);
+
+    if !still_exists {
+        pending_pickup.request = None;
+        return;
+    }
+
+    if manhattan(server_tile, request.tile) > 1 {
+        return;
+    }
+
+    if send_pickup_ground_item_to_server(&game_net, request.ground_item_id) {
+        pending_pickup.request = None;
+    } else {
+        warn!(
+            "game net pending pickup dropped; websocket is not ready ground_item_id={}",
+            request.ground_item_id
+        );
     }
 }
 
@@ -654,4 +823,8 @@ fn intent_target_tile(target: Target, grid_pos_q: &Query<&GridPos>) -> Option<Ti
         Target::Tile(tile) => Some(tile),
         Target::Entity(entity) => grid_pos_q.get(entity).ok().map(|gp| gp.0),
     }
+}
+
+fn manhattan(a: TilePos, b: TilePos) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }

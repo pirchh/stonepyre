@@ -58,10 +58,11 @@ pub struct GridPos(pub TilePos);
 #[derive(Component)]
 pub struct BlocksMovement;
 
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub enum InteractableKind {
     Tree,
     Npc,
+    GroundItem { display_name: String },
 }
 
 pub fn player_feet_world(xform: &Transform) -> Vec2 {
