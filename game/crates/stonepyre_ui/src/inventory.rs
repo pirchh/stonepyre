@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use stonepyre_content::default_item_defs;
+use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
 
 use crate::config::UiBindings;
@@ -90,10 +91,13 @@ pub(crate) fn inventory_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut state: ResMut<InventoryUiState>,
+    mut blocker: ResMut<WorldInteractionBlocker>,
     player_q: Query<&Inventory>,
     slot_text_q: Query<(Entity, &SlotLabel)>,
     status_text_q: Query<Entity, With<InventoryStatusLabel>>,
 ) {
+    blocker.0 = state.open;
+
     if !state.open {
         despawn_all(&mut commands, &mut state);
         return;
