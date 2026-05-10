@@ -81,6 +81,10 @@ pub struct ActionResolvedMsg {
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct ServerAuthoritativeInteractions(pub bool);
 
+/// Set by UI overlays that should consume clicks before world interaction logic.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct WorldInteractionBlocker(pub bool);
+
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
 
@@ -91,6 +95,7 @@ const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
 pub fn handle_clicks_build_candidates(
     mut click_reader: MessageReader<ClickMsg>,
     menu: Option<ResMut<ContextMenuState>>,
+    blocker: Option<Res<WorldInteractionBlocker>>,
     mut intent_writer: MessageWriter<IntentMsg>,
     player_q: Query<Entity, With<Player>>,
     interactables: Query<(Entity, &GridPos, &InteractableKind)>,
@@ -99,8 +104,15 @@ pub fn handle_clicks_build_candidates(
     let Ok(player_ent) = player_q.single() else { return; };
 
     let consumed_left_click = menu.consumed_left_click;
+    let world_blocked = blocker.as_ref().map(|b| b.0).unwrap_or(false);
 
     for ev in click_reader.read() {
+        if world_blocked {
+            menu.open = false;
+            menu.dirty = true;
+            continue;
+        }
+
         // If the context menu handled this click, do NOT also treat it as a world click.
         if consumed_left_click && ev.button == MouseButton::Left {
             continue;
