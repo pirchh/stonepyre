@@ -16,6 +16,7 @@ pub enum Verb {
     WalkHere,
     TalkTo,
     ChopDown,
+    Take,
     Examine,
 }
 
@@ -165,6 +166,20 @@ pub fn handle_clicks_build_candidates(
                         range: 1,
                     });
                 }
+                InteractableKind::GroundItem => {
+                    cands.push(InteractionCandidate {
+                        verb: Verb::Take,
+                        target: Target::Entity(ent),
+                        priority: 110,
+                        range: 1,
+                    });
+                    cands.push(InteractionCandidate {
+                        verb: Verb::Examine,
+                        target: Target::Entity(ent),
+                        priority: -10,
+                        range: 1,
+                    });
+                }
             }
         }
 
@@ -252,7 +267,7 @@ pub fn plan_intents_to_actions(
 
         // In networked/server-authoritative mode, gameplay interactions are owned by the server.
         // The local engine may still plan WalkHere for offline mode and target preview, but it must
-        // not resolve ChopDown/TalkTo/Examine locally because that would produce client-only effects.
+        // not resolve non-movement interactions locally because that would produce client-only effects.
         if server_authoritative && intent.verb != Verb::WalkHere {
             commands.entity(player_ent).remove::<CurrentAction>();
             commands.entity(player_ent).remove::<RequestedAnim>();
@@ -299,7 +314,7 @@ pub fn plan_intents_to_actions(
                 commands.entity(player_ent).remove::<RequestedAnim>();
             }
 
-            Verb::TalkTo | Verb::ChopDown | Verb::Examine => {
+            Verb::TalkTo | Verb::ChopDown | Verb::Take | Verb::Examine => {
                 let range = intent.range.max(1);
                 let Some(goal_tile) =
                     pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, range)
