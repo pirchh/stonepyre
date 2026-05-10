@@ -62,7 +62,7 @@ fn spawn_ground_item_visual(
     let label = if item.quantity > 1 {
         format!("{} x{}", display_name, item.quantity)
     } else {
-        display_name
+        display_name.clone()
     };
 
     let root = commands
@@ -70,7 +70,9 @@ fn spawn_ground_item_visual(
             Sprite::from_color(GROUND_ITEM_COLOR, Vec2::splat(GROUND_ITEM_SIZE)),
             Transform::from_xyz(world.x, world.y, GROUND_ITEM_DEPTH),
             GridPos(item.tile),
-            InteractableKind::GroundItem,
+            InteractableKind::GroundItem {
+                display_name: display_name.clone(),
+            },
             ServerGroundItemVisual {
                 ground_item_id: item.ground_item_id,
             },
