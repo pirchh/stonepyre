@@ -21,6 +21,7 @@ const HARVEST_ROLL_SECS: f32 = 1.25;
 #[derive(Clone, Debug)]
 pub enum GameSimEvent {
     Server(ServerMsg),
+    HarvestCapacityCheck(HarvestCapacityCheckRequest),
     InventoryGrant(InventoryGrantRequest),
     SkillXpGrant(SkillXpGrantRequest),
 }
@@ -29,6 +30,14 @@ impl From<ServerMsg> for GameSimEvent {
     fn from(value: ServerMsg) -> Self {
         Self::Server(value)
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct HarvestCapacityCheckRequest {
+    pub player_id: Uuid,
+    pub character_id: Uuid,
+    pub action: InteractionAction,
+    pub target: InteractionTarget,
 }
 
 pub struct GameSim {
@@ -158,15 +167,16 @@ impl GameSim {
                 p.action = Some(ServerAction {
                     action: InteractionAction::ChopDown,
                     target: InteractionTarget::Tile(target),
-                    state: ActionState::Active,
-                    next_harvest_tick: Some(self.tick + self.harvest_roll_ticks),
+                    state: ActionState::Queued,
+                    next_harvest_tick: None,
+                    pending_harvest_capacity_check: false,
                 });
             }
 
             return Ok((
-                ActionState::Active,
+                ActionState::Queued,
                 format!(
-                    "ChopDown active on {} ({}) at {},{}",
+                    "ChopDown queued on {} ({}) at {},{}",
                     target_name, target_def_id, target.x, target.y
                 ),
             ));
@@ -191,6 +201,7 @@ impl GameSim {
                 target: InteractionTarget::Tile(target),
                 state: ActionState::MovingToRange,
                 next_harvest_tick: None,
+                pending_harvest_capacity_check: false,
             });
         }
 
@@ -201,6 +212,72 @@ impl GameSim {
                 target_name, target_def_id, goal.x, goal.y, target.x, target.y
             ),
         ))
+    }
+
+    pub fn approve_harvest_capacity_check(
+        &mut self,
+        player_id: Uuid,
+        target: InteractionTarget,
+    ) -> Option<ServerMsg> {
+        let p = self.world.players.get_mut(&player_id)?;
+        let action = p.action.as_mut()?;
+
+        if action.action != InteractionAction::ChopDown
+            || !action.pending_harvest_capacity_check
+            || !same_interaction_target(&action.target, &target)
+        {
+            return None;
+        }
+
+        let InteractionTarget::Tile(target_tile) = action.target.clone();
+        if manhattan(p.tile, target_tile) > 1 {
+            let action = p.action.take()?;
+            return Some(ServerMsg::ActionState {
+                player_id,
+                action: action.action,
+                target: action.target,
+                state: ActionState::Cancelled,
+                message: "harvest cancelled because player moved out of range".to_string(),
+            });
+        }
+
+        action.state = ActionState::Active;
+        action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
+        action.pending_harvest_capacity_check = false;
+
+        Some(ServerMsg::ActionState {
+            player_id,
+            action: action.action,
+            target: action.target.clone(),
+            state: ActionState::Active,
+            message: format!("{:?} active at {},{}", action.action, target_tile.x, target_tile.y),
+        })
+    }
+
+    pub fn reject_harvest_capacity_check(
+        &mut self,
+        player_id: Uuid,
+        target: InteractionTarget,
+        message: String,
+    ) -> Option<ServerMsg> {
+        let p = self.world.players.get_mut(&player_id)?;
+        let action = p.action.as_ref()?;
+
+        if action.action != InteractionAction::ChopDown
+            || !action.pending_harvest_capacity_check
+            || !same_interaction_target(&action.target, &target)
+        {
+            return None;
+        }
+
+        let action = p.action.take()?;
+        Some(ServerMsg::ActionState {
+            player_id,
+            action: action.action,
+            target: action.target,
+            state: ActionState::Rejected,
+            message,
+        })
     }
 
     /// Advance server simulation and return lifecycle/events produced this tick.
@@ -219,7 +296,7 @@ impl GameSim {
 
         for p in self.world.players.values_mut() {
             let Some(goal) = p.goal else {
-                maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
+                maybe_request_harvest_capacity_check(p, &mut events);
                 continue;
             };
 
@@ -227,7 +304,7 @@ impl GameSim {
                 p.goal = None;
                 p.path.clear();
                 p.move_progress_tiles = 0.0;
-                maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
+                maybe_request_harvest_capacity_check(p, &mut events);
                 continue;
             }
 
@@ -270,7 +347,7 @@ impl GameSim {
                     p.goal = None;
                     p.path.clear();
                     p.move_progress_tiles = 0.0;
-                    maybe_activate_action(p, self.tick, self.harvest_roll_ticks, &mut events);
+                    maybe_request_harvest_capacity_check(p, &mut events);
                     break;
                 }
             }
@@ -445,29 +522,42 @@ impl GameSim {
     }
 }
 
-fn maybe_activate_action(
+fn maybe_request_harvest_capacity_check(
     p: &mut PlayerState,
-    current_tick: u64,
-    harvest_roll_ticks: u64,
     events: &mut Vec<GameSimEvent>,
 ) {
     let Some(action) = p.action.as_mut() else { return; };
+    if action.action != InteractionAction::ChopDown {
+        return;
+    }
     if action.state != ActionState::MovingToRange && action.state != ActionState::Queued {
+        return;
+    }
+    if action.pending_harvest_capacity_check {
         return;
     }
 
     match action.target.clone() {
         InteractionTarget::Tile(target) => {
             if manhattan(p.tile, target) <= 1 {
-                action.state = ActionState::Active;
-                action.next_harvest_tick = Some(current_tick + harvest_roll_ticks);
+                action.state = ActionState::Queued;
+                action.next_harvest_tick = None;
+                action.pending_harvest_capacity_check = true;
+
                 events.push(ServerMsg::ActionState {
                     player_id: p.player_id,
                     action: action.action,
                     target: action.target.clone(),
-                    state: ActionState::Active,
-                    message: format!("{:?} active at {},{}", action.action, target.x, target.y),
+                    state: ActionState::Queued,
+                    message: "checking inventory before harvesting".to_string(),
                 }.into());
+
+                events.push(GameSimEvent::HarvestCapacityCheck(HarvestCapacityCheckRequest {
+                    player_id: p.player_id,
+                    character_id: p.character_id,
+                    action: action.action,
+                    target: action.target.clone(),
+                }));
             }
         }
     }
@@ -485,6 +575,12 @@ fn node_event_from_snapshot(kind: HarvestNodeEventKind, node: HarvestNodeSnapsho
         depleted_until_tick: node.depleted_until_tick,
         available_sprite: node.available_sprite,
         depleted_sprite: node.depleted_sprite,
+    }
+}
+
+fn same_interaction_target(a: &InteractionTarget, b: &InteractionTarget) -> bool {
+    match (a, b) {
+        (InteractionTarget::Tile(a), InteractionTarget::Tile(b)) => a == b,
     }
 }
 
