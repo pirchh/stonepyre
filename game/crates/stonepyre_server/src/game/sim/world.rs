@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use stonepyre_world::{neighbors_4, TilePos};
 use uuid::Uuid;
 
-use super::harvest::{HarvestCatalog, HarvestNodeDef, HarvestSkill};
+use super::harvest::{HarvestCatalog, HarvestLootPreview, HarvestNodeDef, HarvestSkill};
 use crate::game::protocol::{ActionState, InteractionAction, InteractionTarget, PlayerActionSnapshot};
 
 /// Server-side movement speed in tiles/sec.
@@ -46,6 +46,11 @@ impl WorldState {
     #[inline]
     pub fn harvest_node_def_at(&self, t: TilePos) -> Option<&HarvestNodeDef> {
         self.harvest.node_def_at(t)
+    }
+
+    #[inline]
+    pub fn harvest_loot_preview_at(&self, t: TilePos) -> Option<HarvestLootPreview> {
+        self.harvest.loot_preview_at(t)
     }
 
     #[inline]
@@ -168,6 +173,10 @@ pub struct ServerAction {
     pub target: InteractionTarget,
     pub state: ActionState,
     pub next_harvest_tick: Option<u64>,
+
+    /// True while the server has asked the async DB layer whether expected
+    /// harvest loot can fit before allowing this action to become Active.
+    pub pending_harvest_capacity_check: bool,
 }
 
 impl ServerAction {

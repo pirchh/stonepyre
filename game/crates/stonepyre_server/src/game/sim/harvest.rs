@@ -269,6 +269,17 @@ impl HarvestCatalog {
         self.node_def(node.def_id)
     }
 
+    pub fn loot_preview_at(&self, tile: TilePos) -> Option<HarvestLootPreview> {
+        let def = self.node_def_at(tile)?;
+        self.loot_tables
+            .get(def.loot_table)
+            .and_then(|table| table.entries.first())
+            .map(|entry| HarvestLootPreview {
+                item_id: entry.item_id,
+                quantity: entry.min,
+            })
+    }
+
     pub fn can_harvest_at(&self, tile: TilePos) -> bool {
         self.node_at(tile)
             .map(|node| node.charges_remaining > 0 && node.depleted_until_tick.is_none())
@@ -378,13 +389,7 @@ impl HarvestCatalog {
         let success = roll < chance;
 
         let loot_preview = if success {
-            self.loot_tables
-                .get(def.loot_table)
-                .and_then(|table| table.entries.first())
-                .map(|entry| HarvestLootPreview {
-                    item_id: entry.item_id,
-                    quantity: entry.min,
-                })
+            self.loot_preview_at(tile)
         } else {
             None
         };
