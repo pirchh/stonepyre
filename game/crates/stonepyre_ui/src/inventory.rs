@@ -7,16 +7,16 @@ use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
 
 use crate::config::UiBindings;
 
-const PANEL_WIDTH: f32 = 316.0;
-const PANEL_HEIGHT: f32 = 344.0;
-const PANEL_PADDING: f32 = 14.0;
+const PANEL_WIDTH: f32 = 270.0;
+const PANEL_HEIGHT: f32 = 334.0;
+const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 const GRID_TOP_OFFSET: f32 = PANEL_PADDING;
 const SLOT_SIZE: f32 = 58.0;
 const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
-const GRID_ROWS: usize = 4;
+const GRID_ROWS: usize = 5;
 const MENU_WIDTH: f32 = 220.0;
 
 #[derive(Resource, Default)]
@@ -84,9 +84,6 @@ pub(crate) enum InventoryContextOption {
     Examine,
 }
 
-#[derive(Component)]
-pub(crate) struct InventoryStatusLabel;
-
 pub fn inventory_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<UiBindings>,
@@ -108,7 +105,6 @@ pub(crate) fn inventory_panel_sync_system(
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
     slot_text_q: Query<(Entity, &SlotLabel)>,
-    status_text_q: Query<Entity, With<InventoryStatusLabel>>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
     blocker.0 = state.open && cursor_over_inventory_panel(&windows);
@@ -128,7 +124,6 @@ pub(crate) fn inventory_panel_sync_system(
 
     update_slot_labels(&mut commands, &inv, slot_text_q);
     update_slot_highlights(&state, &mut slot_bg_q);
-    update_status_label(&mut commands, &state, status_text_q);
 }
 
 pub(crate) fn inventory_item_context_menu_system(
@@ -246,7 +241,7 @@ fn spawn_inventory_panel(
                 padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(8.0),
+                row_gap: Val::Px(0.0),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
@@ -335,35 +330,6 @@ fn spawn_inventory_panel(
             idx += 1;
         }
     }
-
-    let hint = commands
-        .spawn((
-            Text::new("Left-click Use · Right-click Options"),
-            TextFont {
-                font: font.clone(),
-                font_size: 10.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.55, 0.51, 0.45)),
-            Name::new("inventory_hint".to_string()),
-        ))
-        .id();
-    commands.entity(panel).add_child(hint);
-
-    let status = commands
-        .spawn((
-            Text::new(""),
-            TextFont {
-                font,
-                font_size: 12.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.90, 0.82, 0.58)),
-            InventoryStatusLabel,
-            Name::new("inventory_status".to_string()),
-        ))
-        .id();
-    commands.entity(panel).add_child(status);
 
     state.spawned.push(root);
     state.root = Some(root);
@@ -498,16 +464,6 @@ fn update_slot_highlights(
         } else {
             BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96))
         };
-    }
-}
-
-fn update_status_label(
-    commands: &mut Commands,
-    state: &InventoryUiState,
-    status_text_q: Query<Entity, With<InventoryStatusLabel>>,
-) {
-    for e in status_text_q.iter() {
-        commands.entity(e).insert(Text::new(state.status_message.clone()));
     }
 }
 
