@@ -1,5 +1,8 @@
 // crates/stonepyre_ui/src/hud.rs
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+
+use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 
 use crate::character::CharacterUiState;
 use crate::config::UiBindings;
@@ -9,6 +12,12 @@ use crate::GameUiEnabled;
 const HUD_BTN_BG: Color = Color::srgba(0.10, 0.10, 0.12, 0.92);
 const HUD_BTN_BG_HOVER: Color = Color::srgba(0.14, 0.13, 0.12, 0.96);
 const HUD_BTN_BG_ACTIVE: Color = Color::srgba(0.20, 0.16, 0.10, 0.98);
+
+const HUD_ICON_RENDER_PX: f32 = 52.0;
+const HUD_PAD: f32 = 6.0;
+const HUD_MARGIN_R: f32 = 10.0;
+const HUD_MARGIN_B: f32 = 10.0;
+const HUD_COLS: usize = 8;
 
 /// What a HUD button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,16 +156,10 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
         },
     ];
 
-    let icon_render_px: f32 = 52.0;
-    let pad: f32 = 6.0;
-    let margin_r: f32 = 10.0;
-    let margin_b: f32 = 10.0;
+    let count = buttons.len().min(HUD_COLS);
 
-    let cols: usize = 8;
-    let count = buttons.len().min(cols);
-
-    let bar_w = (count as f32) * icon_render_px + (count as f32 + 1.0) * pad;
-    let bar_h = icon_render_px + 2.0 * pad;
+    let bar_w = hud_bar_width(count);
+    let bar_h = hud_bar_height();
 
     let root = commands
         .spawn((
@@ -174,14 +177,14 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Px(margin_r),
-                bottom: Val::Px(margin_b),
+                right: Val::Px(HUD_MARGIN_R),
+                bottom: Val::Px(HUD_MARGIN_B),
                 width: Val::Px(bar_w),
                 height: Val::Px(bar_h),
-                padding: UiRect::all(Val::Px(pad)),
+                padding: UiRect::all(Val::Px(HUD_PAD)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(pad),
+                column_gap: Val::Px(HUD_PAD),
                 align_items: AlignItems::Center,
                 ..default()
             },
@@ -192,15 +195,15 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
 
     commands.entity(root).add_child(bar);
 
-    for (idx, btn) in buttons.into_iter().take(cols).enumerate() {
+    for (idx, btn) in buttons.into_iter().take(HUD_COLS).enumerate() {
         let icon_path = format!("inventory/hud/{}.png", btn.icon_id);
         let icon = asset_server.load(icon_path);
 
         let btn_e = commands
             .spawn((
                 Node {
-                    width: Val::Px(icon_render_px),
-                    height: Val::Px(icon_render_px),
+                    width: Val::Px(HUD_ICON_RENDER_PX),
+                    height: Val::Px(HUD_ICON_RENDER_PX),
                     ..default()
                 },
                 BackgroundColor(HUD_BTN_BG),
@@ -214,8 +217,8 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
             .spawn((
                 ImageNode::new(icon),
                 Node {
-                    width: Val::Px(icon_render_px),
-                    height: Val::Px(icon_render_px),
+                    width: Val::Px(HUD_ICON_RENDER_PX),
+                    height: Val::Px(HUD_ICON_RENDER_PX),
                     ..default()
                 },
                 Name::new("hud_icon"),
@@ -312,6 +315,14 @@ pub(crate) fn hud_active_tab_highlight_system(
     }
 }
 
+/// Prevent HUD clicks from leaking through into world movement/interactions.
+pub(crate) fn hud_world_interaction_blocker_system(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut blocker: ResMut<WorldInteractionBlocker>,
+) {
+    blocker.0 = blocker.0 || cursor_over_hud_bar(&windows);
+}
+
 /// Tooltip on hover: shows name + description and follows cursor.
 pub(crate) fn hud_tooltip_system(
     windows: Query<&Window>,
@@ -386,4 +397,33 @@ fn open_character(inv_state: &mut InventoryUiState, char_state: &mut CharacterUi
     }
     inv_state.needs_rebuild = true;
     char_state.needs_rebuild = true;
+}
+
+fn cursor_over_hud_bar(windows: &Query<&Window, With<PrimaryWindow>>) -> bool {
+    let Ok(window) = windows.single() else {
+        return false;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return false;
+    };
+
+    let bar_w = hud_bar_width(HUD_COLS);
+    let bar_h = hud_bar_height();
+    let bar_left = (window.width() - bar_w - HUD_MARGIN_R).max(0.0);
+    let bar_right = bar_left + bar_w;
+    let bar_top = (window.height() - bar_h - HUD_MARGIN_B).max(0.0);
+    let bar_bottom = bar_top + bar_h;
+
+    cursor.x >= bar_left
+        && cursor.x <= bar_right
+        && cursor.y >= bar_top
+        && cursor.y <= bar_bottom
+}
+
+fn hud_bar_width(count: usize) -> f32 {
+    (count as f32) * HUD_ICON_RENDER_PX + (count as f32 + 1.0) * HUD_PAD
+}
+
+fn hud_bar_height() -> f32 {
+    HUD_ICON_RENDER_PX + 2.0 * HUD_PAD
 }
