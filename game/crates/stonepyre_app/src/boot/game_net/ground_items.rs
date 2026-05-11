@@ -11,6 +11,7 @@ use super::status::GameNetStatus;
 
 const GROUND_ITEM_COLOR: Color = Color::srgb(0.88, 0.70, 0.30);
 const GROUND_ITEM_SIZE: f32 = TILE_SIZE * 0.36;
+const GROUND_ITEM_ICON_SIZE: f32 = TILE_SIZE * 0.56;
 const GROUND_ITEM_DEPTH: f32 = 80.0;
 const GROUND_ITEM_TEXT_DEPTH: f32 = 81.0;
 
@@ -59,7 +60,7 @@ pub fn sync_ground_item_visuals_from_server(
         let root = existing
             .get(&item.ground_item_id)
             .copied()
-            .unwrap_or_else(|| spawn_ground_item_visual(&mut commands, item));
+            .unwrap_or_else(|| spawn_ground_item_visual(&mut commands, &asset_server, item));
 
         if should_show_label {
             spawn_ground_item_label(&mut commands, &asset_server, root, item);
@@ -96,25 +97,43 @@ fn is_more_dominant(candidate: &GroundItemSnapshot, current: &GroundItemSnapshot
         .is_gt()
 }
 
-fn spawn_ground_item_visual(commands: &mut Commands, item: &GroundItemSnapshot) -> Entity {
+fn spawn_ground_item_visual(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    item: &GroundItemSnapshot,
+) -> Entity {
     let world = tile_to_world_center(item.tile);
     let display_name = item_display_name(&item.item_id);
 
-    commands
-        .spawn((
-            Sprite::from_color(GROUND_ITEM_COLOR, Vec2::splat(GROUND_ITEM_SIZE)),
-            Transform::from_xyz(world.x, world.y, GROUND_ITEM_DEPTH),
-            GridPos(item.tile),
-            InteractableKind::GroundItem {
-                display_name: display_name.clone(),
+    let mut entity = commands.spawn((
+        Transform::from_xyz(world.x, world.y, GROUND_ITEM_DEPTH),
+        GridPos(item.tile),
+        InteractableKind::GroundItem {
+            display_name: display_name.clone(),
+        },
+        ServerGroundItemVisual {
+            ground_item_id: item.ground_item_id,
+        },
+        Visibility::Visible,
+        Name::new(format!("ground_item_{}", item.item_id)),
+    ));
+
+    if let Some(icon_path) = item_inventory_icon(&item.item_id) {
+        entity.insert((
+            Sprite {
+                image: asset_server.load(icon_path),
+                custom_size: Some(Vec2::splat(GROUND_ITEM_ICON_SIZE)),
+                ..default()
             },
-            ServerGroundItemVisual {
-                ground_item_id: item.ground_item_id,
-            },
-            Visibility::Visible,
-            Name::new(format!("ground_item_{}", item.item_id)),
-        ))
-        .id()
+        ));
+    } else {
+        entity.insert(Sprite::from_color(
+            GROUND_ITEM_COLOR,
+            Vec2::splat(GROUND_ITEM_SIZE),
+        ));
+    }
+
+    entity.id()
 }
 
 fn spawn_ground_item_label(
@@ -151,6 +170,12 @@ fn ground_item_label(item: &GroundItemSnapshot) -> String {
     } else {
         display_name
     }
+}
+
+fn item_inventory_icon(item_id: &str) -> Option<String> {
+    default_item_defs()
+        .get(item_id)
+        .and_then(|def| def.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {
