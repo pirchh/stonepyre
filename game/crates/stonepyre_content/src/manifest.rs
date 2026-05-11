@@ -22,6 +22,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "log".to_string(),
             name: "Log".to_string(),
+            inventory_icon: None,
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: true,
@@ -40,6 +41,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "log_oak".to_string(),
             name: "Oak Log".to_string(),
+            inventory_icon: Some("inventory/items/log_oak.png".to_string()),
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: true,
@@ -58,6 +60,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "log_willow".to_string(),
             name: "Willow Log".to_string(),
+            inventory_icon: Some("inventory/items/log_willow.png".to_string()),
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: true,
@@ -76,6 +79,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "backpack_wooden".to_string(),
             name: "Wooden Backpack".to_string(),
+            inventory_icon: None,
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: false,
@@ -98,6 +102,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "bag_small".to_string(),
             name: "Small Bag".to_string(),
+            inventory_icon: None,
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: false,
