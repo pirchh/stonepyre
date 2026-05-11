@@ -116,7 +116,6 @@ pub async fn can_character_inventory_accept_item(
     let content = stonepyre_content::default_content_db();
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_slot_table(&mut tx).await?;
     ensure_character_inventory_slots(&mut tx, character_id).await?;
     let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
 
@@ -158,7 +157,6 @@ pub async fn grant_character_item(
     let mut tx = pool.begin().await?;
 
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_slot_table(&mut tx).await?;
     ensure_character_inventory_slots(&mut tx, character_id).await?;
 
     let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
@@ -249,7 +247,6 @@ pub async fn remove_character_item_from_slot(
     let mut tx = pool.begin().await?;
 
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_slot_table(&mut tx).await?;
     ensure_character_inventory_slots(&mut tx, character_id).await?;
 
     let row: Option<(String, i64)> = sqlx::query_as(
@@ -371,7 +368,6 @@ pub async fn load_character_inventory_snapshot(
 ) -> Result<InventorySnapshot, sqlx::Error> {
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_slot_table(&mut tx).await?;
     ensure_character_inventory_slots(&mut tx, character_id).await?;
     let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
     tx.commit().await?;
@@ -389,27 +385,6 @@ pub async fn load_character_inventory_snapshot(
             })
             .collect(),
     })
-}
-
-async fn ensure_slot_table(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS game.character_inventory_slots (
-            character_id uuid NOT NULL REFERENCES game.characters(id) ON DELETE CASCADE,
-            container_id text NOT NULL DEFAULT 'inventory',
-            slot_idx int NOT NULL,
-            item_id text NOT NULL,
-            quantity bigint NOT NULL CHECK (quantity > 0),
-            created_at timestamptz NOT NULL DEFAULT now(),
-            updated_at timestamptz NOT NULL DEFAULT now(),
-            PRIMARY KEY (character_id, container_id, slot_idx)
-        )
-        "#,
-    )
-    .execute(&mut **tx)
-    .await?;
-
-    Ok(())
 }
 
 async fn lock_character_inventory(
