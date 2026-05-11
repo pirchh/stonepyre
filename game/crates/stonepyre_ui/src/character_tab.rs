@@ -13,9 +13,9 @@ const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 
-const SLOT_SIZE: f32 = 42.0;
-const SLOT_GAP: f32 = 6.0;
-const EQUIP_AREA_HEIGHT: f32 = 246.0;
+const SLOT_SIZE: f32 = 48.0;
+const SLOT_GAP: f32 = 5.0;
+const EQUIP_AREA_HEIGHT: f32 = 274.0;
 
 #[derive(Component)]
 pub(crate) struct CharacterTabRoot;
@@ -28,9 +28,6 @@ pub(crate) struct CharacterTabSlotLabel {
 #[derive(Component)]
 pub(crate) struct CharacterTabStatsText;
 
-#[derive(Component)]
-pub(crate) struct CharacterTabToolsText;
-
 pub(crate) fn character_tab_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -41,27 +38,11 @@ pub(crate) fn character_tab_panel_sync_system(
     children_q: Query<&Children>,
     mut slot_label_q: Query<
         (&CharacterTabSlotLabel, &mut Text),
-        (
-            With<CharacterTabSlotLabel>,
-            Without<CharacterTabStatsText>,
-            Without<CharacterTabToolsText>,
-        ),
+        (With<CharacterTabSlotLabel>, Without<CharacterTabStatsText>),
     >,
     mut stats_text_q: Query<
         &mut Text,
-        (
-            With<CharacterTabStatsText>,
-            Without<CharacterTabSlotLabel>,
-            Without<CharacterTabToolsText>,
-        ),
-    >,
-    mut tools_text_q: Query<
-        &mut Text,
-        (
-            With<CharacterTabToolsText>,
-            Without<CharacterTabSlotLabel>,
-            Without<CharacterTabStatsText>,
-        ),
+        (With<CharacterTabStatsText>, Without<CharacterTabSlotLabel>),
     >,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_character_panel(&windows));
@@ -86,12 +67,8 @@ pub(crate) fn character_tab_panel_sync_system(
     }
 
     if let Ok(mut text) = stats_text_q.single_mut() {
-        text.0 = "Armor —   Damage —   Accuracy —".to_string();
-    }
-
-    if let Ok(mut text) = tools_text_q.single_mut() {
         let axe = tool_text(toolbelt_opt, "Axe");
-        text.0 = format!("Axe {axe}");
+        text.0 = format!("Armor —   Damage —   Axe {axe}");
     }
 }
 
@@ -123,7 +100,7 @@ fn spawn_character_tab_panel(
                 padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(8.0),
+                row_gap: Val::Px(6.0),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
@@ -190,11 +167,10 @@ fn spawn_character_tab_panel(
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: Val::Px(48.0),
-                padding: UiRect::all(Val::Px(7.0)),
+                height: Val::Px(30.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
                 display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
+                align_items: AlignItems::Center,
                 border_radius: BorderRadius::all(Val::Px(5.0)),
                 ..default()
             },
@@ -206,10 +182,10 @@ fn spawn_character_tab_panel(
 
     let stats = commands
         .spawn((
-            Text::new("Armor —   Damage —   Accuracy —"),
+            Text::new("Armor —   Damage —   Axe —"),
             TextFont {
-                font: font.clone(),
-                font_size: 10.0,
+                font,
+                font_size: 11.0,
                 ..default()
             },
             TextColor(Color::srgb(0.78, 0.74, 0.66)),
@@ -218,21 +194,6 @@ fn spawn_character_tab_panel(
         ))
         .id();
     commands.entity(footer).add_child(stats);
-
-    let tools = commands
-        .spawn((
-            Text::new("Axe —"),
-            TextFont {
-                font,
-                font_size: 10.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.64, 0.60, 0.52)),
-            CharacterTabToolsText,
-            Name::new("character_tab_tools"),
-        ))
-        .id();
-    commands.entity(footer).add_child(tools);
 
     state.root = Some(root);
     state.spawned.push(root);
@@ -261,10 +222,10 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
             Text::new(slot_label(slot_id)),
             TextFont {
                 font: font.clone(),
-                font_size: 8.0,
+                font_size: 9.5,
                 ..default()
             },
-            TextColor(Color::srgb(0.82, 0.78, 0.68)),
+            TextColor(Color::srgb(0.84, 0.80, 0.70)),
             CharacterTabSlotLabel { slot_id },
             Name::new(format!("character_slot_label_{slot_id}")),
         ))
@@ -324,13 +285,13 @@ fn slot_label(slot_id: &str) -> &'static str {
         "Helm" => "Helm",
         "Neck" => "Neck",
         "Back" => "Back",
-        "Shoulders" => "Shldr",
+        "Shoulders" => "Shoulder",
         "Chest" => "Chest",
         "Wrist" => "Wrist",
-        "Gloves" => "Glove",
+        "Gloves" => "Gloves",
         "Waist" => "Waist",
         "Pants" => "Legs",
-        "Boots" => "Boot",
+        "Boots" => "Boots",
         "Ring1" => "Ring",
         "Ring2" => "Ring",
         _ => "Slot",
