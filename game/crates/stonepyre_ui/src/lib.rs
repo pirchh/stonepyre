@@ -2,6 +2,7 @@
 use bevy::prelude::*;
 
 pub mod character;
+pub mod character_tab;
 pub mod config;
 pub mod hud;
 pub mod inventory;
@@ -57,7 +58,6 @@ impl Plugin for StonepyreUiPlugin {
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character::CharacterUiState::default())
-            .add_systems(Update, character::character_panel_sync_system.run_if(game_ui_enabled))
-            .add_systems(Update, character::equip_slot_hover_system.run_if(game_ui_enabled));
+            .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled));
     }
 }
