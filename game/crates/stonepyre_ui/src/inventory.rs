@@ -107,7 +107,7 @@ pub(crate) fn inventory_panel_sync_system(
     slot_text_q: Query<(Entity, &SlotLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
-    blocker.0 = state.open && cursor_over_inventory_panel(&windows);
+    blocker.0 = blocker.0 || (state.open && cursor_over_inventory_panel(&windows));
 
     if !state.open {
         despawn_all(&mut commands, &mut state);
