@@ -1,7 +1,7 @@
 // crates/stonepyre_ui/src/lib.rs
 use bevy::prelude::*;
 
-pub mod character;
+pub mod character_state;
 pub mod character_tab;
 pub mod config;
 pub mod hud;
@@ -57,7 +57,7 @@ impl Plugin for StonepyreUiPlugin {
             )
 
             // Character panel (render-only; HUD controls open/close)
-            .insert_resource(character::CharacterUiState::default())
+            .insert_resource(character_state::CharacterUiState::default())
             .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled));
     }
 }
