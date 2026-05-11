@@ -17,18 +17,18 @@ const SLOT_SIZE: f32 = 52.0;
 const SLOT_GAP: f32 = 7.0;
 
 #[derive(Component)]
-struct CharacterTabRoot;
+pub(crate) struct CharacterTabRoot;
 
 #[derive(Component)]
-struct CharacterTabSlotLabel {
+pub(crate) struct CharacterTabSlotLabel {
     slot_id: &'static str,
 }
 
 #[derive(Component)]
-struct CharacterTabStatsText;
+pub(crate) struct CharacterTabStatsText;
 
 #[derive(Component)]
-struct CharacterTabToolsText;
+pub(crate) struct CharacterTabToolsText;
 
 pub(crate) fn character_tab_panel_sync_system(
     mut commands: Commands,
