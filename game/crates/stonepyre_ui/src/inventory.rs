@@ -3,7 +3,7 @@ use bevy::window::PrimaryWindow;
 
 use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
-use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
+use stonepyre_engine::plugins::inventory::Inventory;
 
 use crate::config::UiBindings;
 
@@ -18,6 +18,7 @@ const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
 const GRID_ROWS: usize = 5;
 const MENU_WIDTH: f32 = 220.0;
+const ITEM_ICON_SIZE: f32 = 48.0;
 
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
@@ -60,12 +61,12 @@ pub struct InventoryContextItem {
 struct InventoryPanelRoot;
 
 #[derive(Component)]
-pub(crate) struct SlotLabel {
+pub(crate) struct SlotIcon {
     idx: usize,
 }
 
 #[derive(Component)]
-pub(crate) struct SlotQuantityLabel {
+pub(crate) struct SlotFallbackLabel {
     idx: usize,
 }
 
@@ -109,8 +110,8 @@ pub(crate) fn inventory_panel_sync_system(
     mut blocker: ResMut<WorldInteractionBlocker>,
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
-    slot_text_q: Query<(Entity, &SlotLabel)>,
-    slot_quantity_q: Query<(Entity, &SlotQuantityLabel)>,
+    slot_icon_q: Query<(Entity, &SlotIcon)>,
+    slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_inventory_panel(&windows));
@@ -128,7 +129,7 @@ pub(crate) fn inventory_panel_sync_system(
         state.needs_rebuild = false;
     }
 
-    update_slot_labels(&mut commands, &inv, slot_text_q, slot_quantity_q);
+    update_slot_items(&mut commands, &asset_server, &inv, slot_icon_q, slot_fallback_q);
     update_slot_highlights(&state, &mut slot_bg_q);
 }
 
@@ -302,7 +303,6 @@ fn spawn_inventory_panel(
                     Node {
                         width: Val::Px(SLOT_SIZE),
                         height: Val::Px(SLOT_SIZE),
-                        position_type: PositionType::Relative,
                         display: Display::Flex,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
@@ -317,42 +317,37 @@ fn spawn_inventory_panel(
                 ))
                 .id();
 
-            let icon_label = commands
+            let icon = commands
                 .spawn((
-                    Text::new(""),
-                    TextFont {
-                        font: font.clone(),
-                        font_size: 12.0,
+                    ImageNode::new(Handle::<Image>::default()),
+                    Node {
+                        width: Val::Px(ITEM_ICON_SIZE),
+                        height: Val::Px(ITEM_ICON_SIZE),
                         ..default()
                     },
-                    TextColor(Color::srgb(0.86, 0.80, 0.64)),
-                    SlotLabel { idx },
-                    Name::new(format!("inv_slot_icon_label_{idx}")),
+                    Visibility::Hidden,
+                    SlotIcon { idx },
+                    Name::new(format!("inv_slot_icon_{idx}")),
                 ))
                 .id();
 
-            let quantity_label = commands
+            let fallback = commands
                 .spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(3.0),
-                        bottom: Val::Px(2.0),
-                        ..default()
-                    },
                     Text::new(""),
                     TextFont {
                         font: font.clone(),
                         font_size: 10.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.95, 0.88, 0.58)),
-                    SlotQuantityLabel { idx },
-                    Name::new(format!("inv_slot_quantity_label_{idx}")),
+                    TextColor(Color::srgb(0.82, 0.78, 0.68)),
+                    Visibility::Hidden,
+                    SlotFallbackLabel { idx },
+                    Name::new(format!("inv_slot_fallback_label_{idx}")),
                 ))
                 .id();
 
-            commands.entity(slot).add_child(icon_label);
-            commands.entity(slot).add_child(quantity_label);
+            commands.entity(slot).add_child(icon);
+            commands.entity(slot).add_child(fallback);
             commands.entity(row).add_child(slot);
 
             idx += 1;
@@ -465,27 +460,42 @@ fn close_context_menu(commands: &mut Commands, state: &mut ResMut<InventoryUiSta
     state.context_item = None;
 }
 
-fn update_slot_labels(
+fn update_slot_items(
     commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
     inv: &Inventory,
-    slot_text_q: Query<(Entity, &SlotLabel)>,
-    slot_quantity_q: Query<(Entity, &SlotQuantityLabel)>,
+    slot_icon_q: Query<(Entity, &SlotIcon)>,
+    slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
 ) {
-    for (e, lab) in slot_text_q.iter() {
-        let txt = match inv.container.slots.get(lab.idx) {
-            None => "".to_string(),
-            Some(None) => "".to_string(),
-            Some(Some(stk)) => item_icon_label(stk),
-        };
-        commands.entity(e).insert(Text::new(txt));
+    for (e, icon) in slot_icon_q.iter() {
+        match inv.container.slots.get(icon.idx) {
+            Some(Some(stk)) => match inventory_icon_path(&stk.id) {
+                Some(path) => {
+                    commands.entity(e).insert(ImageNode::new(asset_server.load(path)));
+                    commands.entity(e).insert(Visibility::Visible);
+                }
+                None => {
+                    commands.entity(e).insert(Visibility::Hidden);
+                }
+            },
+            _ => {
+                commands.entity(e).insert(Visibility::Hidden);
+            }
+        }
     }
 
-    for (e, lab) in slot_quantity_q.iter() {
-        let txt = match inv.container.slots.get(lab.idx) {
-            Some(Some(stk)) if stk.qty > 1 => format!("x{}", stk.qty),
+    for (e, label) in slot_fallback_q.iter() {
+        let text = match inv.container.slots.get(label.idx) {
+            Some(Some(stk)) if inventory_icon_path(&stk.id).is_none() => item_display_name(&stk.id),
             _ => "".to_string(),
         };
-        commands.entity(e).insert(Text::new(txt));
+        let visible = if text.is_empty() {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+        commands.entity(e).insert(Text::new(text));
+        commands.entity(e).insert(visible);
     }
 }
 
@@ -552,18 +562,11 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
 
-fn item_icon_label(stk: &ItemStack) -> String {
-    match stk.id.as_str() {
-        "log" => "Log".to_string(),
-        "log_oak" => "Oak".to_string(),
-        "log_willow" => "Willow".to_string(),
-        "backpack_wooden" => "Pack".to_string(),
-        "bag_small" => "Bag".to_string(),
-        _ => item_display_name(&stk.id)
-            .split_whitespace()
-            .next()
-            .unwrap_or(stk.id.as_str())
-            .to_string(),
+fn inventory_icon_path(item_id: &str) -> Option<&'static str> {
+    match item_id {
+        "log_oak" => Some("inventory/items/log_oak.png"),
+        "log_willow" => Some("inventory/items/log_willow.png"),
+        _ => None,
     }
 }
 
