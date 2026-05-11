@@ -39,6 +39,7 @@ impl Plugin for StonepyreUiPlugin {
             // Only run HUD interactions/tooltips/keys when enabled
             .add_systems(Update, hud::hud_interactions_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_active_tab_highlight_system.run_if(game_ui_enabled))
+            .add_systems(Update, hud::hud_world_interaction_blocker_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_tooltip_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_keyboard_toggles.run_if(game_ui_enabled))
 
