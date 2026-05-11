@@ -13,8 +13,9 @@ const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 
-const SLOT_SIZE: f32 = 52.0;
-const SLOT_GAP: f32 = 7.0;
+const SLOT_SIZE: f32 = 42.0;
+const SLOT_GAP: f32 = 6.0;
+const EQUIP_AREA_HEIGHT: f32 = 246.0;
 
 #[derive(Component)]
 pub(crate) struct CharacterTabRoot;
@@ -85,21 +86,12 @@ pub(crate) fn character_tab_panel_sync_system(
     }
 
     if let Ok(mut text) = stats_text_q.single_mut() {
-        text.0 = [
-            "Stats",
-            "Armor       —",
-            "Damage      —",
-            "Accuracy    —",
-            "Carry       — / —",
-        ]
-        .join("\n");
+        text.0 = "Armor —   Damage —   Accuracy —".to_string();
     }
 
     if let Ok(mut text) = tools_text_q.single_mut() {
         let axe = tool_text(toolbelt_opt, "Axe");
-        let pickaxe = tool_text(toolbelt_opt, "Pickaxe");
-        let rod = tool_text(toolbelt_opt, "Rod");
-        text.0 = format!("Tools\nAxe: {axe}\nPickaxe: {pickaxe}\nRod: {rod}");
+        text.0 = format!("Axe {axe}");
     }
 }
 
@@ -131,7 +123,7 @@ fn spawn_character_tab_panel(
                 padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(9.0),
+                row_gap: Val::Px(8.0),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
@@ -143,27 +135,29 @@ fn spawn_character_tab_panel(
 
     let font = asset_server.load("fonts/ui.ttf");
 
-    let grid = commands
+    let equip_area = commands
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: Val::Auto,
+                height: Val::Px(EQUIP_AREA_HEIGHT),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(SLOT_GAP),
                 align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
-            Name::new("character_equipment_grid"),
+            Name::new("character_equipment_shape"),
         ))
         .id();
-    commands.entity(panel).add_child(grid);
+    commands.entity(panel).add_child(equip_area);
 
-    let rows: [[&'static str; 3]; 4] = [
-        ["Helm", "Neck", "Back"],
-        ["Shoulders", "Chest", "Wrist"],
-        ["Gloves", "Waist", "Pants"],
-        ["Boots", "Ring1", "Ring2"],
+    let rows: [[Option<&'static str>; 5]; 5] = [
+        [None, None, Some("Helm"), None, None],
+        [None, Some("Neck"), Some("Chest"), Some("Back"), None],
+        [Some("Shoulders"), Some("Gloves"), Some("Waist"), Some("Wrist"), None],
+        [None, Some("Ring1"), Some("Pants"), Some("Ring2"), None],
+        [None, None, Some("Boots"), None, None],
     ];
 
     for (row_idx, row_slots) in rows.iter().enumerate() {
@@ -181,34 +175,64 @@ fn spawn_character_tab_panel(
                 Name::new(format!("character_equipment_row_{row_idx}")),
             ))
             .id();
-        commands.entity(grid).add_child(row);
+        commands.entity(equip_area).add_child(row);
 
-        for slot_id in row_slots.iter().copied() {
-            let slot = spawn_equipment_slot(commands, &font, slot_id);
-            commands.entity(row).add_child(slot);
+        for slot_opt in row_slots.iter().copied() {
+            let child = match slot_opt {
+                Some(slot_id) => spawn_equipment_slot(commands, &font, slot_id),
+                None => spawn_slot_spacer(commands),
+            };
+            commands.entity(row).add_child(child);
         }
     }
 
-    let lower = commands
+    let footer = commands
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: Val::Auto,
+                height: Val::Px(48.0),
+                padding: UiRect::all(Val::Px(7.0)),
                 display: Display::Flex,
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(8.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
                 ..default()
             },
-            Name::new("character_tab_lower"),
+            BackgroundColor(Color::srgba(0.055, 0.047, 0.040, 0.96)),
+            Name::new("character_tab_footer"),
         ))
         .id();
-    commands.entity(panel).add_child(lower);
+    commands.entity(panel).add_child(footer);
 
-    let stats = spawn_info_box(commands, &font, "", CharacterTabStatsText);
-    commands.entity(lower).add_child(stats);
+    let stats = commands
+        .spawn((
+            Text::new("Armor —   Damage —   Accuracy —"),
+            TextFont {
+                font: font.clone(),
+                font_size: 10.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.78, 0.74, 0.66)),
+            CharacterTabStatsText,
+            Name::new("character_tab_stats"),
+        ))
+        .id();
+    commands.entity(footer).add_child(stats);
 
-    let tools = spawn_tools_box(commands, &font);
-    commands.entity(lower).add_child(tools);
+    let tools = commands
+        .spawn((
+            Text::new("Axe —"),
+            TextFont {
+                font,
+                font_size: 10.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.64, 0.60, 0.52)),
+            CharacterTabToolsText,
+            Name::new("character_tab_tools"),
+        ))
+        .id();
+    commands.entity(footer).add_child(tools);
 
     state.root = Some(root);
     state.spawned.push(root);
@@ -223,7 +247,7 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
                 display: Display::Flex,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                padding: UiRect::all(Val::Px(4.0)),
+                padding: UiRect::all(Val::Px(3.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
@@ -237,7 +261,7 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
             Text::new(slot_label(slot_id)),
             TextFont {
                 font: font.clone(),
-                font_size: 9.0,
+                font_size: 8.0,
                 ..default()
             },
             TextColor(Color::srgb(0.82, 0.78, 0.68)),
@@ -250,77 +274,17 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
     slot
 }
 
-fn spawn_info_box<T: Component>(
-    commands: &mut Commands,
-    font: &Handle<Font>,
-    text: &str,
-    marker: T,
-) -> Entity {
-    let box_entity = commands
+fn spawn_slot_spacer(commands: &mut Commands) -> Entity {
+    commands
         .spawn((
             Node {
-                width: Val::Px(121.0),
-                height: Val::Px(84.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                overflow: Overflow::clip(),
+                width: Val::Px(SLOT_SIZE),
+                height: Val::Px(SLOT_SIZE),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.055, 0.047, 0.040, 0.96)),
-            Name::new("character_info_box"),
+            Name::new("character_slot_spacer"),
         ))
-        .id();
-
-    let text_entity = commands
-        .spawn((
-            Text::new(text),
-            TextFont {
-                font: font.clone(),
-                font_size: 10.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.78, 0.74, 0.66)),
-            marker,
-            Name::new("character_info_text"),
-        ))
-        .id();
-
-    commands.entity(box_entity).add_child(text_entity);
-    box_entity
-}
-
-fn spawn_tools_box(commands: &mut Commands, font: &Handle<Font>) -> Entity {
-    let box_entity = commands
-        .spawn((
-            Node {
-                width: Val::Px(121.0),
-                height: Val::Px(84.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.055, 0.047, 0.040, 0.96)),
-            Name::new("character_tools_box"),
-        ))
-        .id();
-
-    let text_entity = commands
-        .spawn((
-            Text::new("Tools"),
-            TextFont {
-                font: font.clone(),
-                font_size: 10.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.78, 0.74, 0.66)),
-            CharacterTabToolsText,
-            Name::new("character_tools_text"),
-        ))
-        .id();
-
-    commands.entity(box_entity).add_child(text_entity);
-    box_entity
+        .id()
 }
 
 fn equipment_slot_text(equip: &Equipment, slot_id: &str) -> String {
@@ -352,9 +316,7 @@ fn tool_text(toolbelt: Option<&Toolbelt>, tool_id: &'static str) -> String {
 }
 
 fn compact_item_label(item_id: &str) -> String {
-    item_id
-        .replace("item_", "")
-        .replace('_', "\n")
+    item_id.replace("item_", "").replace('_', "\n")
 }
 
 fn slot_label(slot_id: &str) -> &'static str {
