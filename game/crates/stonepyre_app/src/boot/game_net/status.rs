@@ -81,6 +81,7 @@ pub enum GameNetCommand {
         target: InteractionTarget,
     },
     DropItem {
+        slot_idx: usize,
         item_id: String,
         quantity: u32,
     },
@@ -117,6 +118,7 @@ pub struct GameNetStatus {
     pub server_goal: Option<TilePos>,
     pub server_moving: bool,
     pub server_action: Option<PlayerActionSnapshot>,
+    pub inventory_slots_total: usize,
     pub inventory_items: Vec<InventoryItemSnapshot>,
     pub inventory_dirty: bool,
     pub skill_entries: Vec<SkillSnapshotEntry>,
@@ -150,6 +152,7 @@ impl Default for GameNetStatus {
             server_goal: None,
             server_moving: false,
             server_action: None,
+            inventory_slots_total: 20,
             inventory_items: Vec::new(),
             inventory_dirty: false,
             skill_entries: Vec::new(),
