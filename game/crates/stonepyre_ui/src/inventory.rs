@@ -569,12 +569,10 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
 
-fn inventory_icon_path(item_id: &str) -> Option<&'static str> {
-    match item_id {
-        "log_oak" => Some("inventory/items/log_oak.png"),
-        "log_willow" => Some("inventory/items/log_willow.png"),
-        _ => None,
-    }
+fn inventory_icon_path(item_id: &str) -> Option<String> {
+    default_item_defs()
+        .get(item_id)
+        .and_then(|def| def.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {
