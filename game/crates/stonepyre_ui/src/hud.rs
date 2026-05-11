@@ -4,7 +4,7 @@ use bevy::window::PrimaryWindow;
 
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 
-use crate::character::CharacterUiState;
+use crate::character_state::CharacterUiState;
 use crate::config::UiBindings;
 use crate::inventory::InventoryUiState;
 use crate::GameUiEnabled;
