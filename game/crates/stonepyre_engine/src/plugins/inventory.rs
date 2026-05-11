@@ -35,7 +35,7 @@ impl Container {
     }
 }
 
-/// Player's main inventory container (16 slots).
+/// Player's main inventory container.
 #[derive(Component, Clone, Debug)]
 pub struct Inventory {
     pub container: Container,

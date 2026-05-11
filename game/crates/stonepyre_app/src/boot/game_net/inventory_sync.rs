@@ -21,7 +21,7 @@ pub fn sync_inventory_from_server(
         return;
     };
 
-    let slot_count = inv.container.slots.len();
+    let slot_count = inv.container.slots.len().max(status.inventory_items.len());
     inv.container.slots.clear();
     inv.container.slots.resize(slot_count, None);
 
