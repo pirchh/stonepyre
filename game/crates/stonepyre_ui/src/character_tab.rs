@@ -38,9 +38,30 @@ pub(crate) fn character_tab_panel_sync_system(
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<(&Equipment, Option<&Toolbelt>), With<Player>>,
     children_q: Query<&Children>,
-    mut slot_label_q: Query<(&CharacterTabSlotLabel, &mut Text)>,
-    mut stats_text_q: Query<&mut Text, With<CharacterTabStatsText>>,
-    mut tools_text_q: Query<&mut Text, With<CharacterTabToolsText>>,
+    mut slot_label_q: Query<
+        (&CharacterTabSlotLabel, &mut Text),
+        (
+            With<CharacterTabSlotLabel>,
+            Without<CharacterTabStatsText>,
+            Without<CharacterTabToolsText>,
+        ),
+    >,
+    mut stats_text_q: Query<
+        &mut Text,
+        (
+            With<CharacterTabStatsText>,
+            Without<CharacterTabSlotLabel>,
+            Without<CharacterTabToolsText>,
+        ),
+    >,
+    mut tools_text_q: Query<
+        &mut Text,
+        (
+            With<CharacterTabToolsText>,
+            Without<CharacterTabSlotLabel>,
+            Without<CharacterTabStatsText>,
+        ),
+    >,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_character_panel(&windows));
 
