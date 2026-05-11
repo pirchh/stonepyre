@@ -40,6 +40,7 @@ pub struct InventoryItemActionQueue {
 #[derive(Clone, Debug)]
 pub struct InventoryItemActionRequest {
     pub action: InventoryItemAction,
+    pub slot_idx: usize,
     pub item_id: String,
     pub quantity: u32,
 }
@@ -206,6 +207,7 @@ pub(crate) fn inventory_item_context_menu_system(
             InventoryContextOption::Drop => {
                 action_queue.actions.push(InventoryItemActionRequest {
                     action: InventoryItemAction::Drop,
+                    slot_idx: item.slot_idx,
                     item_id: item.item_id.clone(),
                     quantity: 1,
                 });
