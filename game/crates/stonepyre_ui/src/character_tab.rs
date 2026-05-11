@@ -268,11 +268,15 @@ fn despawn_all(
     state: &mut ResMut<CharacterUiState>,
     children_q: &Query<&Children>,
 ) {
-    for root in state.spawned.drain(..) {
-        despawn_ui_tree(root, children_q, commands);
-    }
+    let mut roots: Vec<Entity> = state.spawned.drain(..).collect();
 
     if let Some(root) = state.root.take() {
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+
+    for root in roots {
         despawn_ui_tree(root, children_q, commands);
     }
 
