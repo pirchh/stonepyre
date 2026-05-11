@@ -114,12 +114,12 @@ pub(crate) fn inventory_panel_sync_system(
     slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
-    blocker.0 = blocker.0 || (state.open && cursor_over_inventory_panel(&windows));
-
     if !state.open {
         despawn_all(&mut commands, &mut state);
         return;
     }
+
+    blocker.0 = blocker.0 || cursor_over_inventory_panel(&windows);
 
     let Ok(inv) = player_q.single() else { return; };
 
@@ -232,6 +232,7 @@ fn spawn_inventory_panel(
                 height: Val::Percent(100.0),
                 ..default()
             },
+            Pickable::IGNORE,
             InventoryPanelRoot,
             Name::new("inventory_panel_root".to_string()),
         ))
@@ -252,6 +253,7 @@ fn spawn_inventory_panel(
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
+            Pickable::IGNORE,
             BackgroundColor(Color::srgba(0.030, 0.028, 0.025, 0.94)),
             Name::new("inventory_tab_panel".to_string()),
         ))
@@ -272,6 +274,7 @@ fn spawn_inventory_panel(
                 align_items: AlignItems::Center,
                 ..default()
             },
+            Pickable::IGNORE,
             Name::new("inventory_grid".to_string()),
         ))
         .id();
@@ -291,6 +294,7 @@ fn spawn_inventory_panel(
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
+                Pickable::IGNORE,
                 Name::new(format!("inv_row_{r}")),
             ))
             .id();
@@ -325,6 +329,7 @@ fn spawn_inventory_panel(
                         height: Val::Px(ITEM_ICON_SIZE),
                         ..default()
                     },
+                    Pickable::IGNORE,
                     Visibility::Hidden,
                     SlotIcon { idx },
                     Name::new(format!("inv_slot_icon_{idx}")),
@@ -340,6 +345,7 @@ fn spawn_inventory_panel(
                         ..default()
                     },
                     TextColor(Color::srgb(0.82, 0.78, 0.68)),
+                    Pickable::IGNORE,
                     Visibility::Hidden,
                     SlotFallbackLabel { idx },
                     Name::new(format!("inv_slot_fallback_label_{idx}")),
@@ -439,6 +445,7 @@ fn open_context_menu(
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                Pickable::IGNORE,
                 Name::new(format!("inventory_context_option_text_{label}")),
             ))
             .id();
