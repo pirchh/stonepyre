@@ -65,6 +65,11 @@ pub(crate) struct SlotLabel {
 }
 
 #[derive(Component)]
+pub(crate) struct SlotQuantityLabel {
+    idx: usize,
+}
+
+#[derive(Component)]
 pub(crate) struct InventorySlotButton {
     idx: usize,
 }
@@ -105,6 +110,7 @@ pub(crate) fn inventory_panel_sync_system(
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
     slot_text_q: Query<(Entity, &SlotLabel)>,
+    slot_quantity_q: Query<(Entity, &SlotQuantityLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_inventory_panel(&windows));
@@ -122,7 +128,7 @@ pub(crate) fn inventory_panel_sync_system(
         state.needs_rebuild = false;
     }
 
-    update_slot_labels(&mut commands, &inv, slot_text_q);
+    update_slot_labels(&mut commands, &inv, slot_text_q, slot_quantity_q);
     update_slot_highlights(&state, &mut slot_bg_q);
 }
 
@@ -296,6 +302,7 @@ fn spawn_inventory_panel(
                     Node {
                         width: Val::Px(SLOT_SIZE),
                         height: Val::Px(SLOT_SIZE),
+                        position_type: PositionType::Relative,
                         display: Display::Flex,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
@@ -310,21 +317,42 @@ fn spawn_inventory_panel(
                 ))
                 .id();
 
-            let label = commands
+            let icon_label = commands
                 .spawn((
+                    Text::new(""),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.86, 0.80, 0.64)),
+                    SlotLabel { idx },
+                    Name::new(format!("inv_slot_icon_label_{idx}")),
+                ))
+                .id();
+
+            let quantity_label = commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(3.0),
+                        bottom: Val::Px(2.0),
+                        ..default()
+                    },
                     Text::new(""),
                     TextFont {
                         font: font.clone(),
                         font_size: 10.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.82, 0.78, 0.68)),
-                    SlotLabel { idx },
-                    Name::new(format!("inv_slot_label_{idx}")),
+                    TextColor(Color::srgb(0.95, 0.88, 0.58)),
+                    SlotQuantityLabel { idx },
+                    Name::new(format!("inv_slot_quantity_label_{idx}")),
                 ))
                 .id();
 
-            commands.entity(slot).add_child(label);
+            commands.entity(slot).add_child(icon_label);
+            commands.entity(slot).add_child(quantity_label);
             commands.entity(row).add_child(slot);
 
             idx += 1;
@@ -441,12 +469,21 @@ fn update_slot_labels(
     commands: &mut Commands,
     inv: &Inventory,
     slot_text_q: Query<(Entity, &SlotLabel)>,
+    slot_quantity_q: Query<(Entity, &SlotQuantityLabel)>,
 ) {
     for (e, lab) in slot_text_q.iter() {
         let txt = match inv.container.slots.get(lab.idx) {
             None => "".to_string(),
             Some(None) => "".to_string(),
-            Some(Some(stk)) => item_stack_label(stk),
+            Some(Some(stk)) => item_icon_label(stk),
+        };
+        commands.entity(e).insert(Text::new(txt));
+    }
+
+    for (e, lab) in slot_quantity_q.iter() {
+        let txt = match inv.container.slots.get(lab.idx) {
+            Some(Some(stk)) if stk.qty > 1 => format!("x{}", stk.qty),
+            _ => "".to_string(),
         };
         commands.entity(e).insert(Text::new(txt));
     }
@@ -515,12 +552,18 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
 
-fn item_stack_label(stk: &ItemStack) -> String {
-    let name = item_display_name(&stk.id).replace(' ', "\n");
-    if stk.qty > 1 {
-        format!("{}\nx{}", name, stk.qty)
-    } else {
-        name
+fn item_icon_label(stk: &ItemStack) -> String {
+    match stk.id.as_str() {
+        "log" => "Log".to_string(),
+        "log_oak" => "Oak".to_string(),
+        "log_willow" => "Willow".to_string(),
+        "backpack_wooden" => "Pack".to_string(),
+        "bag_small" => "Bag".to_string(),
+        _ => item_display_name(&stk.id)
+            .split_whitespace()
+            .next()
+            .unwrap_or(stk.id.as_str())
+            .to_string(),
     }
 }
 
