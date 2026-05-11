@@ -40,6 +40,7 @@ pub struct InventoryItemActionQueue {
 #[derive(Clone, Debug)]
 pub struct InventoryItemActionRequest {
     pub action: InventoryItemAction,
+    pub slot_idx: usize,
     pub item_id: String,
     pub quantity: u32,
 }
@@ -206,6 +207,7 @@ pub(crate) fn inventory_item_context_menu_system(
             InventoryContextOption::Drop => {
                 action_queue.actions.push(InventoryItemActionRequest {
                     action: InventoryItemAction::Drop,
+                    slot_idx: item.slot_idx,
                     item_id: item.item_id.clone(),
                     quantity: 1,
                 });
@@ -569,12 +571,10 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
 
-fn inventory_icon_path(item_id: &str) -> Option<&'static str> {
-    match item_id {
-        "log_oak" => Some("inventory/items/log_oak.png"),
-        "log_willow" => Some("inventory/items/log_willow.png"),
-        _ => None,
-    }
+fn inventory_icon_path(item_id: &str) -> Option<String> {
+    default_item_defs()
+        .get(item_id)
+        .and_then(|def| def.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {

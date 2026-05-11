@@ -101,6 +101,10 @@ pub struct ItemDef {
     pub id: ItemId,
     pub name: String,
 
+    /// Optional inventory icon asset path, relative to game/assets.
+    /// Example: "inventory/items/log_oak.png"
+    pub inventory_icon: Option<String>,
+
     /// Stack behavior differs by storage (inventory vs bank).
     pub stack_policy: StackPolicy,
 
