@@ -5,7 +5,7 @@ use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::Equipment;
 use stonepyre_engine::plugins::world::Player;
 
-use crate::character::CharacterUiState;
+use crate::character_state::CharacterUiState;
 
 const PANEL_WIDTH: f32 = 270.0;
 const PANEL_HEIGHT: f32 = 334.0;
