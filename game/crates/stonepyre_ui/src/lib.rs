@@ -1,6 +1,8 @@
 // crates/stonepyre_ui/src/lib.rs
 use bevy::prelude::*;
 
+use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
+
 pub mod character_state;
 pub mod character_tab;
 pub mod config;
@@ -21,6 +23,10 @@ fn game_ui_enabled(enabled: Res<GameUiEnabled>) -> bool {
     enabled.0
 }
 
+fn clear_world_interaction_blocker_system(mut blocker: ResMut<WorldInteractionBlocker>) {
+    blocker.0 = false;
+}
+
 pub struct StonepyreUiPlugin;
 
 impl Plugin for StonepyreUiPlugin {
@@ -31,6 +37,11 @@ impl Plugin for StonepyreUiPlugin {
 
             // Configurable keybinds (later: settings menu edits this)
             .insert_resource(config::UiBindings::default())
+
+            // Reset UI click blocking once per UI frame. Individual panels then opt back in
+            // when the cursor is actually over them. This prevents stale blockers from
+            // making the world randomly stop accepting clicks.
+            .add_systems(Update, clear_world_interaction_blocker_system.run_if(game_ui_enabled))
 
             // HUD
             .insert_resource(hud::HudState::default())
