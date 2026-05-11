@@ -6,6 +6,10 @@ use crate::config::UiBindings;
 use crate::inventory::InventoryUiState;
 use crate::GameUiEnabled;
 
+const HUD_BTN_BG: Color = Color::srgba(0.10, 0.10, 0.12, 0.92);
+const HUD_BTN_BG_HOVER: Color = Color::srgba(0.14, 0.13, 0.12, 0.96);
+const HUD_BTN_BG_ACTIVE: Color = Color::srgba(0.20, 0.16, 0.10, 0.98);
+
 /// What a HUD button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HudAction {
@@ -199,7 +203,7 @@ fn spawn_hud_bar(commands: &mut Commands, asset_server: &AssetServer, state: &mu
                     height: Val::Px(icon_render_px),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.92)),
+                BackgroundColor(HUD_BTN_BG),
                 Interaction::default(),
                 btn,
                 Name::new(format!("hud_btn_{idx}")),
@@ -281,6 +285,30 @@ pub(crate) fn hud_interactions_system(
             HudAction::ToggleCharacter => open_character(&mut inv_state, &mut char_state),
             _ => {}
         }
+    }
+}
+
+/// Keeps HUD icon backgrounds in sync with the currently open tab.
+/// This also handles keyboard toggles, not just mouse clicks.
+pub(crate) fn hud_active_tab_highlight_system(
+    inv_state: Res<InventoryUiState>,
+    char_state: Res<CharacterUiState>,
+    mut q: Query<(&HudButton, &Interaction, &mut BackgroundColor)>,
+) {
+    for (btn, interaction, mut bg) in q.iter_mut() {
+        let active = match btn.action {
+            HudAction::ToggleInventory => inv_state.open,
+            HudAction::ToggleCharacter => char_state.open,
+            _ => false,
+        };
+
+        *bg = if active {
+            BackgroundColor(HUD_BTN_BG_ACTIVE)
+        } else if *interaction == Interaction::Hovered {
+            BackgroundColor(HUD_BTN_BG_HOVER)
+        } else {
+            BackgroundColor(HUD_BTN_BG)
+        };
     }
 }
 
