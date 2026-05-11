@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::game::protocol::{InventoryItemSnapshot, InventorySnapshot};
 
-const BASE_INVENTORY_SLOTS: i64 = 16;
+const BASE_INVENTORY_SLOTS: i64 = 20;
 
 /// Server-owned inventory grant produced by the live game simulation.
 ///
