@@ -3,7 +3,7 @@ use bevy::window::PrimaryWindow;
 
 use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
-use stonepyre_engine::plugins::inventory::{Inventory, ItemStack};
+use stonepyre_engine::plugins::inventory::Inventory;
 
 use crate::config::UiBindings;
 
@@ -18,6 +18,7 @@ const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
 const GRID_ROWS: usize = 5;
 const MENU_WIDTH: f32 = 220.0;
+const ITEM_ICON_SIZE: f32 = 48.0;
 
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
@@ -60,7 +61,12 @@ pub struct InventoryContextItem {
 struct InventoryPanelRoot;
 
 #[derive(Component)]
-pub(crate) struct SlotLabel {
+pub(crate) struct SlotIcon {
+    idx: usize,
+}
+
+#[derive(Component)]
+pub(crate) struct SlotFallbackLabel {
     idx: usize,
 }
 
@@ -104,15 +110,16 @@ pub(crate) fn inventory_panel_sync_system(
     mut blocker: ResMut<WorldInteractionBlocker>,
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Inventory>,
-    slot_text_q: Query<(Entity, &SlotLabel)>,
+    slot_icon_q: Query<(Entity, &SlotIcon)>,
+    slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
-    blocker.0 = blocker.0 || (state.open && cursor_over_inventory_panel(&windows));
-
     if !state.open {
         despawn_all(&mut commands, &mut state);
         return;
     }
+
+    blocker.0 = blocker.0 || cursor_over_inventory_panel(&windows);
 
     let Ok(inv) = player_q.single() else { return; };
 
@@ -122,7 +129,7 @@ pub(crate) fn inventory_panel_sync_system(
         state.needs_rebuild = false;
     }
 
-    update_slot_labels(&mut commands, &inv, slot_text_q);
+    update_slot_items(&mut commands, &asset_server, &inv, slot_icon_q, slot_fallback_q);
     update_slot_highlights(&state, &mut slot_bg_q);
 }
 
@@ -225,6 +232,7 @@ fn spawn_inventory_panel(
                 height: Val::Percent(100.0),
                 ..default()
             },
+            Pickable::IGNORE,
             InventoryPanelRoot,
             Name::new("inventory_panel_root".to_string()),
         ))
@@ -245,6 +253,7 @@ fn spawn_inventory_panel(
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
+            Pickable::IGNORE,
             BackgroundColor(Color::srgba(0.030, 0.028, 0.025, 0.94)),
             Name::new("inventory_tab_panel".to_string()),
         ))
@@ -265,6 +274,7 @@ fn spawn_inventory_panel(
                 align_items: AlignItems::Center,
                 ..default()
             },
+            Pickable::IGNORE,
             Name::new("inventory_grid".to_string()),
         ))
         .id();
@@ -284,6 +294,7 @@ fn spawn_inventory_panel(
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
+                Pickable::IGNORE,
                 Name::new(format!("inv_row_{r}")),
             ))
             .id();
@@ -310,7 +321,22 @@ fn spawn_inventory_panel(
                 ))
                 .id();
 
-            let label = commands
+            let icon = commands
+                .spawn((
+                    ImageNode::new(Handle::<Image>::default()),
+                    Node {
+                        width: Val::Px(ITEM_ICON_SIZE),
+                        height: Val::Px(ITEM_ICON_SIZE),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                    Visibility::Hidden,
+                    SlotIcon { idx },
+                    Name::new(format!("inv_slot_icon_{idx}")),
+                ))
+                .id();
+
+            let fallback = commands
                 .spawn((
                     Text::new(""),
                     TextFont {
@@ -319,12 +345,15 @@ fn spawn_inventory_panel(
                         ..default()
                     },
                     TextColor(Color::srgb(0.82, 0.78, 0.68)),
-                    SlotLabel { idx },
-                    Name::new(format!("inv_slot_label_{idx}")),
+                    Pickable::IGNORE,
+                    Visibility::Hidden,
+                    SlotFallbackLabel { idx },
+                    Name::new(format!("inv_slot_fallback_label_{idx}")),
                 ))
                 .id();
 
-            commands.entity(slot).add_child(label);
+            commands.entity(slot).add_child(icon);
+            commands.entity(slot).add_child(fallback);
             commands.entity(row).add_child(slot);
 
             idx += 1;
@@ -416,6 +445,7 @@ fn open_context_menu(
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                Pickable::IGNORE,
                 Name::new(format!("inventory_context_option_text_{label}")),
             ))
             .id();
@@ -437,18 +467,42 @@ fn close_context_menu(commands: &mut Commands, state: &mut ResMut<InventoryUiSta
     state.context_item = None;
 }
 
-fn update_slot_labels(
+fn update_slot_items(
     commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
     inv: &Inventory,
-    slot_text_q: Query<(Entity, &SlotLabel)>,
+    slot_icon_q: Query<(Entity, &SlotIcon)>,
+    slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
 ) {
-    for (e, lab) in slot_text_q.iter() {
-        let txt = match inv.container.slots.get(lab.idx) {
-            None => "".to_string(),
-            Some(None) => "".to_string(),
-            Some(Some(stk)) => item_stack_label(stk),
+    for (e, icon) in slot_icon_q.iter() {
+        match inv.container.slots.get(icon.idx) {
+            Some(Some(stk)) => match inventory_icon_path(&stk.id) {
+                Some(path) => {
+                    commands.entity(e).insert(ImageNode::new(asset_server.load(path)));
+                    commands.entity(e).insert(Visibility::Visible);
+                }
+                None => {
+                    commands.entity(e).insert(Visibility::Hidden);
+                }
+            },
+            _ => {
+                commands.entity(e).insert(Visibility::Hidden);
+            }
+        }
+    }
+
+    for (e, label) in slot_fallback_q.iter() {
+        let text = match inv.container.slots.get(label.idx) {
+            Some(Some(stk)) if inventory_icon_path(&stk.id).is_none() => item_display_name(&stk.id),
+            _ => "".to_string(),
         };
-        commands.entity(e).insert(Text::new(txt));
+        let visible = if text.is_empty() {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+        commands.entity(e).insert(Text::new(text));
+        commands.entity(e).insert(visible);
     }
 }
 
@@ -515,12 +569,11 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
     Some((slot_idx, Vec2::new(menu_x, menu_y)))
 }
 
-fn item_stack_label(stk: &ItemStack) -> String {
-    let name = item_display_name(&stk.id).replace(' ', "\n");
-    if stk.qty > 1 {
-        format!("{}\nx{}", name, stk.qty)
-    } else {
-        name
+fn inventory_icon_path(item_id: &str) -> Option<&'static str> {
+    match item_id {
+        "log_oak" => Some("inventory/items/log_oak.png"),
+        "log_willow" => Some("inventory/items/log_willow.png"),
+        _ => None,
     }
 }
 
