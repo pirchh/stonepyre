@@ -13,6 +13,7 @@ pub enum ClientMsg {
         target: InteractionTarget,
     },
     DropItem {
+        slot_idx: usize,
         item_id: String,
         quantity: u32,
     },
@@ -180,11 +181,13 @@ pub enum HarvestNodeEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventorySnapshot {
     pub character_id: Uuid,
+    pub slots_total: usize,
     pub items: Vec<InventoryItemSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryItemSnapshot {
+    pub slot_idx: usize,
     pub item_id: String,
     pub quantity: i64,
 }
@@ -192,6 +195,7 @@ pub struct InventoryItemSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryDelta {
     pub character_id: Uuid,
+    pub slot_idx: Option<usize>,
     pub item_id: String,
     pub quantity_delta: i64,
     pub new_quantity: i64,

@@ -58,6 +58,7 @@ pub fn spawn_game_ws(
     status.server_goal = None;
     status.server_moving = false;
     status.server_action = None;
+    status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
     status.skill_entries.clear();
@@ -107,6 +108,7 @@ pub fn send_interaction_to_server(
 
 pub fn send_drop_item_to_server(
     game_net: &GameNetRuntime,
+    slot_idx: usize,
     item_id: String,
     quantity: u32,
 ) -> bool {
@@ -115,7 +117,12 @@ pub fn send_drop_item_to_server(
         return false;
     };
 
-    tx.send(GameNetCommand::DropItem { item_id, quantity }).is_ok()
+    tx.send(GameNetCommand::DropItem {
+        slot_idx,
+        item_id,
+        quantity,
+    })
+    .is_ok()
 }
 
 pub fn send_pickup_ground_item_to_server(
@@ -199,8 +206,16 @@ fn run_game_ws(
                         }
                     }
                 }
-                GameNetCommand::DropItem { item_id, quantity } => {
-                    let msg = ClientMsg::DropItem { item_id, quantity };
+                GameNetCommand::DropItem {
+                    slot_idx,
+                    item_id,
+                    quantity,
+                } => {
+                    let msg = ClientMsg::DropItem {
+                        slot_idx,
+                        item_id,
+                        quantity,
+                    };
                     let json = serde_json::to_string(&msg)
                         .map_err(|e| format!("game ws drop item serialize failed: {e}"))?;
                     socket
@@ -551,17 +566,20 @@ pub fn pump_game_net_results(
             }
             GameNetEvent::InventorySnapshot(snapshot) => {
                 info!(
-                    "game net inventory snapshot character_id={} items={}",
+                    "game net inventory snapshot character_id={} slots_total={} items={}",
                     snapshot.character_id,
+                    snapshot.slots_total,
                     snapshot.items.len()
                 );
+                status.inventory_slots_total = snapshot.slots_total;
                 status.inventory_items = snapshot.items;
                 status.inventory_dirty = true;
             }
             GameNetEvent::InventoryDelta(delta) => {
                 info!(
-                    "game net inventory delta character_id={} item_id={} delta={} new_quantity={}",
+                    "game net inventory delta character_id={} slot_idx={:?} item_id={} delta={} new_quantity={}",
                     delta.character_id,
+                    delta.slot_idx,
                     delta.item_id,
                     delta.quantity_delta,
                     delta.new_quantity
@@ -571,24 +589,26 @@ pub fn pump_game_net_results(
                     continue;
                 }
 
-                let item_id = delta.item_id.clone();
-                if delta.new_quantity <= 0 {
-                    status.inventory_items.retain(|item| item.item_id != item_id.as_str());
-                } else if let Some(item) = status
-                    .inventory_items
-                    .iter_mut()
-                    .find(|item| item.item_id == item_id.as_str())
-                {
-                    item.quantity = delta.new_quantity;
-                } else {
-                    status.inventory_items.push(super::protocol::InventoryItemSnapshot {
-                        item_id,
-                        quantity: delta.new_quantity,
-                    });
+                if let Some(slot_idx) = delta.slot_idx {
+                    if delta.new_quantity <= 0 {
+                        status.inventory_items.retain(|item| item.slot_idx != slot_idx);
+                    } else if let Some(item) = status
+                        .inventory_items
+                        .iter_mut()
+                        .find(|item| item.slot_idx == slot_idx)
+                    {
+                        item.item_id = delta.item_id.clone();
+                        item.quantity = delta.new_quantity;
+                    } else {
+                        status.inventory_items.push(super::protocol::InventoryItemSnapshot {
+                            slot_idx,
+                            item_id: delta.item_id.clone(),
+                            quantity: delta.new_quantity,
+                        });
+                    }
+                    status.inventory_items.sort_by_key(|item| item.slot_idx);
+                    status.inventory_dirty = true;
                 }
-
-                status.inventory_items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
-                status.inventory_dirty = true;
             }
             GameNetEvent::GroundItemsSnapshot(snapshot) => {
                 info!("game net ground items snapshot items={}", snapshot.items.len());
@@ -704,6 +724,7 @@ pub fn pump_game_net_results(
                 status.server_goal = None;
                 status.server_moving = false;
                 status.server_action = None;
+                status.inventory_slots_total = 20;
                 status.inventory_items.clear();
                 status.inventory_dirty = true;
                 status.skill_entries.clear();

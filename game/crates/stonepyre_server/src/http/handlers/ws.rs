@@ -236,7 +236,11 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 
                         handle_interaction(&state, pid, cid, action, target, &out_tx).await;
                     }
-                    ClientMsg::DropItem { item_id, quantity } => {
+                    ClientMsg::DropItem {
+                        slot_idx,
+                        item_id,
+                        quantity,
+                    } => {
                         let Some(pid) = player_id else {
                             let _ = out_tx.send(ServerMsg::Error {
                                 message: "join the world before dropping items".to_string(),
@@ -251,7 +255,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
 
-                        handle_drop_item(&state, pid, cid, item_id, quantity, &out_tx).await;
+                        handle_drop_item(&state, pid, cid, slot_idx, item_id, quantity, &out_tx).await;
                     }
                     ClientMsg::PickupGroundItem { ground_item_id } => {
                         let Some(pid) = player_id else {
@@ -425,13 +429,15 @@ async fn handle_drop_item(
     state: &AppState,
     player_id: Uuid,
     character_id: Uuid,
+    slot_idx: usize,
     item_id: String,
     quantity: u32,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
-    match crate::game::sim::inventory::remove_character_item(
+    match crate::game::sim::inventory::remove_character_item_from_slot(
         &state.db,
         character_id,
+        slot_idx,
         &item_id,
         quantity,
     )
@@ -439,8 +445,8 @@ async fn handle_drop_item(
     {
         Ok(result) => {
             info!(
-                "game ws dropped item character_id={} item_id={} quantity={} new_quantity={}",
-                character_id, result.item_id, result.quantity_removed, result.new_quantity
+                "game ws dropped item character_id={} slot_idx={} item_id={} quantity={} new_quantity={}",
+                character_id, result.slot_idx, result.item_id, result.quantity_removed, result.new_quantity
             );
 
             let event = {
@@ -479,6 +485,29 @@ async fn handle_drop_item(
                 message: "drop quantity must be greater than zero".to_string(),
             });
         }
+        Err(crate::game::sim::inventory::InventoryRemoveError::InvalidSlot { slot_idx }) => {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: format!("invalid inventory slot {}", slot_idx),
+            });
+        }
+        Err(crate::game::sim::inventory::InventoryRemoveError::SlotEmpty { slot_idx }) => {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: format!("inventory slot {} is empty", slot_idx),
+            });
+        }
+        Err(crate::game::sim::inventory::InventoryRemoveError::SlotItemMismatch {
+            slot_idx,
+            expected_item_id,
+            actual_item_id,
+        }) => {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: format!(
+                    "inventory slot {} changed before drop: expected {}, found {}",
+                    slot_idx, expected_item_id, actual_item_id
+                ),
+            });
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
         Err(crate::game::sim::inventory::InventoryRemoveError::InsufficientQuantity {
             item_id,
             requested,
@@ -493,8 +522,8 @@ async fn handle_drop_item(
         }
         Err(crate::game::sim::inventory::InventoryRemoveError::Db(e)) => {
             warn!(
-                "inventory drop removal failed character_id={} item_id={} quantity={} error={:?}",
-                character_id, item_id, quantity, e
+                "inventory drop removal failed character_id={} slot_idx={} item_id={} quantity={} error={:?}",
+                character_id, slot_idx, item_id, quantity, e
             );
             let _ = out_tx.send(ServerMsg::Error {
                 message: "failed to drop item".to_string(),
