@@ -14,8 +14,8 @@ BEFORE INSERT ON game.characters
 FOR EACH ROW
 EXECUTE FUNCTION game.enforce_max_characters();
 
-CREATE OR REPLACE FUNCTION game.account_owns_character(p_account_id UUID, p_character_id UUID)
-RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION game.account_owns_character(p_account_id uuid, p_character_id uuid)
+RETURNS boolean AS $$
 BEGIN
     RETURN EXISTS (
         SELECT 1
