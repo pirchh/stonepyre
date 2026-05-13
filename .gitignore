@@ -52,6 +52,12 @@ Thumbs.db
 
 
 # ------------------------------------------------------------
+# Claude Code worktrees
+# ------------------------------------------------------------
+.claude/worktrees/
+
+
+# ------------------------------------------------------------
 # Art source files
 #
 # Final exported runtime assets SHOULD be committed under:

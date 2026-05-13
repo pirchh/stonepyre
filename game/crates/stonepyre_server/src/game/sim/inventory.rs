@@ -4,7 +4,6 @@ use uuid::Uuid;
 use crate::game::protocol::{InventoryItemSnapshot, InventorySnapshot};
 
 const BASE_INVENTORY_SLOTS: i64 = 20;
-const PLAYER_INVENTORY_CONTAINER_ID: &str = "inventory";
 
 /// Server-owned inventory grant produced by the live game simulation.
 ///
@@ -51,7 +50,7 @@ pub struct InventoryCapacityCheck {
 }
 
 #[derive(Clone, Debug)]
-struct InventorySlotRow {
+struct ContainerSlotRow {
     slot_idx: i32,
     item_id: String,
     quantity: i64,
@@ -116,10 +115,10 @@ pub async fn can_character_inventory_accept_item(
     let content = stonepyre_content::default_content_db();
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_character_inventory_slots(&mut tx, character_id).await?;
-    let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
+    let container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let rows = load_container_slot_rows_for_update(&mut tx, container_id).await?;
 
-    let slots_used = inventory_slots_used(&content, &rows);
+    let slots_used = slots_used(&content, &rows);
     let additional_slots_required = additional_slots_required_for_grant(&content, &rows, item_id, quantity);
 
     tx.commit().await?;
@@ -135,9 +134,6 @@ pub async fn can_character_inventory_accept_item(
 }
 
 /// Persist an item grant for a character and return the authoritative item count.
-///
-/// Player inventory is now slot-authoritative. The old aggregate table is kept
-/// in sync as a compatibility/read-model bridge until it can be retired.
 pub async fn grant_character_item(
     pool: &PgPool,
     character_id: Uuid,
@@ -157,10 +153,10 @@ pub async fn grant_character_item(
     let mut tx = pool.begin().await?;
 
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_character_inventory_slots(&mut tx, character_id).await?;
+    let container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let rows = load_container_slot_rows_for_update(&mut tx, container_id).await?;
 
-    let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
-    let slots_used = inventory_slots_used(&content, &rows);
+    let slots_used = slots_used(&content, &rows);
     let additional_slots = additional_slots_required_for_grant(&content, &rows, item_id, quantity);
 
     if slots_used + additional_slots > BASE_INVENTORY_SLOTS {
@@ -177,16 +173,14 @@ pub async fn grant_character_item(
         if let Some(existing) = rows.iter().find(|row| row.item_id == item_id) {
             sqlx::query(
                 r#"
-                UPDATE game.character_inventory_slots
-                SET quantity = quantity + $4::bigint,
+                UPDATE game.character_container_slots
+                SET quantity = quantity + $3::bigint,
                     updated_at = now()
-                WHERE character_id = $1::uuid
-                  AND container_id = $2::text
-                  AND slot_idx = $3::int
+                WHERE container_id = $1::uuid
+                  AND slot_idx = $2::int
                 "#,
             )
-            .bind(character_id)
-            .bind(PLAYER_INVENTORY_CONTAINER_ID)
+            .bind(container_id)
             .bind(existing.slot_idx)
             .bind(i64::from(quantity))
             .execute(&mut *tx)
@@ -198,7 +192,7 @@ pub async fn grant_character_item(
                 slots_used,
                 slots_total: BASE_INVENTORY_SLOTS,
             })?;
-            insert_slot(&mut tx, character_id, slot_idx, item_id, i64::from(quantity)).await?;
+            insert_container_slot(&mut tx, container_id, slot_idx, item_id, i64::from(quantity)).await?;
         }
     } else {
         let mut occupied = rows.iter().map(|row| row.slot_idx).collect::<Vec<_>>();
@@ -211,13 +205,13 @@ pub async fn grant_character_item(
                     slots_total: BASE_INVENTORY_SLOTS,
                 }
             })?;
-            insert_slot(&mut tx, character_id, slot_idx, item_id, 1).await?;
+            insert_container_slot(&mut tx, container_id, slot_idx, item_id, 1).await?;
             occupied.push(slot_idx);
         }
     }
 
-    sync_aggregate_item_quantity(&mut tx, character_id, item_id).await?;
-    let new_quantity = slot_total_item_quantity(&mut tx, character_id, item_id).await?;
+    sync_aggregate_item_quantity(&mut tx, character_id, container_id, item_id).await?;
+    let new_quantity = container_total_item_quantity(&mut tx, container_id, item_id).await?;
 
     tx.commit().await?;
 
@@ -247,20 +241,18 @@ pub async fn remove_character_item_from_slot(
     let mut tx = pool.begin().await?;
 
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_character_inventory_slots(&mut tx, character_id).await?;
+    let container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
 
     let row: Option<(String, i64)> = sqlx::query_as(
         r#"
         SELECT item_id, quantity
-        FROM game.character_inventory_slots
-        WHERE character_id = $1::uuid
-          AND container_id = $2::text
-          AND slot_idx = $3::int
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid
+          AND slot_idx = $2::int
         FOR UPDATE
         "#,
     )
-    .bind(character_id)
-    .bind(PLAYER_INVENTORY_CONTAINER_ID)
+    .bind(container_id)
     .bind(slot_idx as i32)
     .fetch_optional(&mut *tx)
     .await?;
@@ -293,38 +285,34 @@ pub async fn remove_character_item_from_slot(
     if new_slot_quantity == 0 {
         sqlx::query(
             r#"
-            DELETE FROM game.character_inventory_slots
-            WHERE character_id = $1::uuid
-              AND container_id = $2::text
-              AND slot_idx = $3::int
+            DELETE FROM game.character_container_slots
+            WHERE container_id = $1::uuid
+              AND slot_idx = $2::int
             "#,
         )
-        .bind(character_id)
-        .bind(PLAYER_INVENTORY_CONTAINER_ID)
+        .bind(container_id)
         .bind(slot_idx as i32)
         .execute(&mut *tx)
         .await?;
     } else {
         sqlx::query(
             r#"
-            UPDATE game.character_inventory_slots
-            SET quantity = $4::bigint,
+            UPDATE game.character_container_slots
+            SET quantity = $3::bigint,
                 updated_at = now()
-            WHERE character_id = $1::uuid
-              AND container_id = $2::text
-              AND slot_idx = $3::int
+            WHERE container_id = $1::uuid
+              AND slot_idx = $2::int
             "#,
         )
-        .bind(character_id)
-        .bind(PLAYER_INVENTORY_CONTAINER_ID)
+        .bind(container_id)
         .bind(slot_idx as i32)
         .bind(new_slot_quantity)
         .execute(&mut *tx)
         .await?;
     }
 
-    sync_aggregate_item_quantity(&mut tx, character_id, expected_item_id).await?;
-    let new_quantity = slot_total_item_quantity(&mut tx, character_id, expected_item_id).await?;
+    sync_aggregate_item_quantity(&mut tx, character_id, container_id, expected_item_id).await?;
+    let new_quantity = container_total_item_quantity(&mut tx, container_id, expected_item_id).await?;
 
     tx.commit().await?;
 
@@ -337,7 +325,7 @@ pub async fn remove_character_item_from_slot(
     })
 }
 
-/// Legacy aggregate remove helper retained for non-slot callers. Prefer
+/// Remove an item from the first slot that contains it. Prefer
 /// remove_character_item_from_slot for player inventory interactions.
 pub async fn remove_character_item(
     pool: &PgPool,
@@ -368,8 +356,8 @@ pub async fn load_character_inventory_snapshot(
 ) -> Result<InventorySnapshot, sqlx::Error> {
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;
-    ensure_character_inventory_slots(&mut tx, character_id).await?;
-    let rows = load_character_inventory_slot_rows_for_update(&mut tx, character_id).await?;
+    let container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let rows = load_container_slot_rows_for_update(&mut tx, container_id).await?;
     tx.commit().await?;
 
     Ok(InventorySnapshot {
@@ -387,6 +375,35 @@ pub async fn load_character_inventory_snapshot(
     })
 }
 
+/// Get or create the base inventory container instance for a character.
+///
+/// Returns the container_id uuid. Safe to call repeatedly — uses INSERT ... ON
+/// CONFLICT so concurrent callers converge on the same row.
+async fn ensure_base_inventory_container(
+    tx: &mut Transaction<'_, Postgres>,
+    character_id: Uuid,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO game.character_containers (
+            character_id,
+            kind,
+            container_def_id,
+            display_name,
+            slot_capacity
+        )
+        VALUES ($1::uuid, 'inventory', 'base_inventory', 'Inventory', $2::int)
+        ON CONFLICT (character_id) WHERE kind = 'inventory' AND parent_container_id IS NULL
+        DO UPDATE SET updated_at = game.character_containers.updated_at
+        RETURNING container_id
+        "#,
+    )
+    .bind(character_id)
+    .bind(BASE_INVENTORY_SLOTS as i32)
+    .fetch_one(&mut **tx)
+    .await
+}
+
 async fn lock_character_inventory(
     tx: &mut Transaction<'_, Postgres>,
     character_id: Uuid,
@@ -398,91 +415,27 @@ async fn lock_character_inventory(
     Ok(())
 }
 
-async fn ensure_character_inventory_slots(
+async fn load_container_slot_rows_for_update(
     tx: &mut Transaction<'_, Postgres>,
-    character_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    let existing_slots: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM game.character_inventory_slots
-        WHERE character_id = $1::uuid
-          AND container_id = $2::text
-        "#,
-    )
-    .bind(character_id)
-    .bind(PLAYER_INVENTORY_CONTAINER_ID)
-    .fetch_one(&mut **tx)
-    .await?;
-
-    if existing_slots > 0 {
-        return Ok(());
-    }
-
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        r#"
-        SELECT item_id, quantity
-        FROM game.character_inventory
-        WHERE character_id = $1::uuid
-          AND quantity > 0
-        ORDER BY updated_at ASC, item_id ASC
-        FOR UPDATE
-        "#,
-    )
-    .bind(character_id)
-    .fetch_all(&mut **tx)
-    .await?;
-
-    let content = stonepyre_content::default_content_db();
-    let mut next_slot: i32 = 0;
-
-    for (item_id, quantity) in rows {
-        let quantity = quantity.max(0);
-        if quantity == 0 || next_slot >= BASE_INVENTORY_SLOTS as i32 {
-            continue;
-        }
-
-        if item_stacks_in_inventory(&content, &item_id) {
-            insert_slot(tx, character_id, next_slot, &item_id, quantity).await?;
-            next_slot += 1;
-            continue;
-        }
-
-        for _ in 0..quantity {
-            if next_slot >= BASE_INVENTORY_SLOTS as i32 {
-                break;
-            }
-            insert_slot(tx, character_id, next_slot, &item_id, 1).await?;
-            next_slot += 1;
-        }
-    }
-
-    Ok(())
-}
-
-async fn load_character_inventory_slot_rows_for_update(
-    tx: &mut Transaction<'_, Postgres>,
-    character_id: Uuid,
-) -> Result<Vec<InventorySlotRow>, sqlx::Error> {
+    container_id: Uuid,
+) -> Result<Vec<ContainerSlotRow>, sqlx::Error> {
     let rows: Vec<(i32, String, i64)> = sqlx::query_as(
         r#"
         SELECT slot_idx, item_id, quantity
-        FROM game.character_inventory_slots
-        WHERE character_id = $1::uuid
-          AND container_id = $2::text
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid
           AND quantity > 0
         ORDER BY slot_idx ASC
         FOR UPDATE
         "#,
     )
-    .bind(character_id)
-    .bind(PLAYER_INVENTORY_CONTAINER_ID)
+    .bind(container_id)
     .fetch_all(&mut **tx)
     .await?;
 
     Ok(rows
         .into_iter()
-        .map(|(slot_idx, item_id, quantity)| InventorySlotRow {
+        .map(|(slot_idx, item_id, quantity)| ContainerSlotRow {
             slot_idx,
             item_id,
             quantity,
@@ -490,27 +443,25 @@ async fn load_character_inventory_slot_rows_for_update(
         .collect())
 }
 
-async fn insert_slot(
+async fn insert_container_slot(
     tx: &mut Transaction<'_, Postgres>,
-    character_id: Uuid,
+    container_id: Uuid,
     slot_idx: i32,
     item_id: &str,
     quantity: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO game.character_inventory_slots (
-            character_id,
+        INSERT INTO game.character_container_slots (
             container_id,
             slot_idx,
             item_id,
             quantity
         )
-        VALUES ($1::uuid, $2::text, $3::int, $4::text, $5::bigint)
+        VALUES ($1::uuid, $2::int, $3::text, $4::bigint)
         "#,
     )
-    .bind(character_id)
-    .bind(PLAYER_INVENTORY_CONTAINER_ID)
+    .bind(container_id)
     .bind(slot_idx)
     .bind(item_id)
     .bind(quantity)
@@ -523,9 +474,10 @@ async fn insert_slot(
 async fn sync_aggregate_item_quantity(
     tx: &mut Transaction<'_, Postgres>,
     character_id: Uuid,
+    container_id: Uuid,
     item_id: &str,
 ) -> Result<(), sqlx::Error> {
-    let total = slot_total_item_quantity(tx, character_id, item_id).await?;
+    let total = container_total_item_quantity(tx, container_id, item_id).await?;
 
     if total <= 0 {
         sqlx::query(
@@ -560,22 +512,20 @@ async fn sync_aggregate_item_quantity(
     Ok(())
 }
 
-async fn slot_total_item_quantity(
+async fn container_total_item_quantity(
     tx: &mut Transaction<'_, Postgres>,
-    character_id: Uuid,
+    container_id: Uuid,
     item_id: &str,
 ) -> Result<i64, sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
         r#"
         SELECT COALESCE(SUM(quantity), 0)::bigint
-        FROM game.character_inventory_slots
-        WHERE character_id = $1::uuid
-          AND container_id = $2::text
-          AND item_id = $3::text
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid
+          AND item_id = $2::text
         "#,
     )
-    .bind(character_id)
-    .bind(PLAYER_INVENTORY_CONTAINER_ID)
+    .bind(container_id)
     .bind(item_id)
     .fetch_one(&mut **tx)
     .await?;
@@ -604,7 +554,7 @@ async fn total_item_quantity(
     Ok(total)
 }
 
-fn inventory_slots_used(content: &stonepyre_content::ContentDb, rows: &[InventorySlotRow]) -> i64 {
+fn slots_used(content: &stonepyre_content::ContentDb, rows: &[ContainerSlotRow]) -> i64 {
     rows.iter()
         .filter(|row| row.quantity > 0)
         .map(|row| {
@@ -619,7 +569,7 @@ fn inventory_slots_used(content: &stonepyre_content::ContentDb, rows: &[Inventor
 
 fn additional_slots_required_for_grant(
     content: &stonepyre_content::ContentDb,
-    rows: &[InventorySlotRow],
+    rows: &[ContainerSlotRow],
     item_id: &str,
     quantity: u32,
 ) -> i64 {
@@ -638,7 +588,7 @@ fn additional_slots_required_for_grant(
     if existing_stack { 0 } else { 1 }
 }
 
-fn first_empty_slot(rows: &[InventorySlotRow]) -> Option<i32> {
+fn first_empty_slot(rows: &[ContainerSlotRow]) -> Option<i32> {
     let occupied = rows.iter().map(|row| row.slot_idx).collect::<Vec<_>>();
     first_empty_slot_from_occupied(&occupied)
 }
