@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{error::ApiError, http::middleware::AuthContext, state::AppState};
-use crate::game::sim::inventory::{grant_character_item, InventoryGrantError};
+use crate::game::sim::inventory::{
+    grant_character_item, load_character_inventory_snapshot, InventoryGrantError,
+};
+use crate::game::protocol::ServerMsg;
 
 #[derive(Debug, Deserialize)]
 pub struct GrantItemReq {
@@ -39,6 +42,20 @@ pub async fn grant_item(
             }
             InventoryGrantError::Db(db_err) => ApiError::from(db_err),
         })?;
+
+    // Push a fresh inventory snapshot through the WS hub so the client updates immediately.
+    match load_character_inventory_snapshot(&state.db, req.character_id).await {
+        Ok(snapshot) => {
+            state.game.hub.broadcast(ServerMsg::InventorySnapshot(snapshot));
+        }
+        Err(e) => {
+            tracing::warn!(
+                "admin grant: inventory snapshot push failed character_id={} error={:?}",
+                req.character_id,
+                e
+            );
+        }
+    }
 
     Ok(Json(GrantItemResp {
         item_id: result.item_id,

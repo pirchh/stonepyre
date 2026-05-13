@@ -52,6 +52,7 @@ pub fn pump_net_results(
     mut st: ResMut<BootState>,
     mut next: ResMut<NextState<Screen>>,
     net: Res<NetRuntime>,
+    mut grant_state: ResMut<stonepyre_ui::debug_grant::DebugGrantUiState>,
 ) {
     loop {
         // avoid holding the lock across our whole match handler
@@ -109,10 +110,13 @@ pub fn pump_net_results(
                 st.busy = false;
             }
             NetResult::AdminGrantOk { item_id, quantity } => {
-                st.error_banner = Some(format!("Granted {}x {}", quantity, item_id));
+                let msg = format!("Granted {}x {}", quantity, item_id);
+                grant_state.status = msg;
+                grant_state.needs_rebuild = true;
             }
             NetResult::AdminGrantErr(msg) => {
-                st.error_banner = Some(format!("Grant failed: {}", msg));
+                grant_state.status = format!("Error: {}", msg);
+                grant_state.needs_rebuild = true;
             }
             NetResult::Err(msg) => {
                 st.error_banner = Some(msg);
@@ -535,7 +539,7 @@ struct AdminGrantResp {
     item_id: String,
     quantity: u32,
     #[allow(dead_code)]
-    new_quantity: u32,
+    new_quantity: i64,
 }
 
 pub fn spawn_admin_grant_item(

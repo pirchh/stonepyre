@@ -550,8 +550,13 @@ impl GameSim {
                             )).into());
                         }
                     } else if let Some(p) = self.world.players.get_mut(&player_id) {
+                        // Reset to Queued so the capacity check re-runs before the next roll.
+                        // This matches OSRS behaviour: if inventory fills up mid-session the
+                        // player stops swinging until there is room again.
                         if let Some(action) = p.action.as_mut() {
-                            action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
+                            action.state = ActionState::Queued;
+                            action.next_harvest_tick = None;
+                            action.pending_harvest_capacity_check = false;
                         }
                     }
                 }
