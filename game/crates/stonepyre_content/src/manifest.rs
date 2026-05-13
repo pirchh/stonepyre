@@ -1,5 +1,5 @@
 use crate::items::{
-    BagDef, BagUpgradeDef, ContainerDef, ContainerDefs, EquipmentDef, EquipSlot, ItemDef,
+    BagDef, BagUpgradeDef, ContainerDef, ContainerDefs, ItemDef,
     ItemDefs, StackPolicy,
 };
 use crate::objects::{HarvestDefs, HarvestNodeDef, LootEntryDef, LootTableDef};
@@ -14,27 +14,6 @@ pub struct ContentDb {
 
 pub fn default_item_defs() -> ItemDefs {
     let mut defs = ItemDefs::default();
-
-    // Generic/basic log kept for compatibility while older inventory rows and
-    // tests may still reference the original runtime item id.
-    defs.items.insert(
-        "log".to_string(),
-        ItemDef {
-            id: "log".to_string(),
-            name: "Log".to_string(),
-            inventory_icon: None,
-            stack_policy: StackPolicy {
-                stack_in_inventory: false,
-                stack_in_bank: true,
-                stack_in_containers: false,
-                max_stack: 99_999,
-            },
-            equipment: None,
-            bag_upgrade: None,
-            bag: None,
-            tags: vec!["material".to_string(), "wood".to_string(), "legacy".to_string()],
-        },
-    );
 
     // Oak log yielded by oak_tree.
     defs.items.insert(

@@ -68,9 +68,21 @@ pub(crate) fn character_tab_panel_sync_system(
         text.0 = equipment_slot_text(equip, label.slot_id);
     }
 
-    // Handle bag slot button clicks.
+    // Handle bag slot button clicks — only open if a bag is actually equipped.
     for (bag_btn, interaction) in interaction_q.iter() {
         if *interaction == Interaction::Pressed {
+            let has_bag = bag_slots
+                .slots
+                .iter()
+                .find(|s| s.bag_slot == bag_btn.bag_slot)
+                .map(|s| s.equipped_item_id.is_some())
+                .unwrap_or(false);
+
+            if !has_bag {
+                // Nothing equipped — clicking does nothing.
+                continue;
+            }
+
             if bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot) {
                 bag_ui_state.open_bag_slot = None;
             } else {
