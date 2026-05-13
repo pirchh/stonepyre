@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use stonepyre_engine::plugins::world::{
     player_feet_world, BlocksMovement, GridPos, InteractableKind, Player,
 };
-use stonepyre_world::{tile_to_world_center, TILE_SIZE};
+use stonepyre_world::{tile_to_world_center, TILE_HEIGHT, TILE_SIZE};
 
 use super::protocol::HarvestNodeSnapshot;
 use super::remote_players::RemoteNetPlayer;
@@ -175,7 +175,7 @@ fn spawn_harvest_node_shell(commands: &mut Commands, node: &HarvestNodeSnapshot)
     };
 
     commands.spawn((
-        Sprite::from_color(color, Vec2::splat(TILE_SIZE)),
+        Sprite::from_color(color, Vec2::new(TILE_SIZE, TILE_HEIGHT)),
         Transform::from_xyz(
             tile_world.x,
             tile_world.y,
