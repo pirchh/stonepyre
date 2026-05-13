@@ -145,7 +145,7 @@ pub async fn grant_character_item(
             character_id,
             item_id: item_id.to_string(),
             quantity,
-            new_quantity: total_item_quantity(pool, character_id, item_id).await.unwrap_or(0),
+            new_quantity: 0,
         });
     }
 
@@ -210,7 +210,6 @@ pub async fn grant_character_item(
         }
     }
 
-    sync_aggregate_item_quantity(&mut tx, character_id, container_id, item_id).await?;
     let new_quantity = container_total_item_quantity(&mut tx, container_id, item_id).await?;
 
     tx.commit().await?;
@@ -311,7 +310,6 @@ pub async fn remove_character_item_from_slot(
         .await?;
     }
 
-    sync_aggregate_item_quantity(&mut tx, character_id, container_id, expected_item_id).await?;
     let new_quantity = container_total_item_quantity(&mut tx, container_id, expected_item_id).await?;
 
     tx.commit().await?;
@@ -471,47 +469,6 @@ async fn insert_container_slot(
     Ok(())
 }
 
-async fn sync_aggregate_item_quantity(
-    tx: &mut Transaction<'_, Postgres>,
-    character_id: Uuid,
-    container_id: Uuid,
-    item_id: &str,
-) -> Result<(), sqlx::Error> {
-    let total = container_total_item_quantity(tx, container_id, item_id).await?;
-
-    if total <= 0 {
-        sqlx::query(
-            r#"
-            DELETE FROM game.character_inventory
-            WHERE character_id = $1::uuid
-              AND item_id = $2::text
-            "#,
-        )
-        .bind(character_id)
-        .bind(item_id)
-        .execute(&mut **tx)
-        .await?;
-    } else {
-        sqlx::query(
-            r#"
-            INSERT INTO game.character_inventory (character_id, item_id, quantity)
-            VALUES ($1::uuid, $2::text, $3::bigint)
-            ON CONFLICT (character_id, item_id)
-            DO UPDATE SET
-                quantity = EXCLUDED.quantity,
-                updated_at = now()
-            "#,
-        )
-        .bind(character_id)
-        .bind(item_id)
-        .bind(total)
-        .execute(&mut **tx)
-        .await?;
-    }
-
-    Ok(())
-}
-
 async fn container_total_item_quantity(
     tx: &mut Transaction<'_, Postgres>,
     container_id: Uuid,
@@ -528,27 +485,6 @@ async fn container_total_item_quantity(
     .bind(container_id)
     .bind(item_id)
     .fetch_one(&mut **tx)
-    .await?;
-
-    Ok(total)
-}
-
-async fn total_item_quantity(
-    pool: &PgPool,
-    character_id: Uuid,
-    item_id: &str,
-) -> Result<i64, sqlx::Error> {
-    let total: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COALESCE(SUM(quantity), 0)::bigint
-        FROM game.character_inventory
-        WHERE character_id = $1::uuid
-          AND item_id = $2::text
-        "#,
-    )
-    .bind(character_id)
-    .bind(item_id)
-    .fetch_one(pool)
     .await?;
 
     Ok(total)
