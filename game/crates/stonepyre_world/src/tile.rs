@@ -1,7 +1,13 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize}; // ✅ NEW
 
+/// Tile width in world units.
 pub const TILE_SIZE: f32 = 64.0;
+
+/// Tile height in world units. Shorter than TILE_SIZE to give a squashed
+/// top-down perspective — N/S movement covers fewer pixels than E/W,
+/// creating a sense of depth without full isometric projection.
+pub const TILE_HEIGHT: f32 = 40.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)] // ✅ NEW
 pub struct TilePos {
@@ -18,12 +24,12 @@ impl TilePos {
 pub fn world_to_tile(world: Vec2) -> TilePos {
     TilePos {
         x: (world.x / TILE_SIZE).round() as i32,
-        y: (world.y / TILE_SIZE).round() as i32,
+        y: (world.y / TILE_HEIGHT).round() as i32,
     }
 }
 
 pub fn tile_to_world_center(tile: TilePos) -> Vec2 {
-    Vec2::new(tile.x as f32 * TILE_SIZE, tile.y as f32 * TILE_SIZE)
+    Vec2::new(tile.x as f32 * TILE_SIZE, tile.y as f32 * TILE_HEIGHT)
 }
 
 pub fn neighbors_4(tile: TilePos) -> [TilePos; 4] {

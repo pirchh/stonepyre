@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::collections::{HashSet, VecDeque};
 use uuid::Uuid;
 
-use stonepyre_world::{tile_to_world_center, TilePos, WorldGrid, TILE_SIZE};
+use stonepyre_world::{tile_to_world_center, TilePos, WorldGrid, TILE_HEIGHT, TILE_SIZE};
 
 use crate::plugins::inventory::{Equipment, EquippedBackpack, Inventory, ItemStack};
 
@@ -132,17 +132,19 @@ pub fn spawn_demo_world_for_character(
     //
     // This is still a local demo shell until NPCs/world objects are also driven
     // from server/world snapshots.
+    let npc_tile = TilePos::new(-2, 1);
+    let npc_world = tile_to_world_center(npc_tile);
     commands.spawn((
-        Sprite::from_color(Color::srgb(0.2, 0.4, 0.9), Vec2::splat(TILE_SIZE)),
-        Transform::from_xyz(-2.0 * TILE_SIZE, 1.0 * TILE_SIZE, 5.0),
-        GridPos(TilePos::new(-2, 1)),
+        Sprite::from_color(Color::srgb(0.2, 0.4, 0.9), Vec2::new(TILE_SIZE, TILE_HEIGHT)),
+        Transform::from_xyz(npc_world.x, npc_world.y, 5.0),
+        GridPos(npc_tile),
         BlocksMovement,
         InteractableKind::Npc,
     ));
 
-    // Target marker fills the whole tile.
+    // Target marker fills the whole tile footprint.
     commands.spawn((
-        Sprite::from_color(Color::srgba(0.2, 0.8, 0.2, 0.25), Vec2::splat(TILE_SIZE)),
+        Sprite::from_color(Color::srgba(0.2, 0.8, 0.2, 0.25), Vec2::new(TILE_SIZE, TILE_HEIGHT)),
         Transform::from_xyz(0.0, 0.0, 9.0),
         TargetMarker::default(),
         Visibility::Hidden,
