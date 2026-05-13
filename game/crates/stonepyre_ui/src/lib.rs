@@ -3,6 +3,7 @@ use bevy::prelude::*;
 
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 
+pub mod bag;
 pub mod character_state;
 pub mod character_tab;
 pub mod config;
@@ -69,6 +70,18 @@ impl Plugin for StonepyreUiPlugin {
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character_state::CharacterUiState::default())
-            .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled));
+            .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled))
+
+            // Bag panel (opens when bag slot button is clicked in character panel)
+            .insert_resource(bag::BagUiState::default())
+            .insert_resource(bag::BagItemActionQueue::default())
+            .add_systems(
+                Update,
+                (
+                    bag::bag_panel_sync_system,
+                    bag::bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            );
     }
 }

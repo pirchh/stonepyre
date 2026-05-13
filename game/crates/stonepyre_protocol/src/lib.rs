@@ -20,6 +20,27 @@ pub enum ClientMsg {
     PickupGroundItem {
         ground_item_id: Uuid,
     },
+    /// Place a bag item from the main inventory into a bag slot.
+    EquipBag {
+        /// Slot index in the main inventory containing the bag item.
+        inventory_slot_idx: usize,
+        /// Bag slot index (0 or 1).
+        bag_slot: u8,
+    },
+    /// Remove the equipped bag from a bag slot back into inventory.
+    UnequipBag {
+        bag_slot: u8,
+    },
+    /// Move an item from the main inventory into an equipped bag.
+    BagPutItem {
+        bag_slot: u8,
+        inventory_slot_idx: usize,
+    },
+    /// Move an item from an equipped bag back into the main inventory.
+    BagTakeItem {
+        bag_slot: u8,
+        bag_item_slot_idx: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +97,12 @@ pub enum ServerMsg {
     SkillSnapshot(SkillSnapshot),
 
     SkillDelta(SkillDelta),
+
+    /// Full state of both bag slots on join/refresh.
+    BagSlotsSnapshot(BagSlotsSnapshot),
+
+    /// A bag slot changed (equipped, unequipped, or item moved in/out).
+    BagSlotChanged(BagSlotChanged),
 
     Error {
         message: String,
@@ -228,6 +255,43 @@ pub enum GroundItemEventKind {
     Spawned,
     PickedUp,
     Despawned,
+}
+
+/// Full snapshot of both bag slots sent on JoinWorld.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BagSlotsSnapshot {
+    pub character_id: Uuid,
+    pub slots: Vec<BagSlotSnapshot>,
+}
+
+/// State of a single bag slot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BagSlotSnapshot {
+    pub bag_slot: u8,
+    pub container_id: Uuid,
+    /// Item id of the equipped bag, if any.
+    pub equipped_item_id: Option<String>,
+    /// Contents of the bag (empty if no bag is equipped).
+    pub items: Vec<BagItemSnapshot>,
+    pub slots_total: usize,
+    /// Display name of the container def, if a bag is equipped.
+    pub bag_display_name: Option<String>,
+    /// Item type filter tag (None = general bag).
+    pub item_type_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BagItemSnapshot {
+    pub slot_idx: usize,
+    pub item_id: String,
+    pub quantity: i64,
+}
+
+/// Sent after any bag slot mutation (equip/unequip/put/take).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BagSlotChanged {
+    pub character_id: Uuid,
+    pub slot: BagSlotSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

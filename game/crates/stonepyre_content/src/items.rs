@@ -83,6 +83,13 @@ pub struct BagUpgradeDef {
     pub extra_slots: u32,
 }
 
+/// Marks an item as a bag that can be placed in a character bag slot.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BagDef {
+    /// The ContainerDef id that describes this bag's capacity and filter.
+    pub container_def_id: ContainerId,
+}
+
 /// Defines a container type, like an inventory, backpack, chest, etc.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContainerDef {
@@ -93,6 +100,10 @@ pub struct ContainerDef {
 
     /// Number of upgrade sockets (like 4 misc bag slots).
     pub upgrade_sockets: u32,
+
+    /// If set, only items with this tag may be placed in this container (typed bag).
+    #[serde(default)]
+    pub item_type_filter: Option<String>,
 }
 
 /// Core item definition (content-only).
@@ -114,8 +125,21 @@ pub struct ItemDef {
     /// If this item is a bag upgrade (for backpack sockets).
     pub bag_upgrade: Option<BagUpgradeDef>,
 
+    /// If this item is a bag that can be equipped into a character bag slot.
+    #[serde(default)]
+    pub bag: Option<BagDef>,
+
     /// Generic tags for later (tool tags, skill reqs, etc.)
     pub tags: Vec<String>,
+}
+
+impl ContainerDef {
+    pub fn accepts_item(&self, item_tags: &[String]) -> bool {
+        match &self.item_type_filter {
+            None => true,
+            Some(required_tag) => item_tags.iter().any(|t| t == required_tag),
+        }
+    }
 }
 
 /// Item definition database (content-only).

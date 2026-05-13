@@ -263,3 +263,28 @@ impl ContainerDb {
 pub fn can_unequip_backpack(backpack_container: &Container) -> bool {
     !backpack_container.has_any_items()
 }
+
+// ---------------------------------------------------------------------------
+// Player bag slots (synced from server, consumed by UI)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct BagSlotItem {
+    pub slot_idx: usize,
+    pub item_id: String,
+    pub quantity: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PlayerBagSlotState {
+    pub bag_slot: u8,
+    pub equipped_item_id: Option<String>,
+    pub slots_total: usize,
+    pub items: Vec<BagSlotItem>,
+    pub item_type_filter: Option<String>,
+}
+
+#[derive(Resource, Clone, Debug, Default)]
+pub struct PlayerBagSlots {
+    pub slots: Vec<PlayerBagSlotState>,
+}

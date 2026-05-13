@@ -1,6 +1,6 @@
 use crate::items::{
-    BagUpgradeDef, ContainerDef, ContainerDefs, EquipmentDef, EquipSlot, ItemDef, ItemDefs,
-    StackPolicy,
+    BagDef, BagUpgradeDef, ContainerDef, ContainerDefs, EquipmentDef, EquipSlot, ItemDef,
+    ItemDefs, StackPolicy,
 };
 use crate::objects::{HarvestDefs, HarvestNodeDef, LootEntryDef, LootTableDef};
 
@@ -31,6 +31,7 @@ pub fn default_item_defs() -> ItemDefs {
             },
             equipment: None,
             bag_upgrade: None,
+            bag: None,
             tags: vec!["material".to_string(), "wood".to_string(), "legacy".to_string()],
         },
     );
@@ -50,6 +51,7 @@ pub fn default_item_defs() -> ItemDefs {
             },
             equipment: None,
             bag_upgrade: None,
+            bag: None,
             tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
         },
     );
@@ -69,11 +71,12 @@ pub fn default_item_defs() -> ItemDefs {
             },
             equipment: None,
             bag_upgrade: None,
+            bag: None,
             tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
         },
     );
 
-    // Wooden Backpack (equip in back slot) → grants container "wooden_backpack".
+    // Wooden Backpack — equips into a character bag slot, grants 4 general slots.
     defs.items.insert(
         "backpack_wooden".to_string(),
         ItemDef {
@@ -86,13 +89,34 @@ pub fn default_item_defs() -> ItemDefs {
                 stack_in_containers: false,
                 max_stack: 1,
             },
-            equipment: Some(EquipmentDef {
-                slot: EquipSlot::Back,
-                container_id: Some("wooden_backpack".to_string()),
-                stats_tag: None,
-            }),
+            equipment: None,
             bag_upgrade: None,
-            tags: vec!["container".to_string(), "backpack".to_string()],
+            bag: Some(BagDef {
+                container_def_id: "wooden_backpack".to_string(),
+            }),
+            tags: vec!["bag".to_string()],
+        },
+    );
+
+    // Woodcutting Sack — equips into a character bag slot, 8 slots, logs only.
+    defs.items.insert(
+        "sack_woodcutting".to_string(),
+        ItemDef {
+            id: "sack_woodcutting".to_string(),
+            name: "Woodcutting Sack".to_string(),
+            inventory_icon: None,
+            stack_policy: StackPolicy {
+                stack_in_inventory: false,
+                stack_in_bank: false,
+                stack_in_containers: false,
+                max_stack: 1,
+            },
+            equipment: None,
+            bag_upgrade: None,
+            bag: Some(BagDef {
+                container_def_id: "woodcutting_sack".to_string(),
+            }),
+            tags: vec!["bag".to_string()],
         },
     );
 
@@ -111,6 +135,7 @@ pub fn default_item_defs() -> ItemDefs {
             },
             equipment: None,
             bag_upgrade: Some(BagUpgradeDef { extra_slots: 2 }),
+            bag: None,
             tags: vec!["bag_upgrade".to_string()],
         },
     );
@@ -121,13 +146,25 @@ pub fn default_item_defs() -> ItemDefs {
 pub fn default_container_defs() -> ContainerDefs {
     let mut defs = ContainerDefs::default();
 
-    // Backpack: 6 base slots + 4 upgrade sockets.
+    // General bags — accept any item.
     defs.containers.insert(
         "wooden_backpack".to_string(),
         ContainerDef {
             id: "wooden_backpack".to_string(),
-            base_slots: 6,
-            upgrade_sockets: 4,
+            base_slots: 4,
+            upgrade_sockets: 0,
+            item_type_filter: None,
+        },
+    );
+
+    // Typed bags — restricted to items with a matching tag.
+    defs.containers.insert(
+        "woodcutting_sack".to_string(),
+        ContainerDef {
+            id: "woodcutting_sack".to_string(),
+            base_slots: 8,
+            upgrade_sockets: 0,
+            item_type_filter: Some("log".to_string()),
         },
     );
 
