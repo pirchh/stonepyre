@@ -206,6 +206,26 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                                 });
                             }
                         }
+
+                        match crate::game::sim::inventory::load_bag_slots_snapshot(
+                            &state.db,
+                            requested_character_id,
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => {
+                                let _ = out_tx.send(ServerMsg::BagSlotsSnapshot(snapshot));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "game ws bag slots snapshot failed account_id={} character_id={} error={:?}",
+                                    ctx.account_id, requested_character_id, e
+                                );
+                                let _ = out_tx.send(ServerMsg::Error {
+                                    message: "failed to load bag slots".to_string(),
+                                });
+                            }
+                        }
                     }
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
@@ -273,6 +293,42 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         };
 
                         handle_pickup_ground_item(&state, pid, cid, ground_item_id, &out_tx).await;
+                    }
+                    ClientMsg::EquipBag { inventory_slot_idx, bag_slot } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before equipping bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_equip_bag(&state, cid, inventory_slot_idx, bag_slot, &out_tx).await;
+                    }
+                    ClientMsg::UnequipBag { bag_slot } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before unequipping bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_unequip_bag(&state, cid, bag_slot, &out_tx).await;
+                    }
+                    ClientMsg::BagPutItem { bag_slot, inventory_slot_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before using bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_bag_put_item(&state, cid, bag_slot, inventory_slot_idx, &out_tx).await;
+                    }
+                    ClientMsg::BagTakeItem { bag_slot, bag_item_slot_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before using bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_bag_take_item(&state, cid, bag_slot, bag_item_slot_idx, &out_tx).await;
                     }
                 }
             }
@@ -611,6 +667,116 @@ async fn send_inventory_snapshot(
             let _ = out_tx.send(ServerMsg::Error {
                 message: "failed to refresh inventory".to_string(),
             });
+        }
+    }
+}
+
+async fn handle_equip_bag(
+    state: &AppState,
+    character_id: Uuid,
+    inventory_slot_idx: usize,
+    bag_slot: u8,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::equip_bag(&state.db, character_id, inventory_slot_idx, bag_slot).await {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!("equip bag failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_unequip_bag(
+    state: &AppState,
+    character_id: Uuid,
+    bag_slot: u8,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::unequip_bag(&state.db, character_id, bag_slot).await {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!("unequip bag failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_bag_put_item(
+    state: &AppState,
+    character_id: Uuid,
+    bag_slot: u8,
+    inventory_slot_idx: usize,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::bag_put_item(&state.db, character_id, bag_slot, inventory_slot_idx).await {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!("bag put item failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_bag_take_item(
+    state: &AppState,
+    character_id: Uuid,
+    bag_slot: u8,
+    bag_item_slot_idx: usize,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::bag_take_item(&state.db, character_id, bag_slot, bag_item_slot_idx).await {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!("bag take item failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+fn bag_error_message(e: crate::game::sim::inventory::BagError) -> String {
+    use crate::game::sim::inventory::BagError;
+    match e {
+        BagError::InvalidBagSlot(s) => format!("invalid bag slot {}", s),
+        BagError::NoBagEquipped { bag_slot } => format!("bag slot {} has no bag equipped", bag_slot),
+        BagError::BagAlreadyEquipped { bag_slot } => format!("bag slot {} already has a bag equipped", bag_slot),
+        BagError::ItemIsNotABag { item_id } => format!("{} is not a bag", item_id),
+        BagError::BagNotEmpty { bag_slot } => format!("bag slot {} is not empty — remove items first", bag_slot),
+        BagError::ItemRejectedByFilter { item_id, required_tag } => {
+            format!("{} cannot go in that bag (requires {} tag)", item_id, required_tag)
+        }
+        BagError::BagFull { bag_slot, slots_total } => {
+            format!("bag slot {} is full ({} slots)", bag_slot, slots_total)
+        }
+        BagError::InventoryFull => "inventory is full".to_string(),
+        BagError::SlotEmpty { slot_idx } => format!("slot {} is empty", slot_idx),
+        BagError::SlotItemMismatch => "item at slot does not match".to_string(),
+        BagError::WrongSlotKind { bag_slot } => {
+            if bag_slot == 0 {
+                "slot 1 only accepts general bags (no item filter)".to_string()
+            } else {
+                "slot 2 only accepts typed/skill bags".to_string()
+            }
+        }
+        BagError::Db(e) => {
+            warn!("bag db error: {:?}", e);
+            "database error".to_string()
         }
     }
 }

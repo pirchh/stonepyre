@@ -1,7 +1,15 @@
 use bevy::prelude::*;
+use stonepyre_ui::bag::BagItemActionQueue;
+use stonepyre_ui::bag::BagItemAction;
 use stonepyre_ui::inventory::{InventoryItemAction, InventoryItemActionQueue};
 
-use super::runtime::send_drop_item_to_server;
+use super::runtime::{
+    send_bag_put_item_to_server,
+    send_bag_take_item_to_server,
+    send_drop_item_to_server,
+    send_equip_bag_to_server,
+    send_unequip_bag_to_server,
+};
 use super::status::GameNetRuntime;
 
 pub fn send_inventory_item_actions_to_server(
@@ -25,6 +33,39 @@ pub fn send_inventory_item_actions_to_server(
                         "inventory drop action dropped; websocket is not ready slot_idx={} item_id={} quantity={}",
                         request.slot_idx, request.item_id, request.quantity
                     );
+                }
+            }
+            InventoryItemAction::EquipBag { bag_slot } => {
+                let sent = send_equip_bag_to_server(&game_net, request.slot_idx, bag_slot);
+                if !sent {
+                    warn!(
+                        "equip bag action dropped; websocket is not ready slot_idx={} bag_slot={}",
+                        request.slot_idx, bag_slot
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn send_bag_item_actions_to_server(
+    game_net: Res<GameNetRuntime>,
+    mut queue: ResMut<BagItemActionQueue>,
+) {
+    let actions: Vec<_> = queue.actions.drain(..).collect();
+
+    for action in actions {
+        match action {
+            BagItemAction::Take { bag_slot, bag_item_slot_idx } => {
+                let sent = send_bag_take_item_to_server(&game_net, bag_slot, bag_item_slot_idx);
+                if !sent {
+                    warn!("bag take action dropped; websocket not ready bag_slot={} slot_idx={}", bag_slot, bag_item_slot_idx);
+                }
+            }
+            BagItemAction::UnequipBag { bag_slot } => {
+                let sent = send_unequip_bag_to_server(&game_net, bag_slot);
+                if !sent {
+                    warn!("unequip bag action dropped; websocket not ready bag_slot={}", bag_slot);
                 }
             }
         }

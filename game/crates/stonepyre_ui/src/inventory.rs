@@ -48,6 +48,7 @@ pub struct InventoryItemActionRequest {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InventoryItemAction {
     Drop,
+    EquipBag { bag_slot: u8 },
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +90,8 @@ pub(crate) enum InventoryContextOption {
     Use,
     Drop,
     Examine,
+    EquipToBag0,
+    EquipToBag1,
 }
 
 pub fn inventory_toggle_system(
@@ -216,6 +219,24 @@ pub(crate) fn inventory_item_context_menu_system(
             }
             InventoryContextOption::Examine => {
                 state.status_message = examine_text(&item.item_id);
+                close_context_menu(&mut commands, &mut state);
+            }
+            InventoryContextOption::EquipToBag0 => {
+                action_queue.actions.push(InventoryItemActionRequest {
+                    action: InventoryItemAction::EquipBag { bag_slot: 0 },
+                    slot_idx: item.slot_idx,
+                    item_id: item.item_id.clone(),
+                    quantity: 1,
+                });
+                close_context_menu(&mut commands, &mut state);
+            }
+            InventoryContextOption::EquipToBag1 => {
+                action_queue.actions.push(InventoryItemActionRequest {
+                    action: InventoryItemAction::EquipBag { bag_slot: 1 },
+                    slot_idx: item.slot_idx,
+                    item_id: item.item_id.clone(),
+                    quantity: 1,
+                });
                 close_context_menu(&mut commands, &mut state);
             }
         }
@@ -416,11 +437,28 @@ fn open_context_menu(
         .id();
     commands.entity(menu).add_child(title);
 
-    for (label, action) in [
+    let defs = default_item_defs();
+    let tags: &[String] = defs
+        .get(&item.item_id)
+        .map(|d| d.tags.as_slice())
+        .unwrap_or_default();
+    let is_bag_general = tags.iter().any(|t| t == "bag_general");
+    let is_bag_typed = tags.iter().any(|t| t == "bag_typed");
+
+    let mut options: Vec<(&'static str, InventoryContextOption)> = vec![
         ("Use", InventoryContextOption::Use),
         ("Drop", InventoryContextOption::Drop),
         ("Examine", InventoryContextOption::Examine),
-    ] {
+    ];
+
+    if is_bag_general {
+        options.push(("Equip (Slot 1 - General)", InventoryContextOption::EquipToBag0));
+    }
+    if is_bag_typed {
+        options.push(("Equip (Slot 2 - Skill)", InventoryContextOption::EquipToBag1));
+    }
+
+    for (label, action) in options {
         let button = commands
             .spawn((
                 Button,
@@ -592,8 +630,10 @@ fn examine_text(item_id: &str) -> String {
 
     if def.tags.iter().any(|tag| tag == "log") {
         format!("A sturdy {}.", def.name.to_lowercase())
-    } else if def.tags.iter().any(|tag| tag == "backpack") {
-        format!("{} can be worn on your back.", def.name)
+    } else if def.tags.iter().any(|tag| tag == "bag_general") {
+        format!("{} can be equipped in the general bag slot (Slot 1).", def.name)
+    } else if def.tags.iter().any(|tag| tag == "bag_typed") {
+        format!("{} can be equipped in the skill bag slot (Slot 2).", def.name)
     } else if def.tags.iter().any(|tag| tag == "bag_upgrade") {
         format!("{} can upgrade a compatible backpack.", def.name)
     } else {

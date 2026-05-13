@@ -1,7 +1,10 @@
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::game::protocol::{InventoryItemSnapshot, InventorySnapshot};
+use crate::game::protocol::{
+    BagItemSnapshot, BagSlotChanged, BagSlotSnapshot, BagSlotsSnapshot, InventoryItemSnapshot,
+    InventorySnapshot,
+};
 
 const BASE_INVENTORY_SLOTS: i64 = 20;
 
@@ -539,4 +542,697 @@ fn item_stacks_in_inventory(content: &stonepyre_content::ContentDb, item_id: &st
         .get(item_id)
         .map(|def| def.stack_policy.can_stack_in(stonepyre_content::items::StorageKind::Inventory))
         .unwrap_or(true)
+}
+
+// ---------------------------------------------------------------------------
+// Bag slot operations
+// ---------------------------------------------------------------------------
+
+fn bag_slot_container_def_id(bag_slot: u8) -> &'static str {
+    match bag_slot {
+        0 => "bag_slot_0",
+        _ => "bag_slot_1",
+    }
+}
+
+#[derive(Debug)]
+pub enum BagError {
+    Db(sqlx::Error),
+    InvalidBagSlot(u8),
+    NoBagEquipped { bag_slot: u8 },
+    BagAlreadyEquipped { bag_slot: u8 },
+    ItemIsNotABag { item_id: String },
+    BagNotEmpty { bag_slot: u8 },
+    ItemRejectedByFilter { item_id: String, required_tag: String },
+    BagFull { bag_slot: u8, slots_total: i64 },
+    InventoryFull,
+    SlotEmpty { slot_idx: usize },
+    SlotItemMismatch,
+    WrongSlotKind { bag_slot: u8 },
+}
+
+impl From<sqlx::Error> for BagError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Db(e)
+    }
+}
+
+/// Get-or-create the two fixed bag slot container rows for a character.
+pub async fn ensure_bag_slots(
+    pool: &PgPool,
+    character_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    for def_id in ["bag_slot_0", "bag_slot_1"] {
+        sqlx::query(
+            r#"
+            INSERT INTO game.character_containers (
+                character_id, kind, container_def_id, display_name, slot_capacity
+            )
+            VALUES ($1::uuid, 'bag_slot', $2::text, '', 0)
+            ON CONFLICT (character_id, container_def_id) WHERE kind = 'bag_slot'
+            DO NOTHING
+            "#,
+        )
+        .bind(character_id)
+        .bind(def_id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Load full snapshot of both bag slots for the character.
+pub async fn load_bag_slots_snapshot(
+    pool: &PgPool,
+    character_id: Uuid,
+) -> Result<BagSlotsSnapshot, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    ensure_bag_slots(pool, character_id).await?;
+
+    let bag_rows: Vec<(Uuid, String, Option<String>, i32)> = sqlx::query_as(
+        r#"
+        SELECT container_id, container_def_id, equipped_item_id, slot_capacity
+        FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+        ORDER BY container_def_id ASC
+        "#,
+    )
+    .bind(character_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let content = stonepyre_content::default_content_db();
+    let mut slots = Vec::new();
+
+    for (idx, (container_id, def_id, equipped_item_id, slot_capacity)) in bag_rows.into_iter().enumerate() {
+        let bag_slot = idx as u8;
+
+        let item_rows: Vec<(i32, String, i64)> = sqlx::query_as(
+            r#"
+            SELECT slot_idx, item_id, quantity
+            FROM game.character_container_slots
+            WHERE container_id = $1::uuid
+              AND quantity > 0
+            ORDER BY slot_idx ASC
+            "#,
+        )
+        .bind(container_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let (item_type_filter, bag_display_name) = if let Some(ref item_id) = equipped_item_id {
+            if let Some(bag_def) = content.items.get(item_id).and_then(|i| i.bag.as_ref()) {
+                let filter = content
+                    .containers
+                    .get(&bag_def.container_def_id)
+                    .and_then(|c| c.item_type_filter.clone());
+                let name = content
+                    .containers
+                    .get(&bag_def.container_def_id)
+                    .map(|c| c.id.clone());
+                (filter, name)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let _ = def_id; // used only for ordering
+        slots.push(BagSlotSnapshot {
+            bag_slot,
+            container_id,
+            equipped_item_id,
+            items: item_rows
+                .into_iter()
+                .map(|(slot_idx, item_id, quantity)| BagItemSnapshot {
+                    slot_idx: slot_idx.max(0) as usize,
+                    item_id,
+                    quantity,
+                })
+                .collect(),
+            slots_total: slot_capacity.max(0) as usize,
+            bag_display_name,
+            item_type_filter,
+        });
+    }
+
+    tx.commit().await?;
+
+    Ok(BagSlotsSnapshot { character_id, slots })
+}
+
+/// Equip a bag item from a main inventory slot into a bag slot.
+pub async fn equip_bag(
+    pool: &PgPool,
+    character_id: Uuid,
+    inventory_slot_idx: usize,
+    bag_slot: u8,
+) -> Result<BagSlotChanged, BagError> {
+    if bag_slot > 1 {
+        return Err(BagError::InvalidBagSlot(bag_slot));
+    }
+    ensure_bag_slots(pool, character_id).await?;
+
+    let content = stonepyre_content::default_content_db();
+    let mut tx = pool.begin().await?;
+    lock_character_inventory(&mut tx, character_id).await?;
+
+    let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+
+    // Check the inventory slot has an item.
+    let inv_row: Option<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT item_id, quantity
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid
+          AND slot_idx = $2::int
+        FOR UPDATE
+        "#,
+    )
+    .bind(inv_container_id)
+    .bind(inventory_slot_idx as i32)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((item_id, _)) = inv_row else {
+        return Err(BagError::SlotEmpty { slot_idx: inventory_slot_idx });
+    };
+
+    // Verify the item is actually a bag.
+    let bag_item_def = content
+        .items
+        .get(&item_id)
+        .and_then(|i| i.bag.as_ref())
+        .ok_or_else(|| BagError::ItemIsNotABag { item_id: item_id.clone() })?;
+
+    let container_def = content
+        .containers
+        .get(&bag_item_def.container_def_id)
+        .ok_or_else(|| BagError::ItemIsNotABag { item_id: item_id.clone() })?;
+
+    // Slot 0 = general bags only; slot 1 = typed/skill bags only.
+    match bag_slot {
+        0 if container_def.item_type_filter.is_some() => {
+            return Err(BagError::WrongSlotKind { bag_slot });
+        }
+        1 if container_def.item_type_filter.is_none() => {
+            return Err(BagError::WrongSlotKind { bag_slot });
+        }
+        _ => {}
+    }
+
+    let def_id = bag_slot_container_def_id(bag_slot);
+
+    // Check the bag slot is currently empty.
+    let slot_row: Option<(Uuid, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT container_id, equipped_item_id
+        FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+          AND container_def_id = $2::text
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(def_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (bag_container_id, current_equipped) = slot_row.unwrap();
+    if current_equipped.is_some() {
+        return Err(BagError::BagAlreadyEquipped { bag_slot });
+    }
+
+    // Remove the bag item from inventory.
+    sqlx::query(
+        r#"
+        DELETE FROM game.character_container_slots
+        WHERE container_id = $1::uuid
+          AND slot_idx = $2::int
+        "#,
+    )
+    .bind(inv_container_id)
+    .bind(inventory_slot_idx as i32)
+    .execute(&mut *tx)
+    .await?;
+
+    // Update bag slot: set equipped item and capacity.
+    sqlx::query(
+        r#"
+        UPDATE game.character_containers
+        SET equipped_item_id = $2::text,
+            slot_capacity = $3::int,
+            display_name = $4::text,
+            updated_at = now()
+        WHERE container_id = $1::uuid
+        "#,
+    )
+    .bind(bag_container_id)
+    .bind(&item_id)
+    .bind(container_def.base_slots as i32)
+    .bind(&container_def.id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(BagSlotChanged {
+        character_id,
+        slot: BagSlotSnapshot {
+            bag_slot,
+            container_id: bag_container_id,
+            equipped_item_id: Some(item_id),
+            items: vec![],
+            slots_total: container_def.base_slots as usize,
+            bag_display_name: Some(container_def.id.clone()),
+            item_type_filter: container_def.item_type_filter.clone(),
+        },
+    })
+}
+
+/// Remove the bag from a bag slot back into the main inventory. The bag must be empty.
+pub async fn unequip_bag(
+    pool: &PgPool,
+    character_id: Uuid,
+    bag_slot: u8,
+) -> Result<BagSlotChanged, BagError> {
+    if bag_slot > 1 {
+        return Err(BagError::InvalidBagSlot(bag_slot));
+    }
+    ensure_bag_slots(pool, character_id).await?;
+
+    let mut tx = pool.begin().await?;
+    lock_character_inventory(&mut tx, character_id).await?;
+
+    let def_id = bag_slot_container_def_id(bag_slot);
+
+    let slot_row: Option<(Uuid, Option<String>, i32)> = sqlx::query_as(
+        r#"
+        SELECT container_id, equipped_item_id, slot_capacity
+        FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+          AND container_def_id = $2::text
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(def_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (bag_container_id, equipped_item_id, _) = slot_row.unwrap();
+    let item_id = equipped_item_id.ok_or(BagError::NoBagEquipped { bag_slot })?;
+
+    // Refuse to unequip if the bag has items.
+    let item_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM game.character_container_slots
+        WHERE container_id = $1::uuid AND quantity > 0
+        "#,
+    )
+    .bind(bag_container_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if item_count > 0 {
+        return Err(BagError::BagNotEmpty { bag_slot });
+    }
+
+    // Clear the bag slot.
+    sqlx::query(
+        r#"
+        UPDATE game.character_containers
+        SET equipped_item_id = NULL,
+            slot_capacity = 0,
+            display_name = '',
+            updated_at = now()
+        WHERE container_id = $1::uuid
+        "#,
+    )
+    .bind(bag_container_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // Return the bag item to inventory.
+    let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let inv_rows = load_container_slot_rows_for_update(&mut tx, inv_container_id).await?;
+    let slot_idx = first_empty_slot(&inv_rows).ok_or(BagError::InventoryFull)?;
+    insert_container_slot(&mut tx, inv_container_id, slot_idx, &item_id, 1).await?;
+
+    tx.commit().await?;
+
+    Ok(BagSlotChanged {
+        character_id,
+        slot: BagSlotSnapshot {
+            bag_slot,
+            container_id: bag_container_id,
+            equipped_item_id: None,
+            items: vec![],
+            slots_total: 0,
+            bag_display_name: None,
+            item_type_filter: None,
+        },
+    })
+}
+
+/// Move an item from a main inventory slot into an equipped bag.
+pub async fn bag_put_item(
+    pool: &PgPool,
+    character_id: Uuid,
+    bag_slot: u8,
+    inventory_slot_idx: usize,
+) -> Result<BagSlotChanged, BagError> {
+    if bag_slot > 1 {
+        return Err(BagError::InvalidBagSlot(bag_slot));
+    }
+    ensure_bag_slots(pool, character_id).await?;
+
+    let content = stonepyre_content::default_content_db();
+    let mut tx = pool.begin().await?;
+    lock_character_inventory(&mut tx, character_id).await?;
+
+    let def_id = bag_slot_container_def_id(bag_slot);
+
+    let slot_row: Option<(Uuid, Option<String>, i32)> = sqlx::query_as(
+        r#"
+        SELECT container_id, equipped_item_id, slot_capacity
+        FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+          AND container_def_id = $2::text
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(def_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (bag_container_id, equipped_item_id, slot_capacity) = slot_row.unwrap();
+    let bag_item_id = equipped_item_id.ok_or(BagError::NoBagEquipped { bag_slot })?;
+
+    // Validate against type filter.
+    if let Some(bag_item_def) = content.items.get(&bag_item_id).and_then(|i| i.bag.as_ref()) {
+        if let Some(container_def) = content.containers.get(&bag_item_def.container_def_id) {
+            if let Some(ref required_tag) = container_def.item_type_filter {
+                // Get the item being moved to check its tags.
+                let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+                let inv_row: Option<(String, i64)> = sqlx::query_as(
+                    r#"
+                    SELECT item_id, quantity
+                    FROM game.character_container_slots
+                    WHERE container_id = $1::uuid AND slot_idx = $2::int
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(inv_container_id)
+                .bind(inventory_slot_idx as i32)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+                let Some((ref item_id, quantity)) = inv_row else {
+                    return Err(BagError::SlotEmpty { slot_idx: inventory_slot_idx });
+                };
+
+                let item_tags = content
+                    .items
+                    .get(item_id.as_str())
+                    .map(|d| d.tags.clone())
+                    .unwrap_or_default();
+
+                if !container_def.accepts_item(&item_tags) {
+                    return Err(BagError::ItemRejectedByFilter {
+                        item_id: item_id.clone(),
+                        required_tag: required_tag.clone(),
+                    });
+                }
+
+                // Check bag has capacity.
+                let bag_slots_used: i64 = sqlx::query_scalar(
+                    r#"SELECT COUNT(*) FROM game.character_container_slots WHERE container_id = $1::uuid AND quantity > 0"#,
+                )
+                .bind(bag_container_id)
+                .fetch_one(&mut *tx)
+                .await?;
+
+                if bag_slots_used >= i64::from(slot_capacity) {
+                    return Err(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) });
+                }
+
+                // Move: remove from inventory, insert into bag.
+                sqlx::query(
+                    r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+                )
+                .bind(inv_container_id)
+                .bind(inventory_slot_idx as i32)
+                .execute(&mut *tx)
+                .await?;
+
+                let bag_rows = load_container_slot_rows_for_update(&mut tx, bag_container_id).await?;
+                let bag_slot_idx = first_empty_slot_from_occupied(
+                    &bag_rows.iter().map(|r| r.slot_idx).collect::<Vec<_>>(),
+                )
+                .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?;
+
+                insert_container_slot(&mut tx, bag_container_id, bag_slot_idx, item_id, quantity).await?;
+
+                let updated_items: Vec<(i32, String, i64)> = sqlx::query_as(
+                    r#"SELECT slot_idx, item_id, quantity FROM game.character_container_slots WHERE container_id = $1::uuid AND quantity > 0 ORDER BY slot_idx"#,
+                )
+                .bind(bag_container_id)
+                .fetch_all(&mut *tx)
+                .await?;
+
+                tx.commit().await?;
+
+                return Ok(BagSlotChanged {
+                    character_id,
+                    slot: BagSlotSnapshot {
+                        bag_slot,
+                        container_id: bag_container_id,
+                        equipped_item_id: Some(bag_item_id),
+                        items: updated_items
+                            .into_iter()
+                            .map(|(s, i, q)| BagItemSnapshot { slot_idx: s.max(0) as usize, item_id: i, quantity: q })
+                            .collect(),
+                        slots_total: slot_capacity.max(0) as usize,
+                        bag_display_name: Some(container_def.id.clone()),
+                        item_type_filter: container_def.item_type_filter.clone(),
+                    },
+                });
+            }
+        }
+    }
+
+    // No type filter path (general bag).
+    let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let inv_row: Option<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT item_id, quantity
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid AND slot_idx = $2::int
+        FOR UPDATE
+        "#,
+    )
+    .bind(inv_container_id)
+    .bind(inventory_slot_idx as i32)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((item_id, quantity)) = inv_row else {
+        return Err(BagError::SlotEmpty { slot_idx: inventory_slot_idx });
+    };
+
+    let bag_slots_used: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM game.character_container_slots WHERE container_id = $1::uuid AND quantity > 0"#,
+    )
+    .bind(bag_container_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if bag_slots_used >= i64::from(slot_capacity) {
+        return Err(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) });
+    }
+
+    sqlx::query(
+        r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+    )
+    .bind(inv_container_id)
+    .bind(inventory_slot_idx as i32)
+    .execute(&mut *tx)
+    .await?;
+
+    let bag_rows = load_container_slot_rows_for_update(&mut tx, bag_container_id).await?;
+    let bag_slot_idx = first_empty_slot_from_occupied(
+        &bag_rows.iter().map(|r| r.slot_idx).collect::<Vec<_>>(),
+    )
+    .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?;
+
+    insert_container_slot(&mut tx, bag_container_id, bag_slot_idx, &item_id, quantity).await?;
+
+    let (container_def_display, item_type_filter) = {
+        let item_def = content.items.get(&bag_item_id);
+        let cdef = item_def
+            .and_then(|i| i.bag.as_ref())
+            .and_then(|b| content.containers.get(&b.container_def_id));
+        (cdef.map(|c| c.id.clone()), cdef.and_then(|c| c.item_type_filter.clone()))
+    };
+
+    let updated_items: Vec<(i32, String, i64)> = sqlx::query_as(
+        r#"SELECT slot_idx, item_id, quantity FROM game.character_container_slots WHERE container_id = $1::uuid AND quantity > 0 ORDER BY slot_idx"#,
+    )
+    .bind(bag_container_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(BagSlotChanged {
+        character_id,
+        slot: BagSlotSnapshot {
+            bag_slot,
+            container_id: bag_container_id,
+            equipped_item_id: Some(bag_item_id),
+            items: updated_items
+                .into_iter()
+                .map(|(s, i, q)| BagItemSnapshot { slot_idx: s.max(0) as usize, item_id: i, quantity: q })
+                .collect(),
+            slots_total: slot_capacity.max(0) as usize,
+            bag_display_name: container_def_display,
+            item_type_filter,
+        },
+    })
+}
+
+/// Move an item from an equipped bag slot back into the main inventory.
+pub async fn bag_take_item(
+    pool: &PgPool,
+    character_id: Uuid,
+    bag_slot: u8,
+    bag_item_slot_idx: usize,
+) -> Result<BagSlotChanged, BagError> {
+    if bag_slot > 1 {
+        return Err(BagError::InvalidBagSlot(bag_slot));
+    }
+    ensure_bag_slots(pool, character_id).await?;
+
+    let content = stonepyre_content::default_content_db();
+    let mut tx = pool.begin().await?;
+    lock_character_inventory(&mut tx, character_id).await?;
+
+    let def_id = bag_slot_container_def_id(bag_slot);
+
+    let slot_row: Option<(Uuid, Option<String>, i32)> = sqlx::query_as(
+        r#"
+        SELECT container_id, equipped_item_id, slot_capacity
+        FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+          AND container_def_id = $2::text
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(def_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let (bag_container_id, equipped_item_id, slot_capacity) = slot_row.unwrap();
+    let bag_item_id = equipped_item_id.ok_or(BagError::NoBagEquipped { bag_slot })?;
+
+    let bag_row: Option<(String, i64)> = sqlx::query_as(
+        r#"
+        SELECT item_id, quantity
+        FROM game.character_container_slots
+        WHERE container_id = $1::uuid AND slot_idx = $2::int
+        FOR UPDATE
+        "#,
+    )
+    .bind(bag_container_id)
+    .bind(bag_item_slot_idx as i32)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((item_id, quantity)) = bag_row else {
+        return Err(BagError::SlotEmpty { slot_idx: bag_item_slot_idx });
+    };
+
+    // Check inventory has room.
+    let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
+    let inv_rows = load_container_slot_rows_for_update(&mut tx, inv_container_id).await?;
+    let additional = additional_slots_required_for_grant(&content, &inv_rows, &item_id, quantity as u32);
+    let used = slots_used(&content, &inv_rows);
+    if used + additional > BASE_INVENTORY_SLOTS {
+        return Err(BagError::InventoryFull);
+    }
+
+    // Remove from bag.
+    sqlx::query(
+        r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+    )
+    .bind(bag_container_id)
+    .bind(bag_item_slot_idx as i32)
+    .execute(&mut *tx)
+    .await?;
+
+    // Grant to inventory.
+    if item_stacks_in_inventory(&content, &item_id) {
+        if let Some(existing) = inv_rows.iter().find(|r| r.item_id == item_id) {
+            sqlx::query(
+                r#"UPDATE game.character_container_slots SET quantity = quantity + $3::bigint, updated_at = now() WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+            )
+            .bind(inv_container_id)
+            .bind(existing.slot_idx)
+            .bind(quantity)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            let s = first_empty_slot(&inv_rows).ok_or(BagError::InventoryFull)?;
+            insert_container_slot(&mut tx, inv_container_id, s, &item_id, quantity).await?;
+        }
+    } else {
+        let mut occupied: Vec<i32> = inv_rows.iter().map(|r| r.slot_idx).collect();
+        for _ in 0..quantity {
+            let s = first_empty_slot_from_occupied(&occupied).ok_or(BagError::InventoryFull)?;
+            insert_container_slot(&mut tx, inv_container_id, s, &item_id, 1).await?;
+            occupied.push(s);
+        }
+    }
+
+    let (container_def_display, item_type_filter) = {
+        let item_def = content.items.get(&bag_item_id);
+        let cdef = item_def
+            .and_then(|i| i.bag.as_ref())
+            .and_then(|b| content.containers.get(&b.container_def_id));
+        (cdef.map(|c| c.id.clone()), cdef.and_then(|c| c.item_type_filter.clone()))
+    };
+
+    let updated_items: Vec<(i32, String, i64)> = sqlx::query_as(
+        r#"SELECT slot_idx, item_id, quantity FROM game.character_container_slots WHERE container_id = $1::uuid AND quantity > 0 ORDER BY slot_idx"#,
+    )
+    .bind(bag_container_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(BagSlotChanged {
+        character_id,
+        slot: BagSlotSnapshot {
+            bag_slot,
+            container_id: bag_container_id,
+            equipped_item_id: Some(bag_item_id),
+            items: updated_items
+                .into_iter()
+                .map(|(s, i, q)| BagItemSnapshot { slot_idx: s.max(0) as usize, item_id: i, quantity: q })
+                .collect(),
+            slots_total: slot_capacity.max(0) as usize,
+            bag_display_name: container_def_display,
+            item_type_filter,
+        },
+    })
 }

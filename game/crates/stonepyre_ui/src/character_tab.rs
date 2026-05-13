@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
-use stonepyre_engine::plugins::inventory::Equipment;
+use stonepyre_engine::plugins::inventory::{Equipment, PlayerBagSlots};
 use stonepyre_engine::plugins::world::Player;
 
+use crate::bag::BagUiState;
 use crate::character_state::CharacterUiState;
 
 const PANEL_WIDTH: f32 = 270.0;
@@ -21,6 +23,11 @@ const EQUIP_AREA_HEIGHT: f32 = PANEL_HEIGHT - (PANEL_PADDING * 2.0);
 pub(crate) struct CharacterTabRoot;
 
 #[derive(Component)]
+pub(crate) struct BagSlotButton {
+    pub bag_slot: u8,
+}
+
+#[derive(Component)]
 pub(crate) struct CharacterTabSlotLabel {
     slot_id: &'static str,
 }
@@ -29,16 +36,21 @@ pub(crate) fn character_tab_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut state: ResMut<CharacterUiState>,
+    mut bag_ui_state: ResMut<BagUiState>,
     mut blocker: ResMut<WorldInteractionBlocker>,
     windows: Query<&Window, With<PrimaryWindow>>,
     player_q: Query<&Equipment, With<Player>>,
+    bag_slots: Res<PlayerBagSlots>,
     children_q: Query<&Children>,
     mut slot_label_q: Query<(&CharacterTabSlotLabel, &mut Text)>,
+    mut bag_btn_q: Query<(&BagSlotButton, &mut BackgroundColor, &Interaction), With<Button>>,
+    interaction_q: Query<(&BagSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_character_panel(&windows));
 
     if !state.open {
         despawn_all(&mut commands, &mut state, &children_q);
+        bag_ui_state.open_bag_slot = None;
         return;
     }
 
@@ -54,6 +66,37 @@ pub(crate) fn character_tab_panel_sync_system(
 
     for (label, mut text) in slot_label_q.iter_mut() {
         text.0 = equipment_slot_text(equip, label.slot_id);
+    }
+
+    // Handle bag slot button clicks.
+    for (bag_btn, interaction) in interaction_q.iter() {
+        if *interaction == Interaction::Pressed {
+            if bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot) {
+                bag_ui_state.open_bag_slot = None;
+            } else {
+                bag_ui_state.open_bag_slot = Some(bag_btn.bag_slot);
+                bag_ui_state.needs_rebuild = true;
+            }
+        }
+    }
+
+    // Update bag slot button backgrounds based on equipped state + open state.
+    for (bag_btn, mut bg, _) in bag_btn_q.iter_mut() {
+        let is_open = bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot);
+        let is_equipped = bag_slots
+            .slots
+            .iter()
+            .find(|s| s.bag_slot == bag_btn.bag_slot)
+            .map(|s| s.equipped_item_id.is_some())
+            .unwrap_or(false);
+
+        *bg = if is_open {
+            BackgroundColor(Color::srgba(0.16, 0.18, 0.30, 0.98))
+        } else if is_equipped {
+            BackgroundColor(Color::srgba(0.10, 0.14, 0.10, 0.96))
+        } else {
+            BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96))
+        };
     }
 }
 
@@ -146,6 +189,49 @@ fn spawn_character_tab_panel(
             };
             commands.entity(row).add_child(child);
         }
+    }
+
+    // Bag slot 0 (general) — top-left of the panel.
+    // Bag slot 1 (skill)   — top-right of the panel.
+    let bag_configs: [(u8, Val, Val, &str, &str); 2] = [
+        (0, Val::Px(PANEL_PADDING), Val::Auto, "Gen\nBag", "character_bag_slot_0"),
+        (1, Val::Auto, Val::Px(PANEL_PADDING), "Skill\nBag", "character_bag_slot_1"),
+    ];
+    for (bag_slot, left, right, slot_label_text, name) in bag_configs {
+        let btn = commands
+            .spawn((
+                Button,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left,
+                    right,
+                    top: Val::Px(PANEL_PADDING),
+                    width: Val::Px(SLOT_SIZE),
+                    height: Val::Px(SLOT_SIZE),
+                    display: Display::Flex,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    padding: UiRect::all(Val::Px(3.0)),
+                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96)),
+                BagSlotButton { bag_slot },
+                Name::new(name),
+            ))
+            .id();
+
+        let label = commands
+            .spawn((
+                Text::new(slot_label_text),
+                TextFont { font: font.clone(), font_size: 9.0, ..default() },
+                TextColor(Color::srgb(0.60, 0.56, 0.50)),
+                Name::new(format!("character_bag_slot_label_{bag_slot}")),
+            ))
+            .id();
+
+        commands.entity(btn).add_child(label);
+        commands.entity(panel).add_child(btn);
     }
 
     state.root = Some(root);

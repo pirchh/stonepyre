@@ -1,5 +1,9 @@
 pub(super) use stonepyre_protocol::{
     ActionState,
+    BagItemSnapshot,
+    BagSlotChanged,
+    BagSlotSnapshot,
+    BagSlotsSnapshot,
     ClientMsg,
     GroundItemEvent,
     GroundItemEventKind,

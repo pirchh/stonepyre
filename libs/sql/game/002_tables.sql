@@ -26,16 +26,17 @@ CREATE TABLE IF NOT EXISTS game.character_skills (
 -- NULL. Portable containers (backpacks) point to the parent container and
 -- slot they occupy.
 CREATE TABLE IF NOT EXISTS game.character_containers (
-    container_id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    character_id       uuid NOT NULL REFERENCES game.characters(character_id) ON DELETE CASCADE,
-    kind               text NOT NULL,
-    container_def_id   text NOT NULL,
-    display_name       text NOT NULL,
-    slot_capacity      int  NOT NULL CHECK (slot_capacity >= 0),
+    container_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    character_id        uuid NOT NULL REFERENCES game.characters(character_id) ON DELETE CASCADE,
+    kind                text NOT NULL,
+    container_def_id    text NOT NULL,
+    display_name        text NOT NULL,
+    slot_capacity       int  NOT NULL CHECK (slot_capacity >= 0),
+    equipped_item_id    text NULL,
     parent_container_id uuid NULL REFERENCES game.character_containers(container_id) ON DELETE SET NULL,
     parent_slot_idx     int  NULL CHECK (parent_slot_idx >= 0),
-    created_at         timestamptz NOT NULL DEFAULT now(),
-    updated_at         timestamptz NOT NULL DEFAULT now(),
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT character_containers_parent_slot_pair CHECK (
         (parent_container_id IS NULL AND parent_slot_idx IS NULL)
@@ -48,6 +49,11 @@ CREATE TABLE IF NOT EXISTS game.character_containers (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_character_containers_base_inventory
     ON game.character_containers (character_id)
     WHERE kind = 'inventory' AND parent_container_id IS NULL;
+
+-- One unique bag slot 0 and bag slot 1 per character.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_character_containers_bag_slot
+    ON game.character_containers (character_id, container_def_id)
+    WHERE kind = 'bag_slot';
 
 -- Positional slot contents for any container instance.
 --

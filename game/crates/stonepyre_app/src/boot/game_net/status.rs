@@ -9,6 +9,9 @@ use stonepyre_world::TilePos;
 
 use super::protocol::{
     ActionState,
+    BagSlotChanged,
+    BagSlotSnapshot,
+    BagSlotsSnapshot,
     GroundItemEvent,
     GroundItemSnapshot,
     GroundItemsSnapshot,
@@ -69,6 +72,8 @@ pub enum GameNetEvent {
     GroundItemEvent(GroundItemEvent),
     SkillSnapshot(SkillSnapshot),
     SkillDelta(SkillDelta),
+    BagSlotsSnapshot(BagSlotsSnapshot),
+    BagSlotChanged(BagSlotChanged),
     Error(String),
     Disconnected,
 }
@@ -87,6 +92,21 @@ pub enum GameNetCommand {
     },
     PickupGroundItem {
         ground_item_id: Uuid,
+    },
+    EquipBag {
+        inventory_slot_idx: usize,
+        bag_slot: u8,
+    },
+    UnequipBag {
+        bag_slot: u8,
+    },
+    BagPutItem {
+        bag_slot: u8,
+        inventory_slot_idx: usize,
+    },
+    BagTakeItem {
+        bag_slot: u8,
+        bag_item_slot_idx: usize,
     },
 }
 
@@ -121,6 +141,8 @@ pub struct GameNetStatus {
     pub inventory_slots_total: usize,
     pub inventory_items: Vec<InventoryItemSnapshot>,
     pub inventory_dirty: bool,
+    pub bag_slots: Vec<BagSlotSnapshot>,
+    pub bag_slots_dirty: bool,
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
     pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
@@ -155,6 +177,8 @@ impl Default for GameNetStatus {
             inventory_slots_total: 20,
             inventory_items: Vec::new(),
             inventory_dirty: false,
+            bag_slots: Vec::new(),
+            bag_slots_dirty: false,
             skill_entries: Vec::new(),
             skills_dirty: false,
             xp_feedback_queue: Vec::new(),

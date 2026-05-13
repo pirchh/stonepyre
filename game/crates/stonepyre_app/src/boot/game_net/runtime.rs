@@ -61,6 +61,8 @@ pub fn spawn_game_ws(
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
+    status.bag_slots.clear();
+    status.bag_slots_dirty = true;
     status.skill_entries.clear();
     status.skills_dirty = true;
     status.xp_feedback_queue.clear();
@@ -135,6 +137,42 @@ pub fn send_pickup_ground_item_to_server(
     };
 
     tx.send(GameNetCommand::PickupGroundItem { ground_item_id }).is_ok()
+}
+
+pub fn send_equip_bag_to_server(
+    game_net: &GameNetRuntime,
+    inventory_slot_idx: usize,
+    bag_slot: u8,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::EquipBag { inventory_slot_idx, bag_slot }).is_ok()
+}
+
+pub fn send_unequip_bag_to_server(game_net: &GameNetRuntime, bag_slot: u8) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::UnequipBag { bag_slot }).is_ok()
+}
+
+pub fn send_bag_put_item_to_server(
+    game_net: &GameNetRuntime,
+    bag_slot: u8,
+    inventory_slot_idx: usize,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::BagPutItem { bag_slot, inventory_slot_idx }).is_ok()
+}
+
+pub fn send_bag_take_item_to_server(
+    game_net: &GameNetRuntime,
+    bag_slot: u8,
+    bag_item_slot_idx: usize,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::BagTakeItem { bag_slot, bag_item_slot_idx }).is_ok()
 }
 
 fn run_game_ws(
@@ -229,6 +267,38 @@ fn run_game_ws(
                     socket
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws pickup ground item send failed: {e}"))?;
+                }
+                GameNetCommand::EquipBag { inventory_slot_idx, bag_slot } => {
+                    let msg = ClientMsg::EquipBag { inventory_slot_idx, bag_slot };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws equip bag serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws equip bag send failed: {e}"))?;
+                }
+                GameNetCommand::UnequipBag { bag_slot } => {
+                    let msg = ClientMsg::UnequipBag { bag_slot };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws unequip bag serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws unequip bag send failed: {e}"))?;
+                }
+                GameNetCommand::BagPutItem { bag_slot, inventory_slot_idx } => {
+                    let msg = ClientMsg::BagPutItem { bag_slot, inventory_slot_idx };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bag put item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bag put item send failed: {e}"))?;
+                }
+                GameNetCommand::BagTakeItem { bag_slot, bag_item_slot_idx } => {
+                    let msg = ClientMsg::BagTakeItem { bag_slot, bag_item_slot_idx };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bag take item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bag take item send failed: {e}"))?;
                 }
             }
         }
@@ -349,6 +419,12 @@ fn run_game_ws(
                     }
                     Ok(ServerMsg::SkillDelta(delta)) => {
                         let _ = tx.send(GameNetEvent::SkillDelta(delta));
+                    }
+                    Ok(ServerMsg::BagSlotsSnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::BagSlotsSnapshot(snapshot));
+                    }
+                    Ok(ServerMsg::BagSlotChanged(changed)) => {
+                        let _ = tx.send(GameNetEvent::BagSlotChanged(changed));
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -662,6 +738,33 @@ pub fn pump_game_net_results(
                     status.skills_dirty = true;
                 }
             }
+            GameNetEvent::BagSlotsSnapshot(snapshot) => {
+                info!(
+                    "game net bag slots snapshot character_id={} slots={}",
+                    snapshot.character_id,
+                    snapshot.slots.len()
+                );
+                if status.character_id == Some(snapshot.character_id) {
+                    status.bag_slots = snapshot.slots;
+                    status.bag_slots_dirty = true;
+                }
+            }
+            GameNetEvent::BagSlotChanged(changed) => {
+                info!(
+                    "game net bag slot changed character_id={} bag_slot={}",
+                    changed.character_id, changed.slot.bag_slot
+                );
+                if status.character_id == Some(changed.character_id) {
+                    let bag_slot = changed.slot.bag_slot as usize;
+                    if let Some(existing) = status.bag_slots.iter_mut().find(|s| s.bag_slot == changed.slot.bag_slot) {
+                        *existing = changed.slot;
+                    } else if bag_slot < 2 {
+                        status.bag_slots.push(changed.slot);
+                        status.bag_slots.sort_by_key(|s| s.bag_slot);
+                    }
+                    status.bag_slots_dirty = true;
+                }
+            }
             GameNetEvent::SkillDelta(delta) => {
                 info!(
                     "game net skill delta character_id={} skill={} xp_delta={} new_xp={} new_level={}",
@@ -727,6 +830,8 @@ pub fn pump_game_net_results(
                 status.inventory_slots_total = 20;
                 status.inventory_items.clear();
                 status.inventory_dirty = true;
+                status.bag_slots.clear();
+                status.bag_slots_dirty = true;
                 status.skill_entries.clear();
                 status.skills_dirty = true;
                 status.xp_feedback_queue.clear();
