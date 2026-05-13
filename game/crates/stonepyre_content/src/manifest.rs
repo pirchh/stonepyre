@@ -94,7 +94,7 @@ pub fn default_item_defs() -> ItemDefs {
             bag: Some(BagDef {
                 container_def_id: "wooden_backpack".to_string(),
             }),
-            tags: vec!["bag".to_string()],
+            tags: vec!["bag".to_string(), "bag_general".to_string()],
         },
     );
 
@@ -116,7 +116,7 @@ pub fn default_item_defs() -> ItemDefs {
             bag: Some(BagDef {
                 container_def_id: "woodcutting_sack".to_string(),
             }),
-            tags: vec!["bag".to_string()],
+            tags: vec!["bag".to_string(), "bag_typed".to_string()],
         },
     );
 

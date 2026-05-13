@@ -191,28 +191,21 @@ fn spawn_character_tab_panel(
         }
     }
 
-    // Two bag slot buttons in the top-right of the panel.
-    let bag_area = commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                right: Val::Px(PANEL_PADDING),
-                top: Val::Px(PANEL_PADDING),
-                display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(SLOT_GAP),
-                ..default()
-            },
-            Name::new("character_bag_slots"),
-        ))
-        .id();
-    commands.entity(panel).add_child(bag_area);
-
-    for bag_slot_idx in 0u8..2 {
+    // Bag slot 0 (general) — top-left of the panel.
+    // Bag slot 1 (skill)   — top-right of the panel.
+    let bag_configs: [(u8, Val, Val, &str, &str); 2] = [
+        (0, Val::Px(PANEL_PADDING), Val::Auto, "Gen\nBag", "character_bag_slot_0"),
+        (1, Val::Auto, Val::Px(PANEL_PADDING), "Skill\nBag", "character_bag_slot_1"),
+    ];
+    for (bag_slot, left, right, slot_label_text, name) in bag_configs {
         let btn = commands
             .spawn((
                 Button,
                 Node {
+                    position_type: PositionType::Absolute,
+                    left,
+                    right,
+                    top: Val::Px(PANEL_PADDING),
                     width: Val::Px(SLOT_SIZE),
                     height: Val::Px(SLOT_SIZE),
                     display: Display::Flex,
@@ -223,22 +216,22 @@ fn spawn_character_tab_panel(
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96)),
-                BagSlotButton { bag_slot: bag_slot_idx },
-                Name::new(format!("character_bag_slot_{bag_slot_idx}")),
+                BagSlotButton { bag_slot },
+                Name::new(name),
             ))
             .id();
 
         let label = commands
             .spawn((
-                Text::new(format!("Bag\n{}", bag_slot_idx + 1)),
+                Text::new(slot_label_text),
                 TextFont { font: font.clone(), font_size: 9.0, ..default() },
                 TextColor(Color::srgb(0.60, 0.56, 0.50)),
-                Name::new(format!("character_bag_slot_label_{bag_slot_idx}")),
+                Name::new(format!("character_bag_slot_label_{bag_slot}")),
             ))
             .id();
 
         commands.entity(btn).add_child(label);
-        commands.entity(bag_area).add_child(btn);
+        commands.entity(panel).add_child(btn);
     }
 
     state.root = Some(root);

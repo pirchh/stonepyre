@@ -568,6 +568,7 @@ pub enum BagError {
     InventoryFull,
     SlotEmpty { slot_idx: usize },
     SlotItemMismatch,
+    WrongSlotKind { bag_slot: u8 },
 }
 
 impl From<sqlx::Error> for BagError {
@@ -730,6 +731,17 @@ pub async fn equip_bag(
         .containers
         .get(&bag_item_def.container_def_id)
         .ok_or_else(|| BagError::ItemIsNotABag { item_id: item_id.clone() })?;
+
+    // Slot 0 = general bags only; slot 1 = typed/skill bags only.
+    match bag_slot {
+        0 if container_def.item_type_filter.is_some() => {
+            return Err(BagError::WrongSlotKind { bag_slot });
+        }
+        1 if container_def.item_type_filter.is_none() => {
+            return Err(BagError::WrongSlotKind { bag_slot });
+        }
+        _ => {}
+    }
 
     let def_id = bag_slot_container_def_id(bag_slot);
 

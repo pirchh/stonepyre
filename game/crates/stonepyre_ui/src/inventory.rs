@@ -437,10 +437,13 @@ fn open_context_menu(
         .id();
     commands.entity(menu).add_child(title);
 
-    let is_bag = default_item_defs()
+    let defs = default_item_defs();
+    let tags: &[String] = defs
         .get(&item.item_id)
-        .map(|def| def.tags.iter().any(|t| t == "bag"))
-        .unwrap_or(false);
+        .map(|d| d.tags.as_slice())
+        .unwrap_or_default();
+    let is_bag_general = tags.iter().any(|t| t == "bag_general");
+    let is_bag_typed = tags.iter().any(|t| t == "bag_typed");
 
     let mut options: Vec<(&'static str, InventoryContextOption)> = vec![
         ("Use", InventoryContextOption::Use),
@@ -448,9 +451,11 @@ fn open_context_menu(
         ("Examine", InventoryContextOption::Examine),
     ];
 
-    if is_bag {
-        options.push(("Equip (Slot 1)", InventoryContextOption::EquipToBag0));
-        options.push(("Equip (Slot 2)", InventoryContextOption::EquipToBag1));
+    if is_bag_general {
+        options.push(("Equip (Slot 1 - General)", InventoryContextOption::EquipToBag0));
+    }
+    if is_bag_typed {
+        options.push(("Equip (Slot 2 - Skill)", InventoryContextOption::EquipToBag1));
     }
 
     for (label, action) in options {
@@ -625,8 +630,10 @@ fn examine_text(item_id: &str) -> String {
 
     if def.tags.iter().any(|tag| tag == "log") {
         format!("A sturdy {}.", def.name.to_lowercase())
-    } else if def.tags.iter().any(|tag| tag == "bag") {
-        format!("{} can be equipped in a bag slot.", def.name)
+    } else if def.tags.iter().any(|tag| tag == "bag_general") {
+        format!("{} can be equipped in the general bag slot (Slot 1).", def.name)
+    } else if def.tags.iter().any(|tag| tag == "bag_typed") {
+        format!("{} can be equipped in the skill bag slot (Slot 2).", def.name)
     } else if def.tags.iter().any(|tag| tag == "bag_upgrade") {
         format!("{} can upgrade a compatible backpack.", def.name)
     } else {

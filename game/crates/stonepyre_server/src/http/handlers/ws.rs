@@ -767,6 +767,13 @@ fn bag_error_message(e: crate::game::sim::inventory::BagError) -> String {
         BagError::InventoryFull => "inventory is full".to_string(),
         BagError::SlotEmpty { slot_idx } => format!("slot {} is empty", slot_idx),
         BagError::SlotItemMismatch => "item at slot does not match".to_string(),
+        BagError::WrongSlotKind { bag_slot } => {
+            if bag_slot == 0 {
+                "slot 1 only accepts general bags (no item filter)".to_string()
+            } else {
+                "slot 2 only accepts typed/skill bags".to_string()
+            }
+        }
         BagError::Db(e) => {
             warn!("bag db error: {:?}", e);
             "database error".to_string()
