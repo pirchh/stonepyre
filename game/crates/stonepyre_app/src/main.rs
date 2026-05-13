@@ -85,6 +85,7 @@ fn main() {
                     .after(boot::game_net::sync_harvest_node_visuals_from_server)
                     .after(boot::game_net::sync_ground_item_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
+                send_debug_grant_actions,
             )
                 .run_if(in_state(Screen::InWorld)),
         )
@@ -100,17 +101,24 @@ fn main() {
         .run();
 }
 
-fn enable_game_ui_on_enter_world(mut enabled: ResMut<stonepyre_ui::GameUiEnabled>) {
+fn enable_game_ui_on_enter_world(
+    mut enabled: ResMut<stonepyre_ui::GameUiEnabled>,
+    mut is_admin: ResMut<stonepyre_ui::debug_grant::IsAdminAccount>,
+    boot: Res<BootState>,
+) {
     enabled.0 = true;
+    is_admin.0 = boot.session.as_ref().map(|s| s.is_admin).unwrap_or(false);
 }
 
 fn disable_game_ui_on_exit_world(
     mut commands: Commands,
     mut enabled: ResMut<stonepyre_ui::GameUiEnabled>,
     mut pending_pickup: ResMut<boot::game_net::PendingGroundItemPickup>,
+    mut boot: ResMut<BootState>,
 ) {
     enabled.0 = false;
     pending_pickup.request = None;
+    boot.active_character_id = None;
     commands.insert_resource(
         stonepyre_engine::plugins::interaction::ServerAuthoritativeInteractions(false),
     );
@@ -125,6 +133,7 @@ fn start_world_on_enter(
     mut game_status: ResMut<boot::game_net::GameNetStatus>,
 ) {
     let character_id = boot.pending_start_world.take().unwrap_or(Uuid::nil());
+    boot.active_character_id = Some(character_id);
     let has_session = boot.session.is_some();
 
     commands.insert_resource(
@@ -148,5 +157,24 @@ fn start_world_on_enter(
         &asset_server,
         harvest_defs.as_deref(),
         character_id,
+    );
+}
+
+fn send_debug_grant_actions(
+    boot: Res<BootState>,
+    net: Res<boot::net::NetRuntime>,
+    mut queue: ResMut<stonepyre_ui::debug_grant::DebugGrantActionQueue>,
+) {
+    let Some(req) = queue.pending_grant.take() else { return };
+    let Some(ref session) = boot.session else { return };
+    let Some(character_id) = boot.active_character_id else { return };
+
+    boot::net::spawn_admin_grant_item(
+        boot.server_base_url.clone(),
+        session.token.clone(),
+        character_id,
+        req.item_id,
+        req.quantity,
+        net.tx.clone(),
     );
 }

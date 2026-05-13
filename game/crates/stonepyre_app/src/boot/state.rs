@@ -23,6 +23,7 @@ pub enum FocusField {
 pub struct Session {
     pub token: String,
     pub account_id: Uuid,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +57,10 @@ pub struct BootState {
 
     // Boot -> world handoff (no Bevy Events needed)
     pub pending_start_world: Option<Uuid>,
+
+    // Set when the player enters the world; cleared on exit.
+    // Used by debug tools that need to target the active character.
+    pub active_character_id: Option<Uuid>,
 }
 
 impl Default for BootState {
@@ -79,6 +84,7 @@ impl Default for BootState {
             creating_character: false,
 
             pending_start_world: None,
+            active_character_id: None,
         }
     }
 }

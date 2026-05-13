@@ -12,6 +12,7 @@ use crate::{error::ApiError, state::AppState};
 pub struct AuthContext {
     pub account_id: Uuid,
     pub token: String,
+    pub is_admin: bool,
 }
 
 /// Middleware: requires Authorization: Bearer <token>
@@ -36,9 +37,57 @@ pub async fn require_bearer_auth(
 
     let account_id = account_id.ok_or(ApiError::Unauthorized)?;
 
+    let is_admin: bool = sqlx::query_scalar(
+        r#"SELECT is_admin FROM auth.accounts WHERE account_id = $1::uuid"#,
+    )
+    .bind(account_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+
     req.extensions_mut().insert(AuthContext {
         account_id,
         token,
+        is_admin,
+    });
+
+    Ok(next.run(req).await)
+}
+
+/// Middleware: same as require_bearer_auth but additionally requires is_admin = true.
+pub async fn require_admin_auth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    mut req: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let token = extract_bearer(&headers).ok_or(ApiError::Unauthorized)?;
+
+    let account_id: Option<Uuid> = sqlx::query_scalar(
+        r#"SELECT auth.verify_session($1::text)"#,
+    )
+    .bind(&token)
+    .fetch_one(&state.db)
+    .await?;
+
+    let account_id = account_id.ok_or(ApiError::Unauthorized)?;
+
+    let is_admin: bool = sqlx::query_scalar(
+        r#"SELECT is_admin FROM auth.accounts WHERE account_id = $1::uuid"#,
+    )
+    .bind(account_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+
+    if !is_admin {
+        return Err(ApiError::Forbidden);
+    }
+
+    req.extensions_mut().insert(AuthContext {
+        account_id,
+        token,
+        is_admin,
     });
 
     Ok(next.run(req).await)
