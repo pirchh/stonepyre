@@ -5,7 +5,7 @@ use axum::{
 };
 
 use crate::state::AppState;
-use super::{handlers, middleware::require_bearer_auth};
+use super::{handlers, middleware::{require_admin_auth, require_bearer_auth}};
 
 pub fn routes(state: AppState) -> Router<AppState> {
     // -----------------------------
@@ -42,9 +42,18 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // Apply auth middleware to ALL above
         .layer(middleware::from_fn_with_state(state.clone(), require_bearer_auth));
 
+    // -----------------------------
+    // Admin (bearer + is_admin required)
+    // Easy to firewall: remove or gate this nest in prod if needed.
+    // -----------------------------
+    let admin_v1 = Router::new()
+        .route("/admin/grant-item", post(handlers::admin::grant_item))
+        .layer(middleware::from_fn_with_state(state.clone(), require_admin_auth));
+
     Router::new()
         .route("/health", get(handlers::health::health))
         .route("/v1/market/clock", get(handlers::market::clock))
         .nest("/v1", public_v1)
         .nest("/v1", protected_v1)
+        .nest("/v1", admin_v1)
 }

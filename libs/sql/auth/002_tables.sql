@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS auth.accounts (
 
     password_hash    TEXT NOT NULL,              -- bcrypt (crypt)
     is_disabled      BOOLEAN NOT NULL DEFAULT FALSE,
+    is_admin         BOOLEAN NOT NULL DEFAULT FALSE,
 
     created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),

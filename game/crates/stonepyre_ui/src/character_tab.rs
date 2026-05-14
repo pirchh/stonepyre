@@ -9,13 +9,13 @@ use stonepyre_engine::plugins::world::Player;
 use crate::bag::BagUiState;
 use crate::character_state::CharacterUiState;
 
-const PANEL_WIDTH: f32 = 270.0;
-const PANEL_HEIGHT: f32 = 334.0;
+const PANEL_WIDTH: f32 = 320.0;
+const PANEL_HEIGHT: f32 = 390.0;
 const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 
-const SLOT_SIZE: f32 = 46.0;
+const SLOT_SIZE: f32 = 56.0;
 const SLOT_GAP: f32 = 5.0;
 const EQUIP_AREA_HEIGHT: f32 = PANEL_HEIGHT - (PANEL_PADDING * 2.0);
 
@@ -50,7 +50,6 @@ pub(crate) fn character_tab_panel_sync_system(
 
     if !state.open {
         despawn_all(&mut commands, &mut state, &children_q);
-        bag_ui_state.open_bag_slot = None;
         return;
     }
 
@@ -60,7 +59,7 @@ pub(crate) fn character_tab_panel_sync_system(
 
     if state.root.is_none() || state.needs_rebuild {
         despawn_all(&mut commands, &mut state, &children_q);
-        spawn_character_tab_panel(&mut commands, &asset_server, &mut state);
+        spawn_character_tab_panel(&mut commands, &asset_server, &bag_slots, &mut state);
         state.needs_rebuild = false;
     }
 
@@ -68,21 +67,33 @@ pub(crate) fn character_tab_panel_sync_system(
         text.0 = equipment_slot_text(equip, label.slot_id);
     }
 
-    // Handle bag slot button clicks.
+    // Handle bag slot button clicks — only open if a bag is actually equipped.
     for (bag_btn, interaction) in interaction_q.iter() {
         if *interaction == Interaction::Pressed {
-            if bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot) {
-                bag_ui_state.open_bag_slot = None;
-            } else {
-                bag_ui_state.open_bag_slot = Some(bag_btn.bag_slot);
-                bag_ui_state.needs_rebuild = true;
+            let has_bag = bag_slots
+                .slots
+                .iter()
+                .find(|s| s.bag_slot == bag_btn.bag_slot)
+                .map(|s| s.equipped_item_id.is_some())
+                .unwrap_or(false);
+
+            if !has_bag {
+                // Nothing equipped — clicking does nothing.
+                continue;
             }
+
+            if bag_ui_state.is_open(bag_btn.bag_slot) {
+                bag_ui_state.open[bag_btn.bag_slot as usize] = false;
+            } else {
+                bag_ui_state.open[bag_btn.bag_slot as usize] = true;
+            }
+            bag_ui_state.needs_rebuild = true;
         }
     }
 
     // Update bag slot button backgrounds based on equipped state + open state.
     for (bag_btn, mut bg, _) in bag_btn_q.iter_mut() {
-        let is_open = bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot);
+        let is_open = bag_ui_state.is_open(bag_btn.bag_slot);
         let is_equipped = bag_slots
             .slots
             .iter()
@@ -103,6 +114,7 @@ pub(crate) fn character_tab_panel_sync_system(
 fn spawn_character_tab_panel(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
+    bag_slots: &Res<PlayerBagSlots>,
     state: &mut ResMut<CharacterUiState>,
 ) {
     let root = commands
@@ -193,6 +205,7 @@ fn spawn_character_tab_panel(
 
     // Bag slot 0 (general) — top-left of the panel.
     // Bag slot 1 (skill)   — top-right of the panel.
+    let defs = default_item_defs();
     let bag_configs: [(u8, Val, Val, &str, &str); 2] = [
         (0, Val::Px(PANEL_PADDING), Val::Auto, "Gen\nBag", "character_bag_slot_0"),
         (1, Val::Auto, Val::Px(PANEL_PADDING), "Skill\nBag", "character_bag_slot_1"),
@@ -221,16 +234,40 @@ fn spawn_character_tab_panel(
             ))
             .id();
 
-        let label = commands
-            .spawn((
-                Text::new(slot_label_text),
-                TextFont { font: font.clone(), font_size: 9.0, ..default() },
-                TextColor(Color::srgb(0.60, 0.56, 0.50)),
-                Name::new(format!("character_bag_slot_label_{bag_slot}")),
-            ))
-            .id();
+        // Show the bag's icon if one is equipped and it has an icon, otherwise show the fallback label.
+        let equipped_icon: Option<String> = bag_slots
+            .slots
+            .iter()
+            .find(|s| s.bag_slot == bag_slot)
+            .and_then(|s| s.equipped_item_id.as_ref())
+            .and_then(|id| defs.get(id.as_str()))
+            .and_then(|def| def.inventory_icon.clone());
 
-        commands.entity(btn).add_child(label);
+        if let Some(icon_path) = equipped_icon {
+            let icon = commands
+                .spawn((
+                    ImageNode::new(asset_server.load(icon_path)),
+                    Node {
+                        width: Val::Px(SLOT_SIZE - 8.0),
+                        height: Val::Px(SLOT_SIZE - 8.0),
+                        ..default()
+                    },
+                    Name::new(format!("character_bag_slot_icon_{bag_slot}")),
+                ))
+                .id();
+            commands.entity(btn).add_child(icon);
+        } else {
+            let label = commands
+                .spawn((
+                    Text::new(slot_label_text),
+                    TextFont { font: font.clone(), font_size: 9.0, ..default() },
+                    TextColor(Color::srgb(0.60, 0.56, 0.50)),
+                    Name::new(format!("character_bag_slot_label_{bag_slot}")),
+                ))
+                .id();
+            commands.entity(btn).add_child(label);
+        }
+
         commands.entity(panel).add_child(btn);
     }
 

@@ -3,17 +3,18 @@ use bevy::window::PrimaryWindow;
 
 use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
-use stonepyre_engine::plugins::inventory::Inventory;
+use stonepyre_engine::plugins::inventory::{Inventory, PlayerBagSlots};
 
+use crate::bag::BagUiState;
 use crate::config::UiBindings;
 
-const PANEL_WIDTH: f32 = 270.0;
-const PANEL_HEIGHT: f32 = 334.0;
+const PANEL_WIDTH: f32 = 286.0;
+const PANEL_HEIGHT: f32 = 354.0;
 const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 const GRID_TOP_OFFSET: f32 = PANEL_PADDING;
-const SLOT_SIZE: f32 = 58.0;
+const SLOT_SIZE: f32 = 62.0;
 const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
 const GRID_ROWS: usize = 5;
@@ -98,12 +99,29 @@ pub fn inventory_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<UiBindings>,
     mut state: ResMut<InventoryUiState>,
+    mut bag_ui_state: ResMut<BagUiState>,
+    bag_slots: Res<PlayerBagSlots>,
 ) {
     if keys.just_pressed(binds.toggle_inventory) {
         state.open = !state.open;
         state.needs_rebuild = true;
         state.context_item = None;
         state.context_menu_root = None;
+
+        if state.open {
+            // Auto-open every bag slot that has a bag equipped.
+            for slot in &bag_slots.slots {
+                if slot.equipped_item_id.is_some() {
+                    if let Some(b) = bag_ui_state.open.get_mut(slot.bag_slot as usize) {
+                        *b = true;
+                    }
+                }
+            }
+            bag_ui_state.needs_rebuild = true;
+        } else {
+            // Close all bag panels when inventory closes.
+            bag_ui_state.close_all();
+        }
     }
 }
 

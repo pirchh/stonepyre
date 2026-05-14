@@ -7,6 +7,7 @@ pub mod bag;
 pub mod character_state;
 pub mod character_tab;
 pub mod config;
+pub mod debug_grant;
 pub mod hud;
 pub mod inventory;
 
@@ -80,6 +81,19 @@ impl Plugin for StonepyreUiPlugin {
                 (
                     bag::bag_panel_sync_system,
                     bag::bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
+
+            // Debug item grant panel (admin only, toggled by F2)
+            .insert_resource(debug_grant::IsAdminAccount::default())
+            .insert_resource(debug_grant::DebugGrantUiState::default())
+            .insert_resource(debug_grant::DebugGrantActionQueue::default())
+            .add_systems(
+                Update,
+                (
+                    debug_grant::debug_grant_toggle_system,
+                    debug_grant::debug_grant_panel_sync_system,
                 )
                     .run_if(game_ui_enabled),
             );

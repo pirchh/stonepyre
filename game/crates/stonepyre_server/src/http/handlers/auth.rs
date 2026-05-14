@@ -33,6 +33,7 @@ pub struct LoginReq {
 pub struct AuthResp {
     pub token: String,
     pub account_id: Uuid,
+    pub is_admin: bool,
 }
 
 fn header_str(headers: &HeaderMap, key: &'static str) -> String {
@@ -125,7 +126,7 @@ pub async fn register(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(AuthResp { token, account_id }))
+    Ok(Json(AuthResp { token, account_id, is_admin: false }))
 }
 
 pub async fn login(
@@ -167,7 +168,15 @@ pub async fn login(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(AuthResp { token, account_id }))
+    let is_admin: bool = sqlx::query_scalar(
+        r#"SELECT is_admin FROM auth.accounts WHERE account_id = $1::uuid"#,
+    )
+    .bind(account_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+
+    Ok(Json(AuthResp { token, account_id, is_admin }))
 }
 
 pub async fn logout(

@@ -27,6 +27,8 @@ pub enum NetResult {
     CharacterDeleted(Uuid),
     CharacterWorldJoinAllowed(Uuid),
     CharacterWorldJoinRejected(String),
+    AdminGrantOk { item_id: String, quantity: u32 },
+    AdminGrantErr(String),
     Err(String),
 }
 
@@ -50,6 +52,7 @@ pub fn pump_net_results(
     mut st: ResMut<BootState>,
     mut next: ResMut<NextState<Screen>>,
     net: Res<NetRuntime>,
+    mut grant_state: ResMut<stonepyre_ui::debug_grant::DebugGrantUiState>,
 ) {
     loop {
         // avoid holding the lock across our whole match handler
@@ -106,6 +109,15 @@ pub fn pump_net_results(
                 st.error_banner = Some(msg);
                 st.busy = false;
             }
+            NetResult::AdminGrantOk { item_id, quantity } => {
+                let msg = format!("Granted {}x {}", quantity, item_id);
+                grant_state.status = msg;
+                grant_state.needs_rebuild = true;
+            }
+            NetResult::AdminGrantErr(msg) => {
+                grant_state.status = format!("Error: {}", msg);
+                grant_state.needs_rebuild = true;
+            }
             NetResult::Err(msg) => {
                 st.error_banner = Some(msg);
                 st.busy = false;
@@ -139,6 +151,8 @@ struct LoginReq {
 struct AuthResp {
     token: String,
     account_id: Uuid,
+    #[serde(default)]
+    is_admin: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,6 +221,7 @@ pub fn spawn_register(
                             let _ = tx.send(NetResult::AuthOk(Session {
                                 token: a.token,
                                 account_id: a.account_id,
+                                is_admin: a.is_admin,
                             }));
                         }
                         Err(e) => {
@@ -246,6 +261,7 @@ pub fn spawn_login(st: &BootState, net: &NetRuntime, email: String, password: St
                             let _ = tx.send(NetResult::AuthOk(Session {
                                 token: a.token,
                                 account_id: a.account_id,
+                                is_admin: a.is_admin,
                             }));
                         }
                         Err(e) => {
@@ -505,6 +521,66 @@ pub fn spawn_delete_character(st: &BootState, net: &NetRuntime, token: String, i
                 }
                 Err(e) => {
                     let _ = tx.send(NetResult::Err(format!("delete character error: {e}")));
+                }
+            }
+        })
+        .detach();
+}
+
+#[derive(Debug, Serialize)]
+struct AdminGrantReq {
+    character_id: Uuid,
+    item_id: String,
+    quantity: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdminGrantResp {
+    item_id: String,
+    quantity: u32,
+    #[allow(dead_code)]
+    new_quantity: i64,
+}
+
+pub fn spawn_admin_grant_item(
+    base_url: String,
+    token: String,
+    character_id: Uuid,
+    item_id: String,
+    quantity: u32,
+    tx: Sender<NetResult>,
+) {
+    IoTaskPool::get()
+        .spawn(async move {
+            let c = client();
+            let res = c
+                .post(format!("{}/v1/admin/grant-item", base_url))
+                .header("Authorization", bearer(&token))
+                .json(&AdminGrantReq { character_id, item_id, quantity })
+                .send();
+
+            match res {
+                Ok(r) => {
+                    let status = r.status();
+                    if !status.is_success() {
+                        let body = r.text().unwrap_or_default();
+                        let _ = tx.send(NetResult::AdminGrantErr(format!("{}: {}", status, body)));
+                        return;
+                    }
+                    match r.json::<AdminGrantResp>() {
+                        Ok(resp) => {
+                            let _ = tx.send(NetResult::AdminGrantOk {
+                                item_id: resp.item_id,
+                                quantity: resp.quantity,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(NetResult::AdminGrantErr(format!("parse error: {e}")));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(NetResult::AdminGrantErr(format!("request error: {e}")));
                 }
             }
         })
