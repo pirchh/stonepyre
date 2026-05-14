@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
+use stonepyre_engine::plugins::inventory::PlayerBagSlots;
 
+use crate::bag::BagUiState;
 use crate::character_state::CharacterUiState;
 use crate::config::UiBindings;
 use crate::inventory::InventoryUiState;
@@ -277,6 +279,8 @@ pub(crate) fn hud_interactions_system(
     mut q: Query<(&Interaction, &HudButton), Changed<Interaction>>,
     mut inv_state: ResMut<InventoryUiState>,
     mut char_state: ResMut<CharacterUiState>,
+    mut bag_ui_state: ResMut<BagUiState>,
+    bag_slots: Res<PlayerBagSlots>,
 ) {
     for (interaction, btn) in q.iter_mut() {
         if *interaction != Interaction::Pressed {
@@ -284,7 +288,9 @@ pub(crate) fn hud_interactions_system(
         }
 
         match btn.action {
-            HudAction::ToggleInventory => open_inventory(&mut inv_state, &mut char_state),
+            HudAction::ToggleInventory => {
+                open_inventory(&mut inv_state, &mut char_state, &mut bag_ui_state, &bag_slots);
+            }
             HudAction::ToggleCharacter => open_character(&mut inv_state, &mut char_state),
             _ => {}
         }
@@ -372,19 +378,37 @@ pub(crate) fn hud_keyboard_toggles(
     binds: Res<UiBindings>,
     mut inv_state: ResMut<InventoryUiState>,
     mut char_state: ResMut<CharacterUiState>,
+    mut bag_ui_state: ResMut<BagUiState>,
+    bag_slots: Res<PlayerBagSlots>,
 ) {
     if keys.just_pressed(binds.toggle_inventory) {
-        open_inventory(&mut inv_state, &mut char_state);
+        open_inventory(&mut inv_state, &mut char_state, &mut bag_ui_state, &bag_slots);
     }
     if keys.just_pressed(binds.toggle_character) {
         open_character(&mut inv_state, &mut char_state);
     }
 }
 
-fn open_inventory(inv_state: &mut InventoryUiState, char_state: &mut CharacterUiState) {
+fn open_inventory(
+    inv_state: &mut InventoryUiState,
+    char_state: &mut CharacterUiState,
+    bag_ui_state: &mut BagUiState,
+    bag_slots: &PlayerBagSlots,
+) {
     inv_state.open = !inv_state.open;
     if inv_state.open {
         char_state.open = false;
+        // Auto-open all equipped bag panels.
+        for slot in &bag_slots.slots {
+            if slot.equipped_item_id.is_some() {
+                if let Some(b) = bag_ui_state.open.get_mut(slot.bag_slot as usize) {
+                    *b = true;
+                }
+            }
+        }
+        bag_ui_state.needs_rebuild = true;
+    } else {
+        bag_ui_state.close_all();
     }
     inv_state.needs_rebuild = true;
     char_state.needs_rebuild = true;
