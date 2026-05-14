@@ -61,7 +61,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "backpack_wooden".to_string(),
             name: "Wooden Backpack".to_string(),
-            inventory_icon: None,
+            inventory_icon: Some("inventory/items/backpack_wooden.png".to_string()),
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: false,
@@ -83,7 +83,7 @@ pub fn default_item_defs() -> ItemDefs {
         ItemDef {
             id: "sack_woodcutting".to_string(),
             name: "Woodcutting Sack".to_string(),
-            inventory_icon: None,
+            inventory_icon: Some("inventory/items/sack_woodcutting.png".to_string()),
             stack_policy: StackPolicy {
                 stack_in_inventory: false,
                 stack_in_bank: false,
