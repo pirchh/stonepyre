@@ -291,7 +291,9 @@ pub(crate) fn hud_interactions_system(
             HudAction::ToggleInventory => {
                 open_inventory(&mut inv_state, &mut char_state, &mut bag_ui_state, &bag_slots);
             }
-            HudAction::ToggleCharacter => open_character(&mut inv_state, &mut char_state),
+            HudAction::ToggleCharacter => {
+                open_character(&mut inv_state, &mut char_state, &mut bag_ui_state);
+            }
             _ => {}
         }
     }
@@ -385,7 +387,7 @@ pub(crate) fn hud_keyboard_toggles(
         open_inventory(&mut inv_state, &mut char_state, &mut bag_ui_state, &bag_slots);
     }
     if keys.just_pressed(binds.toggle_character) {
-        open_character(&mut inv_state, &mut char_state);
+        open_character(&mut inv_state, &mut char_state, &mut bag_ui_state);
     }
 }
 
@@ -414,10 +416,19 @@ fn open_inventory(
     char_state.needs_rebuild = true;
 }
 
-fn open_character(inv_state: &mut InventoryUiState, char_state: &mut CharacterUiState) {
+fn open_character(
+    inv_state: &mut InventoryUiState,
+    char_state: &mut CharacterUiState,
+    bag_ui_state: &mut BagUiState,
+) {
     char_state.open = !char_state.open;
     if char_state.open {
         inv_state.open = false;
+        // Closing inventory — also close bags (they were open from inv or not at all).
+        bag_ui_state.close_all();
+    } else {
+        // Character panel closing — close bags too.
+        bag_ui_state.close_all();
     }
     inv_state.needs_rebuild = true;
     char_state.needs_rebuild = true;

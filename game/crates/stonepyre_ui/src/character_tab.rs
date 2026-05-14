@@ -50,7 +50,6 @@ pub(crate) fn character_tab_panel_sync_system(
 
     if !state.open {
         despawn_all(&mut commands, &mut state, &children_q);
-        bag_ui_state.close_all();
         return;
     }
 
