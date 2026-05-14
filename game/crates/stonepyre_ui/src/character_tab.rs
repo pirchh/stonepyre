@@ -60,7 +60,7 @@ pub(crate) fn character_tab_panel_sync_system(
 
     if state.root.is_none() || state.needs_rebuild {
         despawn_all(&mut commands, &mut state, &children_q);
-        spawn_character_tab_panel(&mut commands, &asset_server, &mut state);
+        spawn_character_tab_panel(&mut commands, &asset_server, &bag_slots, &mut state);
         state.needs_rebuild = false;
     }
 
@@ -115,6 +115,7 @@ pub(crate) fn character_tab_panel_sync_system(
 fn spawn_character_tab_panel(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
+    bag_slots: &Res<PlayerBagSlots>,
     state: &mut ResMut<CharacterUiState>,
 ) {
     let root = commands
@@ -205,6 +206,7 @@ fn spawn_character_tab_panel(
 
     // Bag slot 0 (general) — top-left of the panel.
     // Bag slot 1 (skill)   — top-right of the panel.
+    let defs = default_item_defs();
     let bag_configs: [(u8, Val, Val, &str, &str); 2] = [
         (0, Val::Px(PANEL_PADDING), Val::Auto, "Gen\nBag", "character_bag_slot_0"),
         (1, Val::Auto, Val::Px(PANEL_PADDING), "Skill\nBag", "character_bag_slot_1"),
@@ -233,16 +235,40 @@ fn spawn_character_tab_panel(
             ))
             .id();
 
-        let label = commands
-            .spawn((
-                Text::new(slot_label_text),
-                TextFont { font: font.clone(), font_size: 9.0, ..default() },
-                TextColor(Color::srgb(0.60, 0.56, 0.50)),
-                Name::new(format!("character_bag_slot_label_{bag_slot}")),
-            ))
-            .id();
+        // Show the bag's icon if one is equipped and it has an icon, otherwise show the fallback label.
+        let equipped_icon: Option<String> = bag_slots
+            .slots
+            .iter()
+            .find(|s| s.bag_slot == bag_slot)
+            .and_then(|s| s.equipped_item_id.as_ref())
+            .and_then(|id| defs.get(id.as_str()))
+            .and_then(|def| def.inventory_icon.clone());
 
-        commands.entity(btn).add_child(label);
+        if let Some(icon_path) = equipped_icon {
+            let icon = commands
+                .spawn((
+                    ImageNode::new(asset_server.load(icon_path)),
+                    Node {
+                        width: Val::Px(SLOT_SIZE - 8.0),
+                        height: Val::Px(SLOT_SIZE - 8.0),
+                        ..default()
+                    },
+                    Name::new(format!("character_bag_slot_icon_{bag_slot}")),
+                ))
+                .id();
+            commands.entity(btn).add_child(icon);
+        } else {
+            let label = commands
+                .spawn((
+                    Text::new(slot_label_text),
+                    TextFont { font: font.clone(), font_size: 9.0, ..default() },
+                    TextColor(Color::srgb(0.60, 0.56, 0.50)),
+                    Name::new(format!("character_bag_slot_label_{bag_slot}")),
+                ))
+                .id();
+            commands.entity(btn).add_child(label);
+        }
+
         commands.entity(panel).add_child(btn);
     }
 
