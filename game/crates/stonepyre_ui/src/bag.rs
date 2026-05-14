@@ -5,6 +5,8 @@ use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{PlayerBagSlotState, PlayerBagSlots};
 
+use crate::drag::{DragState, DragTarget};
+
 const PANEL_WIDTH: f32 = 226.0;
 const PANEL_PADDING: f32 = 8.0;
 const SLOT_SIZE: f32 = 56.0;
@@ -74,6 +76,10 @@ pub struct BagItemActionQueue {
 pub enum BagItemAction {
     Take { bag_slot: u8, bag_item_slot_idx: usize },
     UnequipBag { bag_slot: u8 },
+    /// Move an item from main inventory into this bag (drag inv→bag).
+    PutItem { bag_slot: u8, inventory_slot_idx: usize },
+    /// Move an item from one bag to another (drag bag→bag).
+    MoveItem { from_bag_slot: u8, from_item_slot: usize, to_bag_slot: u8 },
 }
 
 #[derive(Component)]
@@ -120,6 +126,8 @@ pub fn bag_panel_sync_system(
     mut blocker: ResMut<WorldInteractionBlocker>,
     bag_slots: Res<PlayerBagSlots>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    drag_state: Res<DragState>,
+    mut slot_bg_q: Query<(&BagItemSlotButton, &mut BackgroundColor)>,
 ) {
     let any_open = state.open.iter().any(|&o| o);
     if !any_open {
@@ -155,6 +163,20 @@ pub fn bag_panel_sync_system(
         }
         state.needs_rebuild = false;
     }
+
+    // Highlight bag slots that are valid drop targets while dragging.
+    for (slot_btn, mut bg) in slot_bg_q.iter_mut() {
+        let is_drop_target = matches!(
+            drag_state.hovered_drop_target.as_ref(),
+            Some(DragTarget::Bag { bag_slot, slot_idx })
+                if *bag_slot == slot_btn.bag_slot && *slot_idx == slot_btn.slot_idx
+        );
+        if is_drop_target {
+            *bg = BackgroundColor(Color::srgba(0.10, 0.24, 0.12, 0.98));
+        } else {
+            *bg = BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96));
+        }
+    }
 }
 
 pub fn bag_context_menu_system(
@@ -165,7 +187,6 @@ pub fn bag_context_menu_system(
     mut state: ResMut<BagUiState>,
     mut action_queue: ResMut<BagItemActionQueue>,
     bag_slots: Res<PlayerBagSlots>,
-    mut slot_q: Query<(&Interaction, &BagItemSlotButton), (Changed<Interaction>, With<Button>)>,
     mut option_q: Query<(&Interaction, &BagContextOptionButton), (Changed<Interaction>, With<Button>)>,
 ) {
     if !state.open.iter().any(|&o| o) {
@@ -177,33 +198,7 @@ pub fn bag_context_menu_system(
         return;
     }
 
-    // Left-click on a filled slot opens the context menu.
-    for (interaction, slot_btn) in &mut slot_q {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
-        let Some(slot_data) = bag_slots.slots.iter().find(|s| s.bag_slot == slot_btn.bag_slot) else {
-            continue;
-        };
-
-        let Some(item) = slot_data.items.iter().find(|i| i.slot_idx == slot_btn.slot_idx) else {
-            close_bag_context_menu(&mut commands, &mut state);
-            continue;
-        };
-
-        let ctx = BagContextItem {
-            bag_slot: slot_btn.bag_slot,
-            bag_item_slot_idx: item.slot_idx,
-            item_id: item.item_id.clone(),
-            display_name: item_display_name(&item.item_id),
-            quantity: item.quantity,
-        };
-
-        let menu_pos = bag_slot_menu_pos(&windows);
-        open_bag_context_menu(&mut commands, &asset_server, &mut state, ctx, menu_pos, true);
-    }
-
+    // Left-click primary action (Take) and drag are now handled by the drag system (drag.rs).
     // Right-click on any slot in an open bag panel.
     if mouse.just_pressed(MouseButton::Right) {
         let open_pairs = open_bag_panel_bottoms(&state, &bag_slots);
@@ -620,6 +615,17 @@ fn compute_panel_height(bag_slots: &PlayerBagSlots, bag_slot: u8) -> f32 {
             PANEL_PADDING * 2.0 + 24.0 + (rows as f32 * (SLOT_SIZE + SLOT_GAP)) + SLOT_GAP
         })
         .unwrap_or(100.0)
+}
+
+/// Returns `(bag_slot, slot_idx)` for whichever open bag panel the cursor is over.
+/// Used by the drag system for hit-testing begin/drop targets.
+pub(crate) fn bag_slot_idx_at_cursor(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    state: &BagUiState,
+    bag_slots: &PlayerBagSlots,
+) -> Option<(u8, usize)> {
+    let open_pairs = open_bag_panel_bottoms(state, bag_slots);
+    bag_slot_at_cursor(windows, &open_pairs, bag_slots).map(|(bs, si, _)| (bs, si))
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {

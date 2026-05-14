@@ -41,6 +41,17 @@ pub enum ClientMsg {
         bag_slot: u8,
         bag_item_slot_idx: usize,
     },
+    /// Swap two slots within the main inventory.
+    SwapInvSlots {
+        from_slot: usize,
+        to_slot: usize,
+    },
+    /// Move an item from one equipped bag to another.
+    BagMoveItem {
+        from_bag_slot: u8,
+        from_item_slot: usize,
+        to_bag_slot: u8,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

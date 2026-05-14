@@ -175,6 +175,27 @@ pub fn send_bag_take_item_to_server(
     tx.send(GameNetCommand::BagTakeItem { bag_slot, bag_item_slot_idx }).is_ok()
 }
 
+pub fn send_swap_inv_slots_to_server(
+    game_net: &GameNetRuntime,
+    from_slot: usize,
+    to_slot: usize,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::SwapInvSlots { from_slot, to_slot }).is_ok()
+}
+
+pub fn send_bag_move_item_to_server(
+    game_net: &GameNetRuntime,
+    from_bag_slot: u8,
+    from_item_slot: usize,
+    to_bag_slot: u8,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::BagMoveItem { from_bag_slot, from_item_slot, to_bag_slot }).is_ok()
+}
+
 fn run_game_ws(
     url: String,
     token: String,
@@ -299,6 +320,22 @@ fn run_game_ws(
                     socket
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws bag take item send failed: {e}"))?;
+                }
+                GameNetCommand::SwapInvSlots { from_slot, to_slot } => {
+                    let msg = ClientMsg::SwapInvSlots { from_slot, to_slot };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws swap inv slots serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws swap inv slots send failed: {e}"))?;
+                }
+                GameNetCommand::BagMoveItem { from_bag_slot, from_item_slot, to_bag_slot } => {
+                    let msg = ClientMsg::BagMoveItem { from_bag_slot, from_item_slot, to_bag_slot };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bag move item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bag move item send failed: {e}"))?;
                 }
             }
         }

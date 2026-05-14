@@ -7,6 +7,7 @@ use stonepyre_engine::plugins::inventory::{Inventory, PlayerBagSlots};
 
 use crate::bag::BagUiState;
 use crate::config::UiBindings;
+use crate::drag::{DragState, DragTarget};
 
 const PANEL_WIDTH: f32 = 286.0;
 const PANEL_HEIGHT: f32 = 354.0;
@@ -50,6 +51,8 @@ pub struct InventoryItemActionRequest {
 pub enum InventoryItemAction {
     Drop,
     EquipBag { bag_slot: u8 },
+    /// Swap two main-inventory slots (drag-and-drop rearrange).
+    MoveToSlot { to_slot: usize },
 }
 
 #[derive(Clone, Debug)]
@@ -135,6 +138,7 @@ pub(crate) fn inventory_panel_sync_system(
     slot_icon_q: Query<(Entity, &SlotIcon)>,
     slot_fallback_q: Query<(Entity, &SlotFallbackLabel)>,
     mut slot_bg_q: Query<(&InventorySlotButton, &mut BackgroundColor)>,
+    drag_state: Res<DragState>,
 ) {
     if !state.open {
         despawn_all(&mut commands, &mut state);
@@ -152,7 +156,7 @@ pub(crate) fn inventory_panel_sync_system(
     }
 
     update_slot_items(&mut commands, &asset_server, &inv, slot_icon_q, slot_fallback_q);
-    update_slot_highlights(&state, &mut slot_bg_q);
+    update_slot_highlights(&state, &drag_state, &mut slot_bg_q);
 }
 
 pub(crate) fn inventory_item_context_menu_system(
@@ -163,7 +167,6 @@ pub(crate) fn inventory_item_context_menu_system(
     mut state: ResMut<InventoryUiState>,
     mut action_queue: ResMut<InventoryItemActionQueue>,
     player_q: Query<&Inventory>,
-    mut slot_q: Query<(&Interaction, &InventorySlotButton), (Changed<Interaction>, With<Button>)>,
     mut option_q: Query<(&Interaction, &InventoryContextOptionButton), (Changed<Interaction>, With<Button>)>,
 ) {
     if !state.open {
@@ -172,8 +175,7 @@ pub(crate) fn inventory_item_context_menu_system(
 
     let Ok(inv) = player_q.single() else { return; };
 
-    // OSRS-ish fallback: clicking the world while an item is selected cancels Use,
-    // but does not block the world click from walking/interacting.
+    // Clicking outside the panel while an item is "selected for use" cancels it.
     if mouse.just_pressed(MouseButton::Left) && !cursor_over_inventory_panel(&windows) {
         state.selected_use_item = None;
         state.status_message.clear();
@@ -181,23 +183,8 @@ pub(crate) fn inventory_item_context_menu_system(
         return;
     }
 
-    // OSRS-ish primary action: left-click uses/selects the item.
-    for (interaction, slot) in &mut slot_q {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
-        let Some(item) = inventory_item_for_slot(inv, slot.idx) else {
-            close_context_menu(&mut commands, &mut state);
-            continue;
-        };
-
-        state.selected_use_item = Some(item.clone());
-        state.status_message = format!("Use {} ->", item.display_name);
-        close_context_menu(&mut commands, &mut state);
-    }
-
-    // Secondary action: right-click opens the item context menu beside the slot.
+    // Left-click primary action is now handled by the drag system (drag.rs).
+    // Right-click opens the item context menu beside the slot.
     if mouse.just_pressed(MouseButton::Right) {
         if let Some((slot_idx, menu_pos)) = inventory_slot_at_cursor(&windows) {
             match inventory_item_for_slot(inv, slot_idx) {
@@ -566,12 +553,19 @@ fn update_slot_items(
 
 fn update_slot_highlights(
     state: &InventoryUiState,
+    drag_state: &DragState,
     slot_bg_q: &mut Query<(&InventorySlotButton, &mut BackgroundColor)>,
 ) {
     let selected_slot_idx = state.selected_use_item.as_ref().map(|item| item.slot_idx);
+    let drag_target_slot = match drag_state.hovered_drop_target.as_ref() {
+        Some(DragTarget::Inventory { slot_idx }) => Some(*slot_idx),
+        _ => None,
+    };
 
     for (slot, mut bg) in slot_bg_q.iter_mut() {
-        *bg = if Some(slot.idx) == selected_slot_idx {
+        *bg = if Some(slot.idx) == drag_target_slot {
+            BackgroundColor(Color::srgba(0.10, 0.24, 0.12, 0.98))
+        } else if Some(slot.idx) == selected_slot_idx {
             BackgroundColor(Color::srgba(0.16, 0.18, 0.30, 0.98))
         } else {
             BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96))
@@ -579,7 +573,7 @@ fn update_slot_highlights(
     }
 }
 
-fn inventory_item_for_slot(inv: &Inventory, idx: usize) -> Option<InventoryContextItem> {
+pub(crate) fn inventory_item_for_slot(inv: &Inventory, idx: usize) -> Option<InventoryContextItem> {
     let stk = inv.container.slots.get(idx)?.as_ref()?;
     Some(InventoryContextItem {
         slot_idx: idx,
@@ -587,6 +581,11 @@ fn inventory_item_for_slot(inv: &Inventory, idx: usize) -> Option<InventoryConte
         display_name: item_display_name(&stk.id),
         quantity: stk.qty,
     })
+}
+
+/// Returns just the slot index under the cursor — used by the drag system.
+pub(crate) fn inv_slot_idx_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Option<usize> {
+    inventory_slot_at_cursor(windows).map(|(idx, _)| idx)
 }
 
 fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Option<(usize, Vec2)> {
