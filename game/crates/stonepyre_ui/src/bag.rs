@@ -7,13 +7,13 @@ use stonepyre_engine::plugins::inventory::{PlayerBagSlotState, PlayerBagSlots};
 
 use crate::drag::{DragState, DragTarget};
 
-const PANEL_WIDTH: f32 = 226.0;
-const PANEL_PADDING: f32 = 8.0;
-const SLOT_SIZE: f32 = 56.0;
-const SLOT_GAP: f32 = 5.0;
+const PANEL_WIDTH: f32 = 286.0;
+const PANEL_PADDING: f32 = 10.0;
+const SLOT_SIZE: f32 = 62.0;
+const SLOT_GAP: f32 = 6.0;
 const GRID_COLS: usize = 4;
 const MENU_WIDTH: f32 = 180.0;
-const ITEM_ICON_SIZE: f32 = 46.0;
+const ITEM_ICON_SIZE: f32 = 48.0;
 
 // Bag panels sit to the left of the inventory panel (inv right=10, inv width=286, gap=10).
 const PANEL_RIGHT: f32 = 306.0;
