@@ -5,26 +5,56 @@ use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{PlayerBagSlotState, PlayerBagSlots};
 
-const PANEL_WIDTH: f32 = 210.0;
+const PANEL_WIDTH: f32 = 226.0;
 const PANEL_PADDING: f32 = 8.0;
-const SLOT_SIZE: f32 = 52.0;
+const SLOT_SIZE: f32 = 56.0;
 const SLOT_GAP: f32 = 5.0;
 const GRID_COLS: usize = 4;
 const MENU_WIDTH: f32 = 180.0;
-const ITEM_ICON_SIZE: f32 = 42.0;
+const ITEM_ICON_SIZE: f32 = 46.0;
 
-// Bag panel sits to the left of the character/inventory panel.
-const PANEL_RIGHT: f32 = 290.0;
+// Bag panels sit to the left of the inventory panel (inv right=10, inv width=286, gap=10).
+const PANEL_RIGHT: f32 = 306.0;
 const PANEL_BOTTOM: f32 = 88.0;
+const PANEL_GAP: f32 = 8.0; // vertical gap between stacked bag panels
 
-#[derive(Resource, Default)]
+// ── State ─────────────────────────────────────────────────────────────────────
+
+#[derive(Resource)]
 pub struct BagUiState {
-    pub open_bag_slot: Option<u8>,
-    pub root: Option<Entity>,
+    /// One entry per bag slot (index = bag_slot u8).
+    /// true = panel is open.
+    pub open: [bool; 2],
+    pub roots: [Option<Entity>; 2],
     pub context_menu_root: Option<Entity>,
     pub context_item: Option<BagContextItem>,
     pub needs_rebuild: bool,
 }
+
+impl Default for BagUiState {
+    fn default() -> Self {
+        Self {
+            open: [false; 2],
+            roots: [None; 2],
+            context_menu_root: None,
+            context_item: None,
+            needs_rebuild: false,
+        }
+    }
+}
+
+impl BagUiState {
+    pub fn is_open(&self, bag_slot: u8) -> bool {
+        self.open.get(bag_slot as usize).copied().unwrap_or(false)
+    }
+
+    pub fn close_all(&mut self) {
+        self.open = [false; 2];
+        self.needs_rebuild = true;
+    }
+}
+
+// ── Supporting types ──────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub struct BagContextItem {
@@ -47,7 +77,9 @@ pub enum BagItemAction {
 }
 
 #[derive(Component)]
-struct BagPanelRoot;
+struct BagPanelRoot {
+    bag_slot: u8,
+}
 
 #[derive(Component)]
 pub(crate) struct BagItemSlotButton {
@@ -79,6 +111,8 @@ enum BagContextOption {
     UnequipBag,
 }
 
+// ── Systems ───────────────────────────────────────────────────────────────────
+
 pub fn bag_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -87,19 +121,37 @@ pub fn bag_panel_sync_system(
     bag_slots: Res<PlayerBagSlots>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let Some(open_slot) = state.open_bag_slot else {
-        despawn_bag_panel(&mut commands, &mut state);
+    let any_open = state.open.iter().any(|&o| o);
+    if !any_open {
+        despawn_all_bag_panels(&mut commands, &mut state);
         return;
-    };
+    }
 
-    blocker.0 = blocker.0 || cursor_over_bag_panel(&windows);
+    blocker.0 = blocker.0 || cursor_over_any_bag_panel(&windows, &state, &bag_slots);
 
-    let slot_data = bag_slots.slots.iter().find(|s| s.bag_slot == open_slot);
+    if state.needs_rebuild {
+        despawn_all_bag_panels(&mut commands, &mut state);
 
-    if state.root.is_none() || state.needs_rebuild {
-        despawn_bag_panel(&mut commands, &mut state);
-        if let Some(data) = slot_data {
-            spawn_bag_panel(&mut commands, &asset_server, &mut state, data);
+        // Compute bottom positions: slot 0 (general) at the base, slot 1 (skill) above it.
+        let slot0_height = if state.open[0] {
+            compute_panel_height(&bag_slots, 0)
+        } else {
+            0.0
+        };
+
+        for bag_slot in 0u8..2u8 {
+            if !state.open[bag_slot as usize] {
+                continue;
+            }
+            let bottom = if bag_slot == 0 {
+                PANEL_BOTTOM
+            } else {
+                PANEL_BOTTOM + slot0_height + PANEL_GAP
+            };
+            if let Some(slot_data) = bag_slots.slots.iter().find(|s| s.bag_slot == bag_slot) {
+                let root = spawn_bag_panel(&mut commands, &asset_server, slot_data, bottom);
+                state.roots[bag_slot as usize] = Some(root);
+            }
         }
         state.needs_rebuild = false;
     }
@@ -116,15 +168,16 @@ pub fn bag_context_menu_system(
     mut slot_q: Query<(&Interaction, &BagItemSlotButton), (Changed<Interaction>, With<Button>)>,
     mut option_q: Query<(&Interaction, &BagContextOptionButton), (Changed<Interaction>, With<Button>)>,
 ) {
-    let Some(open_slot) = state.open_bag_slot else {
+    if !state.open.iter().any(|&o| o) {
         return;
-    };
+    }
 
-    if mouse.just_pressed(MouseButton::Left) && !cursor_over_bag_panel(&windows) {
+    if mouse.just_pressed(MouseButton::Left) && !cursor_over_any_bag_panel(&windows, &state, &bag_slots) {
         close_bag_context_menu(&mut commands, &mut state);
         return;
     }
 
+    // Left-click on a filled slot opens the context menu.
     for (interaction, slot_btn) in &mut slot_q {
         if *interaction != Interaction::Pressed {
             continue;
@@ -140,26 +193,30 @@ pub fn bag_context_menu_system(
         };
 
         let ctx = BagContextItem {
-            bag_slot: open_slot,
+            bag_slot: slot_btn.bag_slot,
             bag_item_slot_idx: item.slot_idx,
             item_id: item.item_id.clone(),
             display_name: item_display_name(&item.item_id),
             quantity: item.quantity,
         };
 
-        let menu_pos = bag_slot_menu_pos(&windows, slot_btn.slot_idx, slot_data.items.len());
+        let menu_pos = bag_slot_menu_pos(&windows);
         open_bag_context_menu(&mut commands, &asset_server, &mut state, ctx, menu_pos, true);
     }
 
+    // Right-click on any slot in an open bag panel.
     if mouse.just_pressed(MouseButton::Right) {
-        if let Some((slot_idx, menu_pos)) = bag_slot_at_cursor(&windows, open_slot, &bag_slots) {
-            let Some(slot_data) = bag_slots.slots.iter().find(|s| s.bag_slot == open_slot) else {
+        let open_pairs = open_bag_panel_bottoms(&state, &bag_slots);
+        if let Some((bag_slot, slot_idx, menu_pos)) =
+            bag_slot_at_cursor(&windows, &open_pairs, &bag_slots)
+        {
+            let Some(slot_data) = bag_slots.slots.iter().find(|s| s.bag_slot == bag_slot) else {
                 return;
             };
             match slot_data.items.iter().find(|i| i.slot_idx == slot_idx) {
                 Some(item) => {
                     let ctx = BagContextItem {
-                        bag_slot: open_slot,
+                        bag_slot,
                         bag_item_slot_idx: item.slot_idx,
                         item_id: item.item_id.clone(),
                         display_name: item_display_name(&item.item_id),
@@ -195,32 +252,33 @@ pub fn bag_context_menu_system(
                 action_queue.actions.push(BagItemAction::UnequipBag {
                     bag_slot: item.bag_slot,
                 });
-                state.open_bag_slot = None;
+                state.open[item.bag_slot as usize] = false;
+                state.needs_rebuild = true;
                 close_bag_context_menu(&mut commands, &mut state);
             }
         }
     }
 }
 
+// ── Panel construction ────────────────────────────────────────────────────────
+
 fn spawn_bag_panel(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
-    state: &mut ResMut<BagUiState>,
     slot_data: &PlayerBagSlotState,
-) {
-    let item_count = slot_data.items.len();
-    let rows = if item_count == 0 { 0 } else { (slot_data.slots_total + GRID_COLS - 1) / GRID_COLS };
-    let grid_rows = rows.max(1);
-    let panel_height = PANEL_PADDING * 2.0 + 24.0 + (grid_rows as f32 * (SLOT_SIZE + SLOT_GAP)) + SLOT_GAP;
+    bottom: f32,
+) -> Entity {
+    let grid_rows = compute_grid_rows(slot_data.slots_total);
+    let panel_h = PANEL_PADDING * 2.0 + 24.0 + (grid_rows as f32 * (SLOT_SIZE + SLOT_GAP)) + SLOT_GAP;
 
     let root = commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 right: Val::Px(PANEL_RIGHT),
-                bottom: Val::Px(PANEL_BOTTOM),
+                bottom: Val::Px(bottom),
                 width: Val::Px(PANEL_WIDTH),
-                height: Val::Px(panel_height),
+                height: Val::Px(panel_h),
                 padding: UiRect::all(Val::Px(PANEL_PADDING)),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
@@ -229,8 +287,8 @@ fn spawn_bag_panel(
                 ..default()
             },
             BackgroundColor(Color::srgba(0.030, 0.028, 0.025, 0.94)),
-            BagPanelRoot,
-            Name::new("bag_panel_root"),
+            BagPanelRoot { bag_slot: slot_data.bag_slot },
+            Name::new(format!("bag_panel_root_{}", slot_data.bag_slot)),
         ))
         .id();
 
@@ -322,7 +380,11 @@ fn spawn_bag_panel(
                     let icon = commands
                         .spawn((
                             ImageNode::new(asset_server.load(path)),
-                            Node { width: Val::Px(ITEM_ICON_SIZE), height: Val::Px(ITEM_ICON_SIZE), ..default() },
+                            Node {
+                                width: Val::Px(ITEM_ICON_SIZE),
+                                height: Val::Px(ITEM_ICON_SIZE),
+                                ..default()
+                            },
                             Pickable::IGNORE,
                             BagSlotIcon { slot_idx },
                             Name::new(format!("bag_slot_icon_{slot_idx}")),
@@ -334,7 +396,7 @@ fn spawn_bag_panel(
                         .spawn((
                             Text::new(item_display_name(&item_data.item_id)),
                             TextFont { font: font.clone(), font_size: 9.0, ..default() },
-                            TextColor(Color::srgb(0.82, 0.78, 0.68)),
+                            TextColor(Color::srgb(0.88, 0.84, 0.72)),
                             Pickable::IGNORE,
                             BagSlotFallbackLabel { slot_idx },
                             Name::new(format!("bag_slot_label_{slot_idx}")),
@@ -348,7 +410,7 @@ fn spawn_bag_panel(
         }
     }
 
-    state.root = Some(root);
+    root
 }
 
 fn open_bag_context_menu(
@@ -361,7 +423,10 @@ fn open_bag_context_menu(
 ) {
     close_bag_context_menu(commands, state);
 
-    let Some(root) = state.root else { return; };
+    // Attach to the correct bag panel root.
+    let Some(root) = state.roots.get(item.bag_slot as usize).and_then(|r| *r) else {
+        return;
+    };
 
     let menu = commands
         .spawn((
@@ -445,10 +510,12 @@ fn close_bag_context_menu(commands: &mut Commands, state: &mut ResMut<BagUiState
     state.context_item = None;
 }
 
-fn despawn_bag_panel(commands: &mut Commands, state: &mut ResMut<BagUiState>) {
-    if let Some(root) = state.root.take() {
-        if let Ok(mut ec) = commands.get_entity(root) {
-            ec.despawn();
+fn despawn_all_bag_panels(commands: &mut Commands, state: &mut ResMut<BagUiState>) {
+    for root_opt in state.roots.iter_mut() {
+        if let Some(root) = root_opt.take() {
+            if let Ok(mut ec) = commands.get_entity(root) {
+                ec.despawn();
+            }
         }
     }
     state.context_menu_root = None;
@@ -456,61 +523,103 @@ fn despawn_bag_panel(commands: &mut Commands, state: &mut ResMut<BagUiState>) {
     state.needs_rebuild = false;
 }
 
-fn cursor_over_bag_panel(windows: &Query<&Window, With<PrimaryWindow>>) -> bool {
+// ── Hit-testing helpers ───────────────────────────────────────────────────────
+
+/// Returns (bag_slot, bottom_px) pairs for each currently open bag panel.
+fn open_bag_panel_bottoms(state: &BagUiState, bag_slots: &PlayerBagSlots) -> Vec<(u8, f32)> {
+    let slot0_h = if state.open[0] { compute_panel_height(bag_slots, 0) } else { 0.0 };
+    let mut pairs = Vec::new();
+    for bag_slot in 0u8..2u8 {
+        if !state.open[bag_slot as usize] { continue; }
+        let bottom = if bag_slot == 0 {
+            PANEL_BOTTOM
+        } else {
+            PANEL_BOTTOM + slot0_h + PANEL_GAP
+        };
+        pairs.push((bag_slot, bottom));
+    }
+    pairs
+}
+
+fn cursor_over_any_bag_panel(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    state: &BagUiState,
+    bag_slots: &PlayerBagSlots,
+) -> bool {
     let Ok(window) = windows.single() else { return false; };
     let Some(cursor) = window.cursor_position() else { return false; };
 
     let panel_left = (window.width() - PANEL_RIGHT - PANEL_WIDTH).max(0.0);
     let panel_right = panel_left + PANEL_WIDTH;
-    let panel_top = (window.height() - PANEL_BOTTOM - 350.0).max(0.0);
-    let panel_bottom = panel_top + 350.0;
+    if cursor.x < panel_left || cursor.x > panel_right { return false; }
 
-    cursor.x >= panel_left && cursor.x <= panel_right && cursor.y >= panel_top && cursor.y <= panel_bottom
+    for (bag_slot, panel_bottom) in open_bag_panel_bottoms(state, bag_slots) {
+        let h = compute_panel_height(bag_slots, bag_slot);
+        let top = (window.height() - panel_bottom - h).max(0.0);
+        let bottom = top + h;
+        if cursor.y >= top && cursor.y <= bottom { return true; }
+    }
+    false
 }
 
+/// Returns (bag_slot, slot_idx, menu_pos) for whichever bag panel the cursor is over.
 fn bag_slot_at_cursor(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    _open_slot: u8,
+    open_pairs: &[(u8, f32)],
     bag_slots: &PlayerBagSlots,
-) -> Option<(usize, Vec2)> {
+) -> Option<(u8, usize, Vec2)> {
     let window = windows.single().ok()?;
     let cursor = window.cursor_position()?;
 
     let panel_left = (window.width() - PANEL_RIGHT - PANEL_WIDTH).max(0.0);
-    let panel_top = (window.height() - PANEL_BOTTOM - 350.0).max(0.0);
 
-    let grid_left = panel_left + PANEL_PADDING;
-    let grid_top = panel_top + PANEL_PADDING + 24.0 + 6.0;
+    for &(bag_slot, panel_bottom) in open_pairs {
+        let slot_data = bag_slots.slots.iter().find(|s| s.bag_slot == bag_slot)?;
+        let grid_rows = compute_grid_rows(slot_data.slots_total);
+        let panel_h = PANEL_PADDING * 2.0 + 24.0 + (grid_rows as f32 * (SLOT_SIZE + SLOT_GAP)) + SLOT_GAP;
+        let panel_top = (window.height() - panel_bottom - panel_h).max(0.0);
 
-    let local_x = cursor.x - grid_left;
-    let local_y = cursor.y - grid_top;
-    if local_x < 0.0 || local_y < 0.0 {
-        return None;
+        let grid_left = panel_left + PANEL_PADDING;
+        let grid_top = panel_top + PANEL_PADDING + 24.0 + 6.0;
+
+        let local_x = cursor.x - grid_left;
+        let local_y = cursor.y - grid_top;
+        if local_x < 0.0 || local_y < 0.0 { continue; }
+
+        let pitch = SLOT_SIZE + SLOT_GAP;
+        let col = (local_x / pitch).floor() as usize;
+        let row = (local_y / pitch).floor() as usize;
+        if col >= GRID_COLS { continue; }
+
+        let slot_idx = row * GRID_COLS + col;
+        let menu_x = (panel_left + PANEL_WIDTH + 8.0).min((window.width() - MENU_WIDTH).max(0.0));
+        let menu_y = (grid_top + row as f32 * pitch).max(0.0);
+
+        return Some((bag_slot, slot_idx, Vec2::new(menu_x, menu_y)));
     }
-
-    let pitch = SLOT_SIZE + SLOT_GAP;
-    let col = (local_x / pitch).floor() as usize;
-    let row = (local_y / pitch).floor() as usize;
-    if col >= GRID_COLS {
-        return None;
-    }
-
-    let slot_idx = row * GRID_COLS + col;
-    let menu_x = (panel_left + PANEL_WIDTH + 8.0).min((window.width() - MENU_WIDTH).max(0.0));
-    let menu_y = (grid_top + row as f32 * pitch).max(0.0);
-
-    let _ = bag_slots;
-    Some((slot_idx, Vec2::new(menu_x, menu_y)))
+    None
 }
 
-fn bag_slot_menu_pos(
-    windows: &Query<&Window, With<PrimaryWindow>>,
-    _slot_idx: usize,
-    _item_count: usize,
-) -> Vec2 {
+fn bag_slot_menu_pos(windows: &Query<&Window, With<PrimaryWindow>>) -> Vec2 {
     let Ok(window) = windows.single() else { return Vec2::ZERO; };
     let panel_left = (window.width() - PANEL_RIGHT - PANEL_WIDTH).max(0.0);
     Vec2::new(panel_left + PANEL_WIDTH + 8.0, window.height() * 0.3)
+}
+
+// ── Misc helpers ──────────────────────────────────────────────────────────────
+
+fn compute_grid_rows(slots_total: usize) -> usize {
+    if slots_total == 0 { 1 } else { (slots_total + GRID_COLS - 1) / GRID_COLS }
+}
+
+fn compute_panel_height(bag_slots: &PlayerBagSlots, bag_slot: u8) -> f32 {
+    bag_slots.slots.iter()
+        .find(|s| s.bag_slot == bag_slot)
+        .map(|s| {
+            let rows = compute_grid_rows(s.slots_total);
+            PANEL_PADDING * 2.0 + 24.0 + (rows as f32 * (SLOT_SIZE + SLOT_GAP)) + SLOT_GAP
+        })
+        .unwrap_or(100.0)
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {

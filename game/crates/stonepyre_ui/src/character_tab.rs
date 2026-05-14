@@ -10,12 +10,12 @@ use crate::bag::BagUiState;
 use crate::character_state::CharacterUiState;
 
 const PANEL_WIDTH: f32 = 270.0;
-const PANEL_HEIGHT: f32 = 334.0;
+const PANEL_HEIGHT: f32 = 350.0;
 const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 
-const SLOT_SIZE: f32 = 46.0;
+const SLOT_SIZE: f32 = 50.0;
 const SLOT_GAP: f32 = 5.0;
 const EQUIP_AREA_HEIGHT: f32 = PANEL_HEIGHT - (PANEL_PADDING * 2.0);
 
@@ -50,7 +50,7 @@ pub(crate) fn character_tab_panel_sync_system(
 
     if !state.open {
         despawn_all(&mut commands, &mut state, &children_q);
-        bag_ui_state.open_bag_slot = None;
+        bag_ui_state.close_all();
         return;
     }
 
@@ -83,18 +83,18 @@ pub(crate) fn character_tab_panel_sync_system(
                 continue;
             }
 
-            if bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot) {
-                bag_ui_state.open_bag_slot = None;
+            if bag_ui_state.is_open(bag_btn.bag_slot) {
+                bag_ui_state.open[bag_btn.bag_slot as usize] = false;
             } else {
-                bag_ui_state.open_bag_slot = Some(bag_btn.bag_slot);
-                bag_ui_state.needs_rebuild = true;
+                bag_ui_state.open[bag_btn.bag_slot as usize] = true;
             }
+            bag_ui_state.needs_rebuild = true;
         }
     }
 
     // Update bag slot button backgrounds based on equipped state + open state.
     for (bag_btn, mut bg, _) in bag_btn_q.iter_mut() {
-        let is_open = bag_ui_state.open_bag_slot == Some(bag_btn.bag_slot);
+        let is_open = bag_ui_state.is_open(bag_btn.bag_slot);
         let is_equipped = bag_slots
             .slots
             .iter()
