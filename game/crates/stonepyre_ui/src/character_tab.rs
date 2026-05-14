@@ -9,13 +9,13 @@ use stonepyre_engine::plugins::world::Player;
 use crate::bag::BagUiState;
 use crate::character_state::CharacterUiState;
 
-const PANEL_WIDTH: f32 = 270.0;
-const PANEL_HEIGHT: f32 = 350.0;
+const PANEL_WIDTH: f32 = 320.0;
+const PANEL_HEIGHT: f32 = 390.0;
 const PANEL_PADDING: f32 = 10.0;
 const PANEL_RIGHT: f32 = 10.0;
 const PANEL_BOTTOM: f32 = 88.0;
 
-const SLOT_SIZE: f32 = 50.0;
+const SLOT_SIZE: f32 = 56.0;
 const SLOT_GAP: f32 = 5.0;
 const EQUIP_AREA_HEIGHT: f32 = PANEL_HEIGHT - (PANEL_PADDING * 2.0);
 
