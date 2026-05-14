@@ -219,7 +219,6 @@ pub(crate) fn drag_end_system(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    inv_state: Res<InventoryUiState>,
     bag_state: Res<BagUiState>,
     bag_slots: Res<PlayerBagSlots>,
     inv_q: Query<&Inventory>,
@@ -244,7 +243,7 @@ pub(crate) fn drag_end_system(
 
     if drag.is_dragging {
         // ── Drag resolution ───────────────────────────────────────────────
-        let Some(target) = find_drop_target(&windows, &inv_state, &bag_state, &bag_slots) else {
+        let Some(target) = find_drop_target(&windows, &inv_ui_state, &bag_state, &bag_slots) else {
             return; // dropped on empty space — do nothing
         };
 
