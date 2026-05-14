@@ -20,7 +20,6 @@ fn main() {
                     file_path: asset_root.into(),
                     ..default()
                 })
-                .set(bevy::image::ImagePlugin::default_nearest())
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Stonepyre".to_string(),
