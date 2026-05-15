@@ -5,7 +5,8 @@ use tungstenite::{client::IntoClientRequest, connect, Error as WsError, Message}
 use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
-use stonepyre_engine::plugins::world::GridPos;
+use stonepyre_engine::plugins::movement::StepTo;
+use stonepyre_engine::plugins::world::{GridPos, Player, TilePath};
 use stonepyre_world::TilePos;
 
 use super::protocol::{
@@ -947,6 +948,8 @@ pub fn send_walk_intents_to_server_runtime(
     mut pending_pickup: ResMut<PendingGroundItemPickup>,
     grid_pos_q: Query<&GridPos>,
     ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
+    mut player_q: Query<(Entity, &mut TilePath), With<Player>>,
+    mut commands: Commands,
 ) {
     for ev in intents.read() {
         match ev.intent.verb {
@@ -960,13 +963,15 @@ pub fn send_walk_intents_to_server_runtime(
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
                 } else {
-                    // Suppress reconciler heuristics until PathConfirmed arrives.
-                    // Without this, the reconciler tries to BFS toward server_next_tile
-                    // during the ~100ms RTT window, which near obstacles produces a
-                    // path around the wrong side of the tree.
-                    // Counter rather than bool: rapid clicks send N MoveTos and each
-                    // gets its own PathConfirmed; heuristics stay suppressed until
-                    // the last one arrives.
+                    // Clear path + remove StepTo + increment counter atomically in
+                    // this system so the reconciler never sees an inconsistent state
+                    // (cleared path with counter still 0). If reconciler runs before
+                    // this system it sees the old full path; if after, it sees the
+                    // empty path and counter > 0, which suppresses heuristics.
+                    if let Ok((entity, mut path)) = player_q.single_mut() {
+                        path.tiles.clear();
+                        commands.entity(entity).remove::<StepTo>();
+                    }
                     status.pending_path_confirmations += 1;
                 }
             }

@@ -314,9 +314,11 @@ pub fn plan_intents_to_actions(
                     // client to run ahead of the server-confirmed route and creates
                     // compounding drift for the duration of the walk.
                     //
-                    // Clear any existing path so the player finishes at most the
-                    // current step-in-progress, then waits for the server path.
-                    path.tiles.clear();
+                    // Path clearing + StepTo removal happen in
+                    // send_walk_intents_to_server_runtime, atomically with the
+                    // pending_path_confirmations counter increment, so the reconciler
+                    // never sees a cleared path without a positive counter.
+                    //
                     // Immediately face the click target for visual responsiveness.
                     *facing = facing_toward(start_tile, target_tile, *facing);
                 } else {
