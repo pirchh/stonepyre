@@ -6,7 +6,7 @@ use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Equipment, PlayerBagSlots};
 use stonepyre_engine::plugins::world::Player;
 
-use crate::bag::BagUiState;
+use crate::bag::{BagItemAction, BagItemActionQueue, BagUiState};
 use crate::character_state::CharacterUiState;
 
 const PANEL_WIDTH: f32 = 320.0;
@@ -109,6 +109,189 @@ pub(crate) fn character_tab_panel_sync_system(
             BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96))
         };
     }
+}
+
+// ── Bag slot context menu ─────────────────────────────────────────────────────
+
+#[derive(Component)]
+struct CharacterBagContextMenuRoot;
+
+#[derive(Component)]
+pub(crate) struct CharacterBagContextOption {
+    action: CharacterBagContextAction,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CharacterBagContextAction {
+    TogglePanel,
+    Unequip,
+}
+
+pub fn character_bag_context_menu_system(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    bag_slots: Res<PlayerBagSlots>,
+    mut char_state: ResMut<CharacterUiState>,
+    mut bag_ui_state: ResMut<BagUiState>,
+    mut action_queue: ResMut<BagItemActionQueue>,
+    bag_btn_q: Query<(&BagSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    option_q: Query<(&Interaction, &CharacterBagContextOption), (Changed<Interaction>, With<Button>)>,
+) {
+    if !char_state.open {
+        close_char_context_menu(&mut commands, &mut char_state);
+        return;
+    }
+
+    // Dismiss menu on left-click outside the character panel.
+    if mouse.just_pressed(MouseButton::Left) && !cursor_over_character_panel(&windows) {
+        close_char_context_menu(&mut commands, &mut char_state);
+        return;
+    }
+
+    // Right-click on a bag slot button → open context menu.
+    if mouse.just_pressed(MouseButton::Right) {
+        for (btn, _interaction) in bag_btn_q.iter() {
+            let has_bag = bag_slots
+                .slots
+                .iter()
+                .find(|s| s.bag_slot == btn.bag_slot)
+                .map(|s| s.equipped_item_id.is_some())
+                .unwrap_or(false);
+
+            if !has_bag {
+                continue;
+            }
+
+            // Is the cursor actually over the character panel?
+            if !cursor_over_character_panel(&windows) {
+                continue;
+            }
+
+            let Some(root) = char_state.root else { continue };
+            close_char_context_menu(&mut commands, &mut char_state);
+
+            let Ok(window) = windows.single() else { continue };
+            let cursor = window.cursor_position().unwrap_or(Vec2::ZERO);
+
+            let is_open = bag_ui_state.is_open(btn.bag_slot);
+            let toggle_label = if is_open { "Close Bag" } else { "Open Bag" };
+
+            let menu = spawn_char_bag_context_menu(
+                &mut commands,
+                &asset_server,
+                cursor,
+                btn.bag_slot,
+                toggle_label,
+            );
+            commands.entity(root).add_child(menu);
+            char_state.context_menu_root = Some(menu);
+            char_state.context_bag_slot = Some(btn.bag_slot);
+        }
+    }
+
+    // Handle option clicks.
+    for (interaction, option) in option_q.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(bag_slot) = char_state.context_bag_slot else { continue };
+
+        match option.action {
+            CharacterBagContextAction::TogglePanel => {
+                if bag_ui_state.is_open(bag_slot) {
+                    bag_ui_state.open[bag_slot as usize] = false;
+                } else {
+                    bag_ui_state.open[bag_slot as usize] = true;
+                }
+                bag_ui_state.needs_rebuild = true;
+            }
+            CharacterBagContextAction::Unequip => {
+                action_queue.actions.push(BagItemAction::UnequipBag { bag_slot });
+            }
+        }
+
+        close_char_context_menu(&mut commands, &mut char_state);
+    }
+}
+
+fn spawn_char_bag_context_menu(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    cursor: Vec2,
+    bag_slot: u8,
+    toggle_label: &str,
+) -> Entity {
+    let font = asset_server.load("fonts/ui.ttf");
+    let menu_width = 160.0_f32;
+
+    let menu = commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(cursor.x),
+                top: Val::Px(cursor.y),
+                width: Val::Px(menu_width),
+                padding: UiRect::all(Val::Px(6.0)),
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
+                ..default()
+            },
+            GlobalZIndex(200),
+            BackgroundColor(Color::srgba(0.025, 0.025, 0.030, 0.98)),
+            CharacterBagContextMenuRoot,
+            Name::new(format!("char_bag_context_menu_{bag_slot}")),
+        ))
+        .id();
+
+    for (label, action) in [
+        (toggle_label, CharacterBagContextAction::TogglePanel),
+        ("Unequip Bag", CharacterBagContextAction::Unequip),
+    ] {
+        let btn = commands
+            .spawn((
+                Button,
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(28.0),
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::horizontal(Val::Px(6.0)),
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.95)),
+                CharacterBagContextOption { action },
+                Name::new(format!("char_bag_ctx_option_{label}")),
+            ))
+            .id();
+
+        let text = commands
+            .spawn((
+                Text::new(label),
+                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                TextColor(Color::srgb(0.88, 0.88, 0.88)),
+                Pickable::IGNORE,
+            ))
+            .id();
+
+        commands.entity(btn).add_child(text);
+        commands.entity(menu).add_child(btn);
+    }
+
+    menu
+}
+
+fn close_char_context_menu(commands: &mut Commands, state: &mut CharacterUiState) {
+    if let Some(menu) = state.context_menu_root.take() {
+        if let Ok(mut ec) = commands.get_entity(menu) {
+            ec.despawn();
+        }
+    }
+    state.context_bag_slot = None;
 }
 
 fn spawn_character_tab_panel(
@@ -391,6 +574,8 @@ fn despawn_all(
     state: &mut ResMut<CharacterUiState>,
     children_q: &Query<&Children>,
 ) {
+    close_char_context_menu(commands, state);
+
     let mut roots: Vec<Entity> = state.spawned.drain(..).collect();
 
     if let Some(root) = state.root.take() {

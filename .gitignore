@@ -114,6 +114,10 @@ tools/generated_runtime/
 tools/working/
 tools/workspace/
 
+# Icon staging folder — drop high-res sources here before running scale_icons.py.
+# Runtime outputs land in game/assets/ (tracked). Sources stay local.
+tools/assets/
+
 
 # ------------------------------------------------------------
 # Project art/tooling templates and palettes

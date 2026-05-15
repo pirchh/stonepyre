@@ -8,6 +8,7 @@ pub mod character_state;
 pub mod character_tab;
 pub mod config;
 pub mod debug_grant;
+pub mod drag;
 pub mod hud;
 pub mod inventory;
 
@@ -57,6 +58,20 @@ impl Plugin for StonepyreUiPlugin {
             .add_systems(Update, hud::hud_tooltip_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_keyboard_toggles.run_if(game_ui_enabled))
 
+            // Drag-and-drop (must run before inventory/bag context menus so click
+            // resolution happens before those systems clear their Interaction state)
+            .insert_resource(drag::DragState::default())
+            .add_systems(
+                Update,
+                (
+                    drag::drag_begin_system,
+                    drag::drag_update_system,
+                    drag::drag_end_system,
+                )
+                    .chain()
+                    .run_if(game_ui_enabled),
+            )
+
             // Inventory panel (render-only; HUD controls open/close)
             .insert_resource(inventory::InventoryUiState::default())
             .insert_resource(inventory::InventoryItemActionQueue::default())
@@ -71,7 +86,14 @@ impl Plugin for StonepyreUiPlugin {
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character_state::CharacterUiState::default())
-            .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled))
+            .add_systems(
+                Update,
+                (
+                    character_tab::character_tab_panel_sync_system,
+                    character_tab::character_bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
 
             // Bag panel (opens when bag slot button is clicked in character panel)
             .insert_resource(bag::BagUiState::default())

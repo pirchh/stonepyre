@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 
 use stonepyre_engine::plugins::inventory::{BagSlotItem, PlayerBagSlotState, PlayerBagSlots};
+use stonepyre_ui::bag::BagUiState;
 
 use super::status::GameNetStatus;
 
 pub fn sync_bag_slots_from_server(
     mut status: ResMut<GameNetStatus>,
     mut bag_slots: ResMut<PlayerBagSlots>,
+    mut bag_ui_state: ResMut<BagUiState>,
 ) {
     if !status.bag_slots_dirty {
         return;
@@ -33,4 +35,7 @@ pub fn sync_bag_slots_from_server(
         .collect();
 
     status.bag_slots_dirty = false;
+
+    // Any bag data change means the open panels are stale — rebuild them.
+    bag_ui_state.needs_rebuild = true;
 }
