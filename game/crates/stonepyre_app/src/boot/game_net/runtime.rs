@@ -60,7 +60,7 @@ pub fn spawn_game_ws(
     status.server_move_progress = 0.0;
     status.server_action = None;
     status.pending_server_path = None;
-    status.waiting_for_path_confirmed = false;
+    status.pending_path_confirmations = 0;
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
@@ -932,6 +932,8 @@ pub fn pump_game_net_results(
                 status.xp_feedback_queue.clear();
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
+                status.pending_server_path = None;
+                status.pending_path_confirmations = 0;
                 warn!("game net disconnected");
             }
         }
@@ -962,7 +964,10 @@ pub fn send_walk_intents_to_server_runtime(
                     // Without this, the reconciler tries to BFS toward server_next_tile
                     // during the ~100ms RTT window, which near obstacles produces a
                     // path around the wrong side of the tree.
-                    status.waiting_for_path_confirmed = true;
+                    // Counter rather than bool: rapid clicks send N MoveTos and each
+                    // gets its own PathConfirmed; heuristics stay suppressed until
+                    // the last one arrives.
+                    status.pending_path_confirmations += 1;
                 }
             }
             Verb::ChopDown => {

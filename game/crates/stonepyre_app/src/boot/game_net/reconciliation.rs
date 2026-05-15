@@ -55,7 +55,7 @@ pub fn reconcile_local_player_to_server(
     // the goal than the client currently is. Everything before that is "already
     // traversed" from the client's perspective.
     if let Some((goal, server_tiles)) = status.pending_server_path.take() {
-        status.waiting_for_path_confirmed = false;
+        status.pending_path_confirmations = status.pending_path_confirmations.saturating_sub(1);
         // Find the tile in the server path closest to the client's current position
         // and start there. This handles two cases cleanly:
         //   - Client is at/near the path start (no prediction): start_idx ≈ 0
@@ -132,7 +132,9 @@ pub fn reconcile_local_player_to_server(
     // MoveTo was sent but PathConfirmed hasn't arrived yet (~100ms RTT window).
     // Don't run heuristics: near obstacles, BFS toward server_next_tile picks the
     // wrong side of the tree. The client finishes its current step and waits.
-    if status.waiting_for_path_confirmed {
+    // Counter tracks N in-flight responses for rapid clicks so heuristics stay
+    // suppressed until the very last PathConfirmed has been applied.
+    if status.pending_path_confirmations > 0 {
         return;
     }
 
