@@ -51,7 +51,19 @@ pub fn reconcile_local_player_to_server(
         return;
     };
 
-    let server_drift = manhattan_distance(local_tile, server_tile);
+    // Use the server's sub-tile progress to pick a more accurate reference
+    // position for drift measurement. If the server is more than halfway through
+    // stepping to next_tile, treat next_tile as the effective server position so
+    // we don't over-count drift against a tile the server has almost left.
+    let effective_server_tile = if status.server_moving
+        && status.server_move_progress >= 0.5
+    {
+        status.server_next_tile.unwrap_or(server_tile)
+    } else {
+        server_tile
+    };
+
+    let server_drift = manhattan_distance(local_tile, effective_server_tile);
     status.drift_tiles = Some(server_drift);
 
     let raw_follow_target = if status.server_moving {
@@ -61,16 +73,16 @@ pub fn reconcile_local_player_to_server(
     };
 
     if server_drift >= HARD_CORRECT_THRESHOLD {
-        let center = tile_to_world_center(server_tile);
+        let center = tile_to_world_center(effective_server_tile);
         xform.translation.x = center.x;
         xform.translation.y = center.y + FOOT_OFFSET_Y;
         path.tiles.clear();
         commands.entity(entity).remove::<StepTo>();
         status.correction_count += 1;
-        local_state.last_follow_target = Some(server_tile);
+        local_state.last_follow_target = Some(effective_server_tile);
         warn!(
-            "game net hard-corrected local player to server tile {},{} server_drift={}",
-            server_tile.x, server_tile.y, server_drift
+            "game net hard-corrected local player to server tile {},{} (effective) server_drift={}",
+            effective_server_tile.x, effective_server_tile.y, server_drift
         );
         return;
     }

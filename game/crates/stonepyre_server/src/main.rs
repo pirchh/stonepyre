@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let snapshot_hz: u32 = std::env::var("GAME_SNAPSHOT_HZ")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(2);
+        .unwrap_or(tick_hz); // default: broadcast every tick
 
     info!("stonepyre_server starting...");
     info!("bind={}", cfg.bind_addr);

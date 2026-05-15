@@ -39,5 +39,6 @@ pub struct NetPlayerSnapshot {
     pub next_tile: Option<TilePos>,
     pub goal: Option<TilePos>,
     pub moving: bool,
+    pub move_progress: f32,
     pub action: Option<PlayerActionSnapshot>,
 }

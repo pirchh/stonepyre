@@ -57,6 +57,7 @@ pub fn spawn_game_ws(
     status.server_next_tile = None;
     status.server_goal = None;
     status.server_moving = false;
+    status.server_move_progress = 0.0;
     status.server_action = None;
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
@@ -419,6 +420,7 @@ fn run_game_ws(
                                 next_tile: p.next_tile,
                                 goal: p.goal,
                                 moving: p.moving,
+                                move_progress: p.move_progress,
                                 action: p.action.clone(),
                             })
                             .collect();
@@ -430,6 +432,7 @@ fn run_game_ws(
                         let server_next_tile = local_player.and_then(|p| p.next_tile);
                         let server_goal = local_player.and_then(|p| p.goal);
                         let server_moving = local_player.map(|p| p.moving).unwrap_or(false);
+                        let server_move_progress = local_player.map(|p| p.move_progress).unwrap_or(0.0);
                         let server_action = local_player.and_then(|p| p.action.clone());
 
                         let _ = tx.send(GameNetEvent::Snapshot {
@@ -440,6 +443,7 @@ fn run_game_ws(
                             server_next_tile,
                             server_goal,
                             server_moving,
+                            server_move_progress,
                             server_action,
                         });
                     }
@@ -579,6 +583,7 @@ pub fn pump_game_net_results(
                 server_next_tile,
                 server_goal,
                 server_moving,
+                server_move_progress,
                 server_action,
             } => {
                 status.server_tick = Some(server_tick);
@@ -586,6 +591,7 @@ pub fn pump_game_net_results(
                 status.latest_players = players;
                 status.harvest_nodes = harvest_nodes;
                 status.server_moving = server_moving;
+                status.server_move_progress = server_move_progress;
                 status.server_next_tile = server_next_tile;
                 status.server_goal = server_goal;
                 status.server_action = server_action;

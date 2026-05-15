@@ -156,6 +156,11 @@ pub struct PlayerSnapshot {
     /// True while the server has an active movement goal/path for this player.
     pub moving: bool,
 
+    /// Fractional progress (0.0–1.0) toward `next_tile` within the current tile step.
+    /// 0.0 = just reached `tile`, 1.0 = arrived at `next_tile`.
+    /// Only meaningful when `moving` is true and `next_tile` is `Some`.
+    pub move_progress: f32,
+
     /// Current server-owned non-movement action state for this player.
     pub action: Option<PlayerActionSnapshot>,
 }
