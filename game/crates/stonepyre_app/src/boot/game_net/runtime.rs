@@ -60,6 +60,7 @@ pub fn spawn_game_ws(
     status.server_move_progress = 0.0;
     status.server_action = None;
     status.pending_server_path = None;
+    status.waiting_for_path_confirmed = false;
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
@@ -940,6 +941,7 @@ pub fn pump_game_net_results(
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    mut status: ResMut<GameNetStatus>,
     mut pending_pickup: ResMut<PendingGroundItemPickup>,
     grid_pos_q: Query<&GridPos>,
     ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
@@ -955,6 +957,12 @@ pub fn send_walk_intents_to_server_runtime(
 
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
+                } else {
+                    // Suppress reconciler heuristics until PathConfirmed arrives.
+                    // Without this, the reconciler tries to BFS toward server_next_tile
+                    // during the ~100ms RTT window, which near obstacles produces a
+                    // path around the wrong side of the tree.
+                    status.waiting_for_path_confirmed = true;
                 }
             }
             Verb::ChopDown => {

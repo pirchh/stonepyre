@@ -177,6 +177,11 @@ pub struct GameNetStatus {
     /// Pending server-authoritative path waiting to be applied by the reconciler.
     /// Set by the pump, consumed (and cleared) by reconcile_local_player_to_server.
     pub pending_server_path: Option<(TilePos, Vec<TilePos>)>,
+    /// True from the moment a MoveTo is sent until PathConfirmed is applied.
+    /// While true, the reconciler suppresses its follow-target heuristics so it
+    /// doesn't BFS toward server_next_tile (which may be on the wrong side of an
+    /// obstacle) during the ~100ms RTT window before the server path arrives.
+    pub waiting_for_path_confirmed: bool,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -215,6 +220,7 @@ impl Default for GameNetStatus {
             skills_dirty: false,
             xp_feedback_queue: Vec::new(),
             pending_server_path: None,
+            waiting_for_path_confirmed: false,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,
