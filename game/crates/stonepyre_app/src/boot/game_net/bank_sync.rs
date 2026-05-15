@@ -31,6 +31,7 @@ pub fn sync_bank_from_server(
                         slot_idx: i.slot_idx,
                         item_id: i.item_id.clone(),
                         quantity: i.quantity,
+                        source_tab_idx: t.tab_idx,
                     })
                     .collect(),
             })

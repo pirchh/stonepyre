@@ -97,6 +97,9 @@ pub struct BankItemData {
     pub slot_idx: usize,
     pub item_id: String,
     pub quantity: i64,
+    /// The physical tab this item lives in (1-11). Never 0.
+    /// Used to route withdrawals correctly when viewing the "All" aggregate tab.
+    pub source_tab_idx: u8,
 }
 
 // ── Action queue ──────────────────────────────────────────────────────────────
@@ -153,8 +156,10 @@ pub(crate) struct BankTabButton {
 
 #[derive(Component)]
 pub(crate) struct BankItemSlotButton {
-    tab_idx: u8,
+    /// The physical tab this item is stored in (never 0).
+    source_tab_idx: u8,
     slot_idx: usize,
+    item_id: String,
 }
 
 #[derive(Component)]
@@ -228,7 +233,7 @@ pub fn bank_interaction_system(
     mut close_q: Query<&Interaction, (Changed<Interaction>, With<BankCloseButton>)>,
     mut tab_q: Query<(&Interaction, &BankTabButton), (Changed<Interaction>, With<Button>)>,
     mut deposit_all_q: Query<&Interaction, (Changed<Interaction>, With<BankDepositAllButton>)>,
-    _item_slot_q: Query<(&Interaction, &BankItemSlotButton), (Changed<Interaction>, With<Button>)>,
+    mut item_slot_q: Query<(&Interaction, &BankItemSlotButton), (Changed<Interaction>, With<Button>)>,
     mut ctx_q: Query<(&Interaction, &BankContextOptionButton), (Changed<Interaction>, With<Button>)>,
 ) {
     if !state.open {
@@ -264,15 +269,29 @@ pub fn bank_interaction_system(
         }
     }
 
-    // Left-click item slots: currently no action (right-click for context menu).
-    // Right-click item slots: open context menu.
+    // Left-click bank item slot → withdraw 1.
+    for (interaction, slot_btn) in item_slot_q.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            close_bank_context_menu(&mut commands, &mut state);
+            action_queue.actions.push(BankItemAction::Withdraw {
+                tab_idx: slot_btn.source_tab_idx,
+                slot_idx: slot_btn.slot_idx,
+                item_id: slot_btn.item_id.clone(),
+                quantity: 1,
+            });
+            return;
+        }
+    }
+
+    // Right-click item slots: open withdraw context menu.
     if mouse.just_pressed(MouseButton::Right) {
         // Detect right-click via manual hit-testing (Bevy's Changed<Interaction> doesn't fire on right-click).
-        if let Some((tab_idx, slot_idx, menu_pos)) = bank_slot_at_cursor(&windows, &state) {
-            let items = items_for_active_tab(&state, tab_idx);
+        if let Some((_display_tab, slot_idx, menu_pos)) = bank_slot_at_cursor(&windows, &state) {
+            let active = state.active_tab_idx;
+            let items = items_for_active_tab(&state, active);
             if let Some(item) = items.into_iter().find(|i| i.slot_idx == slot_idx) {
                 let ctx = BankContextItem {
-                    tab_idx,
+                    tab_idx: item.source_tab_idx, // always the real physical tab
                     slot_idx,
                     item_id: item.item_id.clone(),
                     display_name: item_display_name(&item.item_id),
@@ -588,16 +607,9 @@ fn spawn_bank_panel(
         ))
         .id();
 
-    for (vis_idx, item) in display_items.iter().enumerate() {
-        let slot_ent = spawn_bank_item_slot(
-            commands,
-            asset_server,
-            &font,
-            active_tab,
-            item,
-        );
+    for item in display_items.iter() {
+        let slot_ent = spawn_bank_item_slot(commands, asset_server, &font, item);
         commands.entity(grid).add_child(slot_ent);
-        let _ = vis_idx;
     }
 
     commands.entity(panel).add_child(grid);
@@ -659,7 +671,6 @@ fn spawn_bank_item_slot(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     font: &Handle<Font>,
-    tab_idx: u8,
     item: &BankItemData,
 ) -> Entity {
     let slot = commands
@@ -677,8 +688,9 @@ fn spawn_bank_item_slot(
             },
             BackgroundColor(Color::srgba(0.07, 0.06, 0.05, 0.96)),
             BankItemSlotButton {
-                tab_idx,
+                source_tab_idx: item.source_tab_idx,
                 slot_idx: item.slot_idx,
+                item_id: item.item_id.clone(),
             },
             Name::new(format!("bank_item_slot_{}", item.slot_idx)),
         ))
@@ -948,14 +960,13 @@ fn items_for_active_tab(state: &BankUiState, tab_idx: u8) -> Vec<BankItemData> {
     }
 }
 
-/// Flatten all tabs' items, merging stacks with the same `item_id`.
-/// The virtual "All" tab never participates in server-side routing; the real
-/// `tab_idx` stored in each item is preserved so withdrawals can be routed back.
+/// Flatten all tabs' items, summing quantities for duplicate item_ids.
+/// Each entry retains `source_tab_idx` from whichever tab it first appeared in,
+/// so that withdrawals issued from the "All" view are routed to the correct physical tab.
 fn aggregate_all_items(tabs: &[BankTabData]) -> Vec<BankItemData> {
     use std::collections::BTreeMap;
-    // We show items grouped by their actual tab so slot_idx stays meaningful.
-    // Aggregate quantity by item_id for display, but keep original slot_idx from
-    // the first tab we encounter for context-menu routing.
+
+    // Map item_id → first-seen item (with its real source_tab_idx), summing quantities.
     let mut by_id: BTreeMap<String, BankItemData> = BTreeMap::new();
 
     for tab in tabs.iter() {
@@ -966,7 +977,11 @@ fn aggregate_all_items(tabs: &[BankTabData]) -> Vec<BankItemData> {
         }
     }
 
-    by_id.into_values().collect()
+    // Re-number slot_idx sequentially so the grid renders contiguously.
+    by_id.into_values()
+        .enumerate()
+        .map(|(i, mut item)| { item.slot_idx = i; item })
+        .collect()
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {
