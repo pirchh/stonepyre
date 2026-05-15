@@ -348,6 +348,24 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         };
                         handle_bag_move_item(&state, cid, from_bag_slot, from_item_slot, to_bag_slot, &out_tx).await;
                     }
+                    ClientMsg::BagPutItemToSlot { bag_slot, inventory_slot_idx, bag_item_slot_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before using bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_bag_put_item_to_slot(&state, cid, bag_slot, inventory_slot_idx, bag_item_slot_idx, &out_tx).await;
+                    }
+                    ClientMsg::BagTakeItemToSlot { bag_slot, bag_item_slot_idx, inv_slot_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before using bags".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_bag_take_item_to_slot(&state, cid, bag_slot, bag_item_slot_idx, inv_slot_idx, &out_tx).await;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -735,7 +753,7 @@ async fn handle_bag_put_item(
     inventory_slot_idx: usize,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
-    match crate::game::sim::inventory::bag_put_item(&state.db, character_id, bag_slot, inventory_slot_idx).await {
+    match crate::game::sim::inventory::bag_put_item(&state.db, character_id, bag_slot, inventory_slot_idx, None).await {
         Ok(changed) => {
             let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
             send_inventory_snapshot(state, character_id, out_tx).await;
@@ -755,7 +773,7 @@ async fn handle_bag_take_item(
     bag_item_slot_idx: usize,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
-    match crate::game::sim::inventory::bag_take_item(&state.db, character_id, bag_slot, bag_item_slot_idx).await {
+    match crate::game::sim::inventory::bag_take_item(&state.db, character_id, bag_slot, bag_item_slot_idx, None).await {
         Ok(changed) => {
             let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
             send_inventory_snapshot(state, character_id, out_tx).await;
@@ -763,6 +781,62 @@ async fn handle_bag_take_item(
         Err(e) => {
             let message = bag_error_message(e);
             warn!("bag take item failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_bag_put_item_to_slot(
+    state: &AppState,
+    character_id: Uuid,
+    bag_slot: u8,
+    inventory_slot_idx: usize,
+    bag_item_slot_idx: usize,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::bag_put_item(
+        &state.db, character_id, bag_slot, inventory_slot_idx, Some(bag_item_slot_idx),
+    )
+    .await
+    {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!(
+                "bag put item to slot failed character_id={} bag_slot={} inv_slot={} bag_item_slot={} error={}",
+                character_id, bag_slot, inventory_slot_idx, bag_item_slot_idx, message
+            );
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_bag_take_item_to_slot(
+    state: &AppState,
+    character_id: Uuid,
+    bag_slot: u8,
+    bag_item_slot_idx: usize,
+    inv_slot_idx: usize,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::inventory::bag_take_item(
+        &state.db, character_id, bag_slot, bag_item_slot_idx, Some(inv_slot_idx),
+    )
+    .await
+    {
+        Ok(changed) => {
+            let _ = out_tx.send(ServerMsg::BagSlotChanged(changed));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = bag_error_message(e);
+            warn!(
+                "bag take item to slot failed character_id={} bag_slot={} bag_item_slot={} inv_slot={} error={}",
+                character_id, bag_slot, bag_item_slot_idx, inv_slot_idx, message
+            );
             let _ = out_tx.send(ServerMsg::Error { message });
         }
     }

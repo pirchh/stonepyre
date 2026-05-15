@@ -52,6 +52,18 @@ pub enum ClientMsg {
         from_item_slot: usize,
         to_bag_slot: u8,
     },
+    /// Drag an inventory item into a specific bag slot index.
+    BagPutItemToSlot {
+        bag_slot: u8,
+        inventory_slot_idx: usize,
+        bag_item_slot_idx: usize,
+    },
+    /// Drag a bag item to a specific main inventory slot.
+    BagTakeItemToSlot {
+        bag_slot: u8,
+        bag_item_slot_idx: usize,
+        inv_slot_idx: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

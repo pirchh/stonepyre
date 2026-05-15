@@ -117,6 +117,16 @@ pub enum GameNetCommand {
         from_item_slot: usize,
         to_bag_slot: u8,
     },
+    BagPutItemToSlot {
+        bag_slot: u8,
+        inventory_slot_idx: usize,
+        bag_item_slot_idx: usize,
+    },
+    BagTakeItemToSlot {
+        bag_slot: u8,
+        bag_item_slot_idx: usize,
+        inv_slot_idx: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

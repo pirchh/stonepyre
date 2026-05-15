@@ -196,6 +196,28 @@ pub fn send_bag_move_item_to_server(
     tx.send(GameNetCommand::BagMoveItem { from_bag_slot, from_item_slot, to_bag_slot }).is_ok()
 }
 
+pub fn send_bag_put_item_to_slot_to_server(
+    game_net: &GameNetRuntime,
+    bag_slot: u8,
+    inventory_slot_idx: usize,
+    bag_item_slot_idx: usize,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::BagPutItemToSlot { bag_slot, inventory_slot_idx, bag_item_slot_idx }).is_ok()
+}
+
+pub fn send_bag_take_item_to_slot_to_server(
+    game_net: &GameNetRuntime,
+    bag_slot: u8,
+    bag_item_slot_idx: usize,
+    inv_slot_idx: usize,
+) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::BagTakeItemToSlot { bag_slot, bag_item_slot_idx, inv_slot_idx }).is_ok()
+}
+
 fn run_game_ws(
     url: String,
     token: String,
@@ -336,6 +358,22 @@ fn run_game_ws(
                     socket
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws bag move item send failed: {e}"))?;
+                }
+                GameNetCommand::BagPutItemToSlot { bag_slot, inventory_slot_idx, bag_item_slot_idx } => {
+                    let msg = ClientMsg::BagPutItemToSlot { bag_slot, inventory_slot_idx, bag_item_slot_idx };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bag put item to slot serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bag put item to slot send failed: {e}"))?;
+                }
+                GameNetCommand::BagTakeItemToSlot { bag_slot, bag_item_slot_idx, inv_slot_idx } => {
+                    let msg = ClientMsg::BagTakeItemToSlot { bag_slot, bag_item_slot_idx, inv_slot_idx };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bag take item to slot serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bag take item to slot send failed: {e}"))?;
                 }
             }
         }

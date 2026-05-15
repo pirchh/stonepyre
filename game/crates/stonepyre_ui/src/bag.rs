@@ -76,10 +76,14 @@ pub struct BagItemActionQueue {
 pub enum BagItemAction {
     Take { bag_slot: u8, bag_item_slot_idx: usize },
     UnequipBag { bag_slot: u8 },
-    /// Move an item from main inventory into this bag (drag inv→bag).
+    /// Move an item from main inventory into this bag (drag inv→bag, first available slot).
     PutItem { bag_slot: u8, inventory_slot_idx: usize },
+    /// Drag an inventory item into a specific bag slot index.
+    PutItemToSlot { bag_slot: u8, inventory_slot_idx: usize, bag_item_slot_idx: usize },
     /// Move an item from one bag to another (drag bag→bag).
     MoveItem { from_bag_slot: u8, from_item_slot: usize, to_bag_slot: u8 },
+    /// Drag a bag item to a specific main inventory slot.
+    TakeToSlot { bag_slot: u8, bag_item_slot_idx: usize, inv_slot_idx: usize },
 }
 
 #[derive(Component)]

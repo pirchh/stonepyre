@@ -276,24 +276,26 @@ pub(crate) fn drag_end_system(
                     quantity: 1,
                 });
             }
-            // inv → bag : put into bag
+            // inv → bag : put into specific bag slot
             (
                 DragSource::Inventory { slot_idx: from },
-                DragTarget::Bag { bag_slot, .. },
+                DragTarget::Bag { bag_slot, slot_idx: to },
             ) => {
-                bag_action_queue.actions.push(BagItemAction::PutItem {
+                bag_action_queue.actions.push(BagItemAction::PutItemToSlot {
                     bag_slot: *bag_slot,
                     inventory_slot_idx: *from,
+                    bag_item_slot_idx: *to,
                 });
             }
-            // bag → inv : take to first available slot
+            // bag → inv : take to specific inventory slot
             (
                 DragSource::Bag { bag_slot, slot_idx: from },
-                DragTarget::Inventory { .. },
+                DragTarget::Inventory { slot_idx: to },
             ) => {
-                bag_action_queue.actions.push(BagItemAction::Take {
+                bag_action_queue.actions.push(BagItemAction::TakeToSlot {
                     bag_slot: *bag_slot,
                     bag_item_slot_idx: *from,
+                    inv_slot_idx: *to,
                 });
             }
             // bag → bag (different bags only)

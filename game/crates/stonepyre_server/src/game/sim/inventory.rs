@@ -900,11 +900,14 @@ pub async fn unequip_bag(
 }
 
 /// Move an item from a main inventory slot into an equipped bag.
+/// When `target_bag_item_slot` is `Some(idx)`, the item is placed at that bag
+/// slot index if it is empty; otherwise the first available slot is used.
 pub async fn bag_put_item(
     pool: &PgPool,
     character_id: Uuid,
     bag_slot: u8,
     inventory_slot_idx: usize,
+    target_bag_item_slot: Option<usize>,
 ) -> Result<BagSlotChanged, BagError> {
     if bag_slot > 1 {
         return Err(BagError::InvalidBagSlot(bag_slot));
@@ -993,10 +996,12 @@ pub async fn bag_put_item(
                 .await?;
 
                 let bag_rows = load_container_slot_rows_for_update(&mut tx, bag_container_id).await?;
-                let bag_slot_idx = first_empty_slot_from_occupied(
-                    &bag_rows.iter().map(|r| r.slot_idx).collect::<Vec<_>>(),
-                )
-                .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?;
+                let occupied_bag: Vec<i32> = bag_rows.iter().map(|r| r.slot_idx).collect();
+                let bag_slot_idx = match target_bag_item_slot {
+                    Some(preferred) if !occupied_bag.contains(&(preferred as i32)) => preferred as i32,
+                    _ => first_empty_slot_from_occupied(&occupied_bag)
+                        .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?,
+                };
 
                 insert_container_slot(&mut tx, bag_container_id, bag_slot_idx, item_id, quantity).await?;
 
@@ -1067,10 +1072,12 @@ pub async fn bag_put_item(
     .await?;
 
     let bag_rows = load_container_slot_rows_for_update(&mut tx, bag_container_id).await?;
-    let bag_slot_idx = first_empty_slot_from_occupied(
-        &bag_rows.iter().map(|r| r.slot_idx).collect::<Vec<_>>(),
-    )
-    .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?;
+    let occupied_bag: Vec<i32> = bag_rows.iter().map(|r| r.slot_idx).collect();
+    let bag_slot_idx = match target_bag_item_slot {
+        Some(preferred) if !occupied_bag.contains(&(preferred as i32)) => preferred as i32,
+        _ => first_empty_slot_from_occupied(&occupied_bag)
+            .ok_or(BagError::BagFull { bag_slot, slots_total: i64::from(slot_capacity) })?,
+    };
 
     insert_container_slot(&mut tx, bag_container_id, bag_slot_idx, &item_id, quantity).await?;
 
@@ -1305,11 +1312,15 @@ fn bag_item_type_filter_for(content: &stonepyre_content::ContentDb, bag_item_id:
 }
 
 /// Move an item from an equipped bag slot back into the main inventory.
+/// When `target_inv_slot` is `Some(idx)`, the item is placed at that inventory
+/// slot if it is empty (and the item doesn't merge with an existing stack);
+/// otherwise the first available slot is used.
 pub async fn bag_take_item(
     pool: &PgPool,
     character_id: Uuid,
     bag_slot: u8,
     bag_item_slot_idx: usize,
+    target_inv_slot: Option<usize>,
 ) -> Result<BagSlotChanged, BagError> {
     if bag_slot > 1 {
         return Err(BagError::InvalidBagSlot(bag_slot));
@@ -1375,9 +1386,10 @@ pub async fn bag_take_item(
     .execute(&mut *tx)
     .await?;
 
-    // Grant to inventory.
+    // Grant to inventory, honouring the preferred target slot when supplied.
     if item_stacks_in_inventory(&content, &item_id) {
         if let Some(existing) = inv_rows.iter().find(|r| r.item_id == item_id) {
+            // Merge into existing stack — preferred slot is irrelevant.
             sqlx::query(
                 r#"UPDATE game.character_container_slots SET quantity = quantity + $3::bigint, updated_at = now() WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
             )
@@ -1387,15 +1399,24 @@ pub async fn bag_take_item(
             .execute(&mut *tx)
             .await?;
         } else {
-            let s = first_empty_slot(&inv_rows).ok_or(BagError::InventoryFull)?;
+            let occupied_inv: Vec<i32> = inv_rows.iter().map(|r| r.slot_idx).collect();
+            let s = match target_inv_slot {
+                Some(preferred) if !occupied_inv.contains(&(preferred as i32)) => preferred as i32,
+                _ => first_empty_slot(&inv_rows).ok_or(BagError::InventoryFull)?,
+            };
             insert_container_slot(&mut tx, inv_container_id, s, &item_id, quantity).await?;
         }
     } else {
-        let mut occupied: Vec<i32> = inv_rows.iter().map(|r| r.slot_idx).collect();
+        let mut occupied_inv: Vec<i32> = inv_rows.iter().map(|r| r.slot_idx).collect();
+        // Use the preferred slot for the first unit (if still empty), first-available thereafter.
+        let mut preferred = target_inv_slot.map(|p| p as i32);
         for _ in 0..quantity {
-            let s = first_empty_slot_from_occupied(&occupied).ok_or(BagError::InventoryFull)?;
+            let s = match preferred.take() {
+                Some(p) if !occupied_inv.contains(&p) => p,
+                _ => first_empty_slot_from_occupied(&occupied_inv).ok_or(BagError::InventoryFull)?,
+            };
             insert_container_slot(&mut tx, inv_container_id, s, &item_id, 1).await?;
-            occupied.push(s);
+            occupied_inv.push(s);
         }
     }
 

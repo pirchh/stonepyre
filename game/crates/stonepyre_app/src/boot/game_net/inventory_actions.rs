@@ -6,7 +6,9 @@ use stonepyre_ui::inventory::{InventoryItemAction, InventoryItemActionQueue};
 use super::runtime::{
     send_bag_move_item_to_server,
     send_bag_put_item_to_server,
+    send_bag_put_item_to_slot_to_server,
     send_bag_take_item_to_server,
+    send_bag_take_item_to_slot_to_server,
     send_drop_item_to_server,
     send_equip_bag_to_server,
     send_swap_inv_slots_to_server,
@@ -94,6 +96,24 @@ pub fn send_bag_item_actions_to_server(
                     warn!(
                         "bag move item action dropped; websocket not ready from_bag={} from_slot={} to_bag={}",
                         from_bag_slot, from_item_slot, to_bag_slot
+                    );
+                }
+            }
+            BagItemAction::PutItemToSlot { bag_slot, inventory_slot_idx, bag_item_slot_idx } => {
+                let sent = send_bag_put_item_to_slot_to_server(&game_net, bag_slot, inventory_slot_idx, bag_item_slot_idx);
+                if !sent {
+                    warn!(
+                        "bag put item to slot action dropped; websocket not ready bag_slot={} inv_slot={} bag_item_slot={}",
+                        bag_slot, inventory_slot_idx, bag_item_slot_idx
+                    );
+                }
+            }
+            BagItemAction::TakeToSlot { bag_slot, bag_item_slot_idx, inv_slot_idx } => {
+                let sent = send_bag_take_item_to_slot_to_server(&game_net, bag_slot, bag_item_slot_idx, inv_slot_idx);
+                if !sent {
+                    warn!(
+                        "bag take item to slot action dropped; websocket not ready bag_slot={} bag_slot_idx={} inv_slot={}",
+                        bag_slot, bag_item_slot_idx, inv_slot_idx
                     );
                 }
             }
