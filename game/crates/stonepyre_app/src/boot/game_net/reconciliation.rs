@@ -45,13 +45,67 @@ pub fn reconcile_local_player_to_server(
     let local_tile = world_to_tile(player_feet_world(&xform));
     status.local_tile = Some(local_tile);
 
+    // If the server just sent us an authoritative path, apply it — but trim any
+    // tiles the client has already visually passed. The server path starts from
+    // the server's last discrete tile, which may be several tiles behind the
+    // client's current smooth position. Applying it without trimming would cause
+    // the client to walk backward to the server's position before continuing forward.
+    //
+    // Strategy: find the first tile in the server path that is no farther from
+    // the goal than the client currently is. Everything before that is "already
+    // traversed" from the client's perspective.
+    if let Some((goal, server_tiles)) = status.pending_server_path.take() {
+        status.pending_path_confirmations = status.pending_path_confirmations.saturating_sub(1);
+        // Find the tile in the server path closest to the client's current position
+        // and start there. This handles two cases cleanly:
+        //   - Client is at/near the path start (no prediction): start_idx ≈ 0
+        //   - Client somehow ended up mid-path: skip tiles already behind it
+        //
+        // We use "closest spatial tile" rather than "goal-distance comparison"
+        // because goal-distance breaks on detour paths (BFS around an obstacle
+        // may pass through tiles with *larger* Manhattan distance to goal than
+        // the client has, causing the comparison to incorrectly skip them).
+        let start_idx = if server_tiles.is_empty() {
+            0
+        } else {
+            server_tiles
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, t)| manhattan_distance(local_tile, **t))
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        };
+
+        let new_path: std::collections::VecDeque<TilePos> =
+            server_tiles[start_idx..].iter().copied().collect();
+
+        path.tiles = new_path;
+        commands.entity(entity).remove::<StepTo>();
+        // Record the confirmed goal so the follow-target logic below won't
+        // overwrite this path on the next snapshot tick.
+        local_state.last_follow_target = Some(goal);
+        return;
+    }
+
     let Some(server_tile) = status.server_tile else {
         status.drift_tiles = None;
         local_state.last_follow_target = None;
         return;
     };
 
-    let server_drift = manhattan_distance(local_tile, server_tile);
+    // Use the server's sub-tile progress to pick a more accurate reference
+    // position for drift measurement. If the server is more than halfway through
+    // stepping to next_tile, treat next_tile as the effective server position so
+    // we don't over-count drift against a tile the server has almost left.
+    let effective_server_tile = if status.server_moving
+        && status.server_move_progress >= 0.5
+    {
+        status.server_next_tile.unwrap_or(server_tile)
+    } else {
+        server_tile
+    };
+
+    let server_drift = manhattan_distance(local_tile, effective_server_tile);
     status.drift_tiles = Some(server_drift);
 
     let raw_follow_target = if status.server_moving {
@@ -61,18 +115,42 @@ pub fn reconcile_local_player_to_server(
     };
 
     if server_drift >= HARD_CORRECT_THRESHOLD {
-        let center = tile_to_world_center(server_tile);
+        let center = tile_to_world_center(effective_server_tile);
         xform.translation.x = center.x;
         xform.translation.y = center.y + FOOT_OFFSET_Y;
         path.tiles.clear();
         commands.entity(entity).remove::<StepTo>();
         status.correction_count += 1;
-        local_state.last_follow_target = Some(server_tile);
+        local_state.last_follow_target = Some(effective_server_tile);
         warn!(
-            "game net hard-corrected local player to server tile {},{} server_drift={}",
-            server_tile.x, server_tile.y, server_drift
+            "game net hard-corrected local player to server tile {},{} (effective) server_drift={}",
+            effective_server_tile.x, effective_server_tile.y, server_drift
         );
         return;
+    }
+
+    // MoveTo was sent but PathConfirmed hasn't arrived yet (~100ms RTT window).
+    // Don't run heuristics: near obstacles, BFS toward server_next_tile picks the
+    // wrong side of the tree. The client finishes its current step and waits.
+    // Counter tracks N in-flight responses for rapid clicks so heuristics stay
+    // suppressed until the very last PathConfirmed has been applied.
+    if status.pending_path_confirmations > 0 {
+        return;
+    }
+
+    // If the client is already walking a confirmed path toward the server's current
+    // goal, trust it — do not overwrite it with the follow-target heuristic.
+    // Without this guard, every snapshot tick (~100ms) the reconciler would replace
+    // the multi-tile confirmed path with a 1-tile hop to server_next_tile because
+    // path_goal (= server goal) ≠ follow_target (= server_next_tile).
+    let current_step = step_opt.map(|s| s.0);
+    let path_goal = path.tiles.back().copied().or(current_step);
+    if let (Some(pg), Some(sg)) = (path_goal, status.server_goal) {
+        if pg == sg && !path.tiles.is_empty() {
+            // Active confirmed path still in progress — let follow_path_to_next_tile
+            // drive it. Drift is still measured above for display purposes.
+            return;
+        }
     }
 
     let follow_target = choose_visual_follow_target(
@@ -90,8 +168,6 @@ pub fn reconcile_local_player_to_server(
         return;
     }
 
-    let current_step = step_opt.map(|s| s.0);
-    let path_goal = path.tiles.back().copied().or(current_step);
     let already_following_target = path_goal == Some(follow_target);
     let follow_target_changed = local_state.last_follow_target != Some(follow_target);
 

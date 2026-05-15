@@ -5,7 +5,8 @@ use tungstenite::{client::IntoClientRequest, connect, Error as WsError, Message}
 use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
-use stonepyre_engine::plugins::world::GridPos;
+use stonepyre_engine::plugins::movement::StepTo;
+use stonepyre_engine::plugins::world::{GridPos, Player, TilePath};
 use stonepyre_world::TilePos;
 
 use super::protocol::{
@@ -57,7 +58,10 @@ pub fn spawn_game_ws(
     status.server_next_tile = None;
     status.server_goal = None;
     status.server_moving = false;
+    status.server_move_progress = 0.0;
     status.server_action = None;
+    status.pending_server_path = None;
+    status.pending_path_confirmations = 0;
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
@@ -419,6 +423,7 @@ fn run_game_ws(
                                 next_tile: p.next_tile,
                                 goal: p.goal,
                                 moving: p.moving,
+                                move_progress: p.move_progress,
                                 action: p.action.clone(),
                             })
                             .collect();
@@ -430,6 +435,7 @@ fn run_game_ws(
                         let server_next_tile = local_player.and_then(|p| p.next_tile);
                         let server_goal = local_player.and_then(|p| p.goal);
                         let server_moving = local_player.map(|p| p.moving).unwrap_or(false);
+                        let server_move_progress = local_player.map(|p| p.move_progress).unwrap_or(0.0);
                         let server_action = local_player.and_then(|p| p.action.clone());
 
                         let _ = tx.send(GameNetEvent::Snapshot {
@@ -440,6 +446,7 @@ fn run_game_ws(
                             server_next_tile,
                             server_goal,
                             server_moving,
+                            server_move_progress,
                             server_action,
                         });
                     }
@@ -500,6 +507,9 @@ fn run_game_ws(
                     }
                     Ok(ServerMsg::BagSlotChanged(changed)) => {
                         let _ = tx.send(GameNetEvent::BagSlotChanged(changed));
+                    }
+                    Ok(ServerMsg::PathConfirmed { goal, tiles }) => {
+                        let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
                     }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
@@ -579,6 +589,7 @@ pub fn pump_game_net_results(
                 server_next_tile,
                 server_goal,
                 server_moving,
+                server_move_progress,
                 server_action,
             } => {
                 status.server_tick = Some(server_tick);
@@ -586,6 +597,7 @@ pub fn pump_game_net_results(
                 status.latest_players = players;
                 status.harvest_nodes = harvest_nodes;
                 status.server_moving = server_moving;
+                status.server_move_progress = server_move_progress;
                 status.server_next_tile = server_next_tile;
                 status.server_goal = server_goal;
                 status.server_action = server_action;
@@ -887,6 +899,15 @@ pub fn pump_game_net_results(
                     });
                 }
             }
+            GameNetEvent::PathConfirmed { goal, tiles } => {
+                debug!(
+                    "game net path confirmed goal={},{} tiles={}",
+                    goal.x,
+                    goal.y,
+                    tiles.len()
+                );
+                status.pending_server_path = Some((goal, tiles));
+            }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
                 warn!("game net error: {}", msg);
@@ -912,6 +933,8 @@ pub fn pump_game_net_results(
                 status.xp_feedback_queue.clear();
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
+                status.pending_server_path = None;
+                status.pending_path_confirmations = 0;
                 warn!("game net disconnected");
             }
         }
@@ -921,9 +944,12 @@ pub fn pump_game_net_results(
 pub fn send_walk_intents_to_server_runtime(
     mut intents: MessageReader<IntentMsg>,
     game_net: Res<GameNetRuntime>,
+    mut status: ResMut<GameNetStatus>,
     mut pending_pickup: ResMut<PendingGroundItemPickup>,
     grid_pos_q: Query<&GridPos>,
     ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
+    mut player_q: Query<(Entity, &mut TilePath), With<Player>>,
+    mut commands: Commands,
 ) {
     for ev in intents.read() {
         match ev.intent.verb {
@@ -936,6 +962,17 @@ pub fn send_walk_intents_to_server_runtime(
 
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
+                } else {
+                    // Clear path + remove StepTo + increment counter atomically in
+                    // this system so the reconciler never sees an inconsistent state
+                    // (cleared path with counter still 0). If reconciler runs before
+                    // this system it sees the old full path; if after, it sees the
+                    // empty path and counter > 0, which suppresses heuristics.
+                    if let Ok((entity, mut path)) = player_q.single_mut() {
+                        path.tiles.clear();
+                        commands.entity(entity).remove::<StepTo>();
+                    }
+                    status.pending_path_confirmations += 1;
                 }
             }
             Verb::ChopDown => {

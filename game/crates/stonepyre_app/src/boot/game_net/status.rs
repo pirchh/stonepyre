@@ -48,6 +48,7 @@ pub enum GameNetEvent {
         server_next_tile: Option<TilePos>,
         server_goal: Option<TilePos>,
         server_moving: bool,
+        server_move_progress: f32,
         server_action: Option<PlayerActionSnapshot>,
     },
     MoveSent { tile: TilePos },
@@ -74,6 +75,12 @@ pub enum GameNetEvent {
     SkillDelta(SkillDelta),
     BagSlotsSnapshot(BagSlotsSnapshot),
     BagSlotChanged(BagSlotChanged),
+    /// Server's authoritative path in response to a MoveTo. The reconciler
+    /// applies this in place of any locally-predicted path.
+    PathConfirmed {
+        goal: TilePos,
+        tiles: Vec<TilePos>,
+    },
     Error(String),
     Disconnected,
 }
@@ -156,6 +163,8 @@ pub struct GameNetStatus {
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
     pub server_moving: bool,
+    /// Fractional progress (0.0–1.0) the server has made toward `server_next_tile`.
+    pub server_move_progress: f32,
     pub server_action: Option<PlayerActionSnapshot>,
     pub inventory_slots_total: usize,
     pub inventory_items: Vec<InventoryItemSnapshot>,
@@ -165,6 +174,17 @@ pub struct GameNetStatus {
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
     pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
+    /// Pending server-authoritative path waiting to be applied by the reconciler.
+    /// Set by the pump, consumed (and cleared) by reconcile_local_player_to_server.
+    pub pending_server_path: Option<(TilePos, Vec<TilePos>)>,
+    /// Number of PathConfirmed responses still in flight (incremented on every
+    /// MoveTo sent, decremented on every PathConfirmed received). The reconciler
+    /// suppresses follow-target heuristics while this is > 0 so it doesn't BFS
+    /// toward server_next_tile (which may be on the wrong side of an obstacle)
+    /// during the RTT window before the confirmed path arrives. A counter rather
+    /// than a bool handles rapid clicks: N clicks → N in-flight responses, and
+    /// heuristics stay suppressed until the last PathConfirmed arrives.
+    pub pending_path_confirmations: u32,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -192,6 +212,7 @@ impl Default for GameNetStatus {
             server_next_tile: None,
             server_goal: None,
             server_moving: false,
+            server_move_progress: 0.0,
             server_action: None,
             inventory_slots_total: 20,
             inventory_items: Vec::new(),
@@ -201,6 +222,8 @@ impl Default for GameNetStatus {
             skill_entries: Vec::new(),
             skills_dirty: false,
             xp_feedback_queue: Vec::new(),
+            pending_server_path: None,
+            pending_path_confirmations: 0,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

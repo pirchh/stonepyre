@@ -229,13 +229,20 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                     }
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
-                            let event = {
+                            let (cancelled_event, path_confirmed) = {
                                 let mut sim = state.game.sim.write().await;
-                                sim.set_move_target(pid, tile)
+                                let cancelled = sim.set_move_target(pid, tile);
+                                let path_msg = sim
+                                    .player_path_and_goal(pid)
+                                    .map(|(goal, tiles)| ServerMsg::PathConfirmed { goal, tiles });
+                                (cancelled, path_msg)
                             };
 
-                            if let Some(event) = event {
+                            if let Some(event) = cancelled_event {
                                 let _ = out_tx.send(event);
+                            }
+                            if let Some(msg) = path_confirmed {
+                                let _ = out_tx.send(msg);
                             }
                         }
                     }

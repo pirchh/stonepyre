@@ -127,6 +127,17 @@ pub enum ServerMsg {
     /// A bag slot changed (equipped, unequipped, or item moved in/out).
     BagSlotChanged(BagSlotChanged),
 
+    /// Immediate response to a MoveTo request containing the server's authoritative
+    /// path. The client should replace its locally-predicted path with this so both
+    /// sides always follow the same tile sequence.
+    PathConfirmed {
+        /// The server's resolved goal tile (may differ from requested if blocked).
+        goal: TilePos,
+        /// Ordered list of tiles the server will walk through, not including the
+        /// player's current tile. Empty when the player is already at the goal.
+        tiles: Vec<TilePos>,
+    },
+
     Error {
         message: String,
     },
@@ -155,6 +166,11 @@ pub struct PlayerSnapshot {
 
     /// True while the server has an active movement goal/path for this player.
     pub moving: bool,
+
+    /// Fractional progress (0.0–1.0) toward `next_tile` within the current tile step.
+    /// 0.0 = just reached `tile`, 1.0 = arrived at `next_tile`.
+    /// Only meaningful when `moving` is true and `next_tile` is `Some`.
+    pub move_progress: f32,
 
     /// Current server-owned non-movement action state for this player.
     pub action: Option<PlayerActionSnapshot>,

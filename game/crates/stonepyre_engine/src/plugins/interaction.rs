@@ -307,19 +307,36 @@ pub fn plan_intents_to_actions(
 
         match intent.verb {
             Verb::WalkHere => {
-                let goal_tile = if world.is_blocked(target_tile) {
-                    pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, 1)
-                        .unwrap_or(start_tile)
+                if server_authoritative {
+                    // Server-authoritative mode: do NOT set a local predicted path.
+                    // The server will reply with PathConfirmed (~1 tick / 100ms) and
+                    // the reconciler will apply it. Predicting locally causes the
+                    // client to run ahead of the server-confirmed route and creates
+                    // compounding drift for the duration of the walk.
+                    //
+                    // Path clearing + StepTo removal happen in
+                    // send_walk_intents_to_server_runtime, atomically with the
+                    // pending_path_confirmations counter increment, so the reconciler
+                    // never sees a cleared path without a positive counter.
+                    //
+                    // Immediately face the click target for visual responsiveness.
+                    *facing = facing_toward(start_tile, target_tile, *facing);
                 } else {
-                    target_tile
-                };
+                    // Offline / non-authoritative: plan locally as before.
+                    let goal_tile = if world.is_blocked(target_tile) {
+                        pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, 1)
+                            .unwrap_or(start_tile)
+                    } else {
+                        target_tile
+                    };
 
-                path.tiles = world.find_path_bfs(start_tile, goal_tile);
+                    path.tiles = world.find_path_bfs(start_tile, goal_tile);
 
-                if let Some(first) = path.tiles.front().copied() {
-                    *facing = facing_from_step(start_tile, first);
-                } else if goal_tile != start_tile {
-                    *facing = facing_toward(start_tile, goal_tile, *facing);
+                    if let Some(first) = path.tiles.front().copied() {
+                        *facing = facing_from_step(start_tile, first);
+                    } else if goal_tile != start_tile {
+                        *facing = facing_toward(start_tile, goal_tile, *facing);
+                    }
                 }
 
                 commands.entity(player_ent).remove::<CurrentAction>();

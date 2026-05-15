@@ -89,6 +89,14 @@ impl GameSim {
         self.world.players.get(&player_id).map(|p| p.tile)
     }
 
+    /// Returns the server's current resolved goal and path for a player,
+    /// used to send PathConfirmed immediately after a MoveTo is processed.
+    pub fn player_path_and_goal(&self, player_id: Uuid) -> Option<(TilePos, Vec<TilePos>)> {
+        self.world.players.get(&player_id).and_then(|p| {
+            p.goal.map(|goal| (goal, p.path.iter().copied().collect()))
+        })
+    }
+
     pub fn player_character_id(&self, player_id: Uuid) -> Option<Uuid> {
         self.world.players.get(&player_id).map(|p| p.character_id)
     }
@@ -159,7 +167,9 @@ impl GameSim {
             p.goal = Some(goal);
             p.path = path;
             p.last_repath_tick = self.tick;
-            p.move_progress_tiles = 0.0;
+            // Do NOT reset move_progress_tiles here — carry over accumulated
+            // fractional progress so a redirect doesn't stall movement for up to
+            // one full tile-step duration.
         }
 
         cancelled
@@ -424,6 +434,7 @@ impl GameSim {
                     next_tile: p.path.front().copied(),
                     goal: p.goal,
                     moving: p.goal.is_some() && (!p.path.is_empty() || p.tile != p.goal.unwrap_or(p.tile)),
+                    move_progress: p.move_progress_tiles.clamp(0.0, 1.0),
                     action: p.action.as_ref().map(|a| a.snapshot()),
                 })
                 .collect(),
