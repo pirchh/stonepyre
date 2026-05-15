@@ -55,21 +55,34 @@ pub fn reconcile_local_player_to_server(
     // the goal than the client currently is. Everything before that is "already
     // traversed" from the client's perspective.
     if let Some((goal, server_tiles)) = status.pending_server_path.take() {
-        let client_to_goal = manhattan_distance(local_tile, goal);
-
-        // Find the furthest-along tile the client has reached or passed.
-        // "Passed" = tile whose distance to goal is <= client's distance to goal.
-        let start_idx = server_tiles
-            .iter()
-            .position(|&t| manhattan_distance(t, goal) <= client_to_goal)
-            .unwrap_or(0);
+        // Find the tile in the server path closest to the client's current position
+        // and start there. This handles two cases cleanly:
+        //   - Client is at/near the path start (no prediction): start_idx ≈ 0
+        //   - Client somehow ended up mid-path: skip tiles already behind it
+        //
+        // We use "closest spatial tile" rather than "goal-distance comparison"
+        // because goal-distance breaks on detour paths (BFS around an obstacle
+        // may pass through tiles with *larger* Manhattan distance to goal than
+        // the client has, causing the comparison to incorrectly skip them).
+        let start_idx = if server_tiles.is_empty() {
+            0
+        } else {
+            server_tiles
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, t)| manhattan_distance(local_tile, **t))
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        };
 
         let new_path: std::collections::VecDeque<TilePos> =
             server_tiles[start_idx..].iter().copied().collect();
 
         path.tiles = new_path;
         commands.entity(entity).remove::<StepTo>();
-        local_state.last_follow_target = path.tiles.back().copied().or(Some(goal));
+        // Record the confirmed goal so the follow-target logic below won't
+        // overwrite this path on the next snapshot tick.
+        local_state.last_follow_target = Some(goal);
         return;
     }
 
@@ -115,6 +128,21 @@ pub fn reconcile_local_player_to_server(
         return;
     }
 
+    // If the client is already walking a confirmed path toward the server's current
+    // goal, trust it — do not overwrite it with the follow-target heuristic.
+    // Without this guard, every snapshot tick (~100ms) the reconciler would replace
+    // the multi-tile confirmed path with a 1-tile hop to server_next_tile because
+    // path_goal (= server goal) ≠ follow_target (= server_next_tile).
+    let current_step = step_opt.map(|s| s.0);
+    let path_goal = path.tiles.back().copied().or(current_step);
+    if let (Some(pg), Some(sg)) = (path_goal, status.server_goal) {
+        if pg == sg && !path.tiles.is_empty() {
+            // Active confirmed path still in progress — let follow_path_to_next_tile
+            // drive it. Drift is still measured above for display purposes.
+            return;
+        }
+    }
+
     let follow_target = choose_visual_follow_target(
         local_tile,
         raw_follow_target,
@@ -130,8 +158,6 @@ pub fn reconcile_local_player_to_server(
         return;
     }
 
-    let current_step = step_opt.map(|s| s.0);
-    let path_goal = path.tiles.back().copied().or(current_step);
     let already_following_target = path_goal == Some(follow_target);
     let follow_target_changed = local_state.last_follow_target != Some(follow_target);
 
