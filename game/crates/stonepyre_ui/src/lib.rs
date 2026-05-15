@@ -86,7 +86,14 @@ impl Plugin for StonepyreUiPlugin {
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character_state::CharacterUiState::default())
-            .add_systems(Update, character_tab::character_tab_panel_sync_system.run_if(game_ui_enabled))
+            .add_systems(
+                Update,
+                (
+                    character_tab::character_tab_panel_sync_system,
+                    character_tab::character_bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
 
             // Bag panel (opens when bag slot button is clicked in character panel)
             .insert_resource(bag::BagUiState::default())
