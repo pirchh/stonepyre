@@ -59,6 +59,7 @@ pub fn spawn_game_ws(
     status.server_moving = false;
     status.server_move_progress = 0.0;
     status.server_action = None;
+    status.pending_server_path = None;
     status.inventory_slots_total = 20;
     status.inventory_items.clear();
     status.inventory_dirty = true;
@@ -505,6 +506,9 @@ fn run_game_ws(
                     Ok(ServerMsg::BagSlotChanged(changed)) => {
                         let _ = tx.send(GameNetEvent::BagSlotChanged(changed));
                     }
+                    Ok(ServerMsg::PathConfirmed { goal, tiles }) => {
+                        let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
+                    }
                     Ok(ServerMsg::Error { message }) => {
                         let _ = tx.send(GameNetEvent::Error(message));
                     }
@@ -892,6 +896,15 @@ pub fn pump_game_net_results(
                         source: delta.source,
                     });
                 }
+            }
+            GameNetEvent::PathConfirmed { goal, tiles } => {
+                debug!(
+                    "game net path confirmed goal={},{} tiles={}",
+                    goal.x,
+                    goal.y,
+                    tiles.len()
+                );
+                status.pending_server_path = Some((goal, tiles));
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());

@@ -127,6 +127,17 @@ pub enum ServerMsg {
     /// A bag slot changed (equipped, unequipped, or item moved in/out).
     BagSlotChanged(BagSlotChanged),
 
+    /// Immediate response to a MoveTo request containing the server's authoritative
+    /// path. The client should replace its locally-predicted path with this so both
+    /// sides always follow the same tile sequence.
+    PathConfirmed {
+        /// The server's resolved goal tile (may differ from requested if blocked).
+        goal: TilePos,
+        /// Ordered list of tiles the server will walk through, not including the
+        /// player's current tile. Empty when the player is already at the goal.
+        tiles: Vec<TilePos>,
+    },
+
     Error {
         message: String,
     },

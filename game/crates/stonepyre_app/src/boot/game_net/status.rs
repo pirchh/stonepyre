@@ -75,6 +75,12 @@ pub enum GameNetEvent {
     SkillDelta(SkillDelta),
     BagSlotsSnapshot(BagSlotsSnapshot),
     BagSlotChanged(BagSlotChanged),
+    /// Server's authoritative path in response to a MoveTo. The reconciler
+    /// applies this in place of any locally-predicted path.
+    PathConfirmed {
+        goal: TilePos,
+        tiles: Vec<TilePos>,
+    },
     Error(String),
     Disconnected,
 }
@@ -168,6 +174,9 @@ pub struct GameNetStatus {
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
     pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
+    /// Pending server-authoritative path waiting to be applied by the reconciler.
+    /// Set by the pump, consumed (and cleared) by reconcile_local_player_to_server.
+    pub pending_server_path: Option<(TilePos, Vec<TilePos>)>,
     pub local_tile: Option<TilePos>,
     pub drift_tiles: Option<i32>,
     pub last_move_sent: Option<TilePos>,
@@ -205,6 +214,7 @@ impl Default for GameNetStatus {
             skill_entries: Vec::new(),
             skills_dirty: false,
             xp_feedback_queue: Vec::new(),
+            pending_server_path: None,
             local_tile: None,
             drift_tiles: None,
             last_move_sent: None,

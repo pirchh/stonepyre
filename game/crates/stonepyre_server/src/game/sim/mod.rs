@@ -89,6 +89,14 @@ impl GameSim {
         self.world.players.get(&player_id).map(|p| p.tile)
     }
 
+    /// Returns the server's current resolved goal and path for a player,
+    /// used to send PathConfirmed immediately after a MoveTo is processed.
+    pub fn player_path_and_goal(&self, player_id: Uuid) -> Option<(TilePos, Vec<TilePos>)> {
+        self.world.players.get(&player_id).and_then(|p| {
+            p.goal.map(|goal| (goal, p.path.iter().copied().collect()))
+        })
+    }
+
     pub fn player_character_id(&self, player_id: Uuid) -> Option<Uuid> {
         self.world.players.get(&player_id).map(|p| p.character_id)
     }

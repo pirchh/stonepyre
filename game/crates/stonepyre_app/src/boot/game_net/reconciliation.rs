@@ -45,6 +45,17 @@ pub fn reconcile_local_player_to_server(
     let local_tile = world_to_tile(player_feet_world(&xform));
     status.local_tile = Some(local_tile);
 
+    // If the server just sent us an authoritative path, apply it immediately and
+    // skip the follow-target heuristic for this frame. This is the primary mechanism
+    // for keeping client and server on the same tile sequence.
+    if let Some((_goal, server_tiles)) = status.pending_server_path.take() {
+        let new_path: std::collections::VecDeque<TilePos> = server_tiles.into_iter().collect();
+        path.tiles = new_path;
+        commands.entity(entity).remove::<StepTo>();
+        local_state.last_follow_target = path.tiles.back().copied();
+        return;
+    }
+
     let Some(server_tile) = status.server_tile else {
         status.drift_tiles = None;
         local_state.last_follow_target = None;
