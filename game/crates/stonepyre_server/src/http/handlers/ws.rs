@@ -373,6 +373,60 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         };
                         handle_bag_take_item_to_slot(&state, cid, bag_slot, bag_item_slot_idx, inv_slot_idx, &out_tx).await;
                     }
+
+                    // ------------------------------------------------------------------
+                    // Bank commands
+                    // ------------------------------------------------------------------
+
+                    ClientMsg::BankDeposit { inv_slot_idx, item_id, quantity } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_deposit(&state, cid, inv_slot_idx, item_id, quantity, &out_tx).await;
+                    }
+                    ClientMsg::BankWithdraw { tab_idx, slot_idx, item_id, quantity } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_withdraw(&state, cid, tab_idx, slot_idx, item_id, quantity, &out_tx).await;
+                    }
+                    ClientMsg::BankDepositAll => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_deposit_all(&state, cid, &out_tx).await;
+                    }
+                    ClientMsg::BankCreateTab { display_name, tag_filters } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_create_tab(&state, cid, display_name, tag_filters, &out_tx).await;
+                    }
+                    ClientMsg::BankUpdateTab { tab_idx, display_name, tag_filters } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_update_tab(&state, cid, tab_idx, display_name, tag_filters, &out_tx).await;
+                    }
+                    ClientMsg::BankDeleteTab { tab_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_delete_tab(&state, cid, tab_idx, &out_tx).await;
+                    }
+                    ClientMsg::BankMoveItem { from_tab_idx, slot_idx, item_id, to_tab_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error { message: "join the world first".to_string() });
+                            continue;
+                        };
+                        handle_bank_move_item(&state, cid, from_tab_idx, slot_idx, item_id, to_tab_idx, &out_tx).await;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -430,6 +484,23 @@ async fn handle_interaction(
                 target,
                 message: "walk target accepted".to_string(),
             });
+        }
+        (InteractionAction::UseBank, _) => {
+            let _ = out_tx.send(ServerMsg::InteractionAck {
+                accepted: true,
+                action,
+                target,
+                message: "bank opened".to_string(),
+            });
+            match crate::game::sim::bank::load_bank_snapshot(&state.db, character_id).await {
+                Ok(snapshot) => {
+                    let _ = out_tx.send(ServerMsg::BankSnapshot(snapshot));
+                }
+                Err(e) => {
+                    warn!("bank snapshot failed character_id={} error={:?}", character_id, e);
+                    let _ = out_tx.send(ServerMsg::Error { message: "failed to load bank".to_string() });
+                }
+            }
         }
         (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
             let skill_requirement = {
@@ -900,6 +971,177 @@ async fn handle_bag_move_item(
                 character_id, from_bag_slot, from_item_slot, to_bag_slot, message
             );
             let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bank handlers
+// ---------------------------------------------------------------------------
+
+async fn handle_bank_deposit(
+    state: &AppState,
+    character_id: Uuid,
+    inv_slot_idx: usize,
+    item_id: String,
+    quantity: i64,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_deposit_item(&state.db, character_id, inv_slot_idx, &item_id, quantity).await {
+        Ok(tab) => {
+            let _ = out_tx.send(ServerMsg::BankTabChanged(tab));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank deposit failed character_id={} slot={} item={} qty={} error={}", character_id, inv_slot_idx, item_id, quantity, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_withdraw(
+    state: &AppState,
+    character_id: Uuid,
+    tab_idx: u8,
+    slot_idx: usize,
+    item_id: String,
+    quantity: i64,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_withdraw_item(&state.db, character_id, tab_idx, slot_idx, &item_id, quantity).await {
+        Ok((tab, inv)) => {
+            let _ = out_tx.send(ServerMsg::BankTabChanged(tab));
+            let _ = out_tx.send(ServerMsg::InventorySnapshot(inv));
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank withdraw failed character_id={} tab={} slot={} item={} qty={} error={}", character_id, tab_idx, slot_idx, item_id, quantity, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_deposit_all(
+    state: &AppState,
+    character_id: Uuid,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_deposit_all(&state.db, character_id).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::BankSnapshot(snapshot));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank deposit all failed character_id={} error={}", character_id, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_create_tab(
+    state: &AppState,
+    character_id: Uuid,
+    display_name: String,
+    tag_filters: Vec<String>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_create_tab(&state.db, character_id, &display_name, tag_filters).await {
+        Ok(tab) => {
+            let _ = out_tx.send(ServerMsg::BankTabChanged(tab));
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank create tab failed character_id={} name={} error={}", character_id, display_name, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_update_tab(
+    state: &AppState,
+    character_id: Uuid,
+    tab_idx: u8,
+    display_name: String,
+    tag_filters: Vec<String>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_update_tab(&state.db, character_id, tab_idx, &display_name, tag_filters).await {
+        Ok(tab) => {
+            let _ = out_tx.send(ServerMsg::BankTabChanged(tab));
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank update tab failed character_id={} tab={} error={}", character_id, tab_idx, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_delete_tab(
+    state: &AppState,
+    character_id: Uuid,
+    tab_idx: u8,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_delete_tab(&state.db, character_id, tab_idx).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::BankSnapshot(snapshot));
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank delete tab failed character_id={} tab={} error={}", character_id, tab_idx, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+async fn handle_bank_move_item(
+    state: &AppState,
+    character_id: Uuid,
+    from_tab_idx: u8,
+    slot_idx: usize,
+    item_id: String,
+    to_tab_idx: u8,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::bank::bank_move_item(&state.db, character_id, from_tab_idx, slot_idx, &item_id, to_tab_idx).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::BankSnapshot(snapshot));
+        }
+        Err(e) => {
+            let msg = bank_error_message(e);
+            warn!("bank move item failed character_id={} from_tab={} slot={} item={} to_tab={} error={}", character_id, from_tab_idx, slot_idx, item_id, to_tab_idx, msg);
+            let _ = out_tx.send(ServerMsg::Error { message: msg });
+        }
+    }
+}
+
+fn bank_error_message(e: crate::game::sim::bank::BankError) -> String {
+    use crate::game::sim::bank::BankError;
+    match e {
+        BankError::TabNotFound { tab_idx } => format!("bank tab {} not found", tab_idx),
+        BankError::TabLimitReached => "maximum bank tabs reached".to_string(),
+        BankError::CannotModifyAllTab => "cannot modify the All tab".to_string(),
+        BankError::FilterConflict { item_tag, existing_tab } => {
+            format!("tag '{}' already used by tab {}", item_tag, existing_tab)
+        }
+        BankError::SlotEmpty { tab_idx, slot_idx } => {
+            format!("bank tab {} slot {} is empty", tab_idx, slot_idx)
+        }
+        BankError::SlotItemMismatch => "item at slot does not match".to_string(),
+        BankError::ItemNotInBank { item_id } => format!("{} not found in bank", item_id),
+        BankError::InsufficientQuantity { item_id, requested, available } => {
+            format!("not enough {}: requested {}, available {}", item_id, requested, available)
+        }
+        BankError::InventoryFull => "inventory is full".to_string(),
+        BankError::TabNotEmpty { tab_idx } => {
+            format!("bank tab {} is not empty", tab_idx)
+        }
+        BankError::Db(e) => {
+            warn!("bank db error: {:?}", e);
+            "database error".to_string()
         }
     }
 }

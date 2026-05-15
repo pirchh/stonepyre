@@ -89,6 +89,16 @@ fn main() {
             )
                 .run_if(in_state(Screen::InWorld)),
         )
+        // Bank sync systems in a separate add_systems to stay within the 20-item tuple limit.
+        .add_systems(
+            Update,
+            (
+                boot::game_net::sync_bank_from_server
+                    .after(boot::game_net::pump_game_net_results),
+                boot::game_net::send_bank_item_actions_to_server,
+            )
+                .run_if(in_state(Screen::InWorld)),
+        )
         .add_systems(
             OnExit(Screen::InWorld),
             (

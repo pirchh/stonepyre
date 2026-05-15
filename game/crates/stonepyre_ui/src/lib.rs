@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 
 pub mod bag;
+pub mod bank;
 pub mod character_state;
 pub mod character_tab;
 pub mod config;
@@ -103,6 +104,18 @@ impl Plugin for StonepyreUiPlugin {
                 (
                     bag::bag_panel_sync_system,
                     bag::bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
+
+            // Bank panel (opens when the player interacts with a bank booth)
+            .insert_resource(bank::BankUiState::default())
+            .insert_resource(bank::BankItemActionQueue::default())
+            .add_systems(
+                Update,
+                (
+                    bank::bank_panel_sync_system,
+                    bank::bank_interaction_system,
                 )
                     .run_if(game_ui_enabled),
             )

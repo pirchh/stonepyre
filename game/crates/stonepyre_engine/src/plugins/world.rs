@@ -62,6 +62,7 @@ pub struct BlocksMovement;
 pub enum InteractableKind {
     Tree,
     Npc,
+    BankBooth,
     GroundItem { display_name: String },
 }
 
@@ -141,6 +142,20 @@ pub fn spawn_demo_world_for_character(
         BlocksMovement,
         InteractableKind::Npc,
     ));
+
+    // Demo bank booth (gold/yellow). Two booths side by side so the player can
+    // reach either one. In production these will be driven from world data.
+    for (x, y) in [(-4, 1), (-5, 1)] {
+        let booth_tile = TilePos::new(x, y);
+        let booth_world = tile_to_world_center(booth_tile);
+        commands.spawn((
+            Sprite::from_color(Color::srgb(0.85, 0.7, 0.1), Vec2::new(TILE_SIZE, TILE_HEIGHT)),
+            Transform::from_xyz(booth_world.x, booth_world.y, 5.0),
+            GridPos(booth_tile),
+            BlocksMovement,
+            InteractableKind::BankBooth,
+        ));
+    }
 
     // Target marker fills the whole tile footprint.
     commands.spawn((

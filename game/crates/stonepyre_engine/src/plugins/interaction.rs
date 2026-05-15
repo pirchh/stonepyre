@@ -18,6 +18,7 @@ pub enum Verb {
     ChopDown,
     Take,
     Examine,
+    UseBank,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,6 +174,22 @@ pub fn handle_clicks_build_candidates(
                         menu_label: Some("Examine".to_string()),
                     });
                 }
+                InteractableKind::BankBooth => {
+                    cands.push(InteractionCandidate {
+                        verb: Verb::UseBank,
+                        target: Target::Entity(ent),
+                        priority: 100,
+                        range: 1,
+                        menu_label: Some("Use bank".to_string()),
+                    });
+                    cands.push(InteractionCandidate {
+                        verb: Verb::Examine,
+                        target: Target::Entity(ent),
+                        priority: -10,
+                        range: 1,
+                        menu_label: Some("Examine".to_string()),
+                    });
+                }
                 InteractableKind::GroundItem { display_name } => {
                     let clicked_item_body = transform
                         .map(|t| point_inside_square(ev.cursor_world, t.translation.truncate(), GROUND_ITEM_CLICK_SIZE))
@@ -280,7 +297,7 @@ pub fn plan_intents_to_actions(
         // In networked/server-authoritative mode, gameplay interactions are owned by the server.
         // The local engine may still plan WalkHere for offline mode and target preview, but it must
         // not resolve non-movement interactions locally because that would produce client-only effects.
-        if server_authoritative && intent.verb != Verb::WalkHere {
+        if server_authoritative && !matches!(intent.verb, Verb::WalkHere | Verb::UseBank) {
             commands.entity(player_ent).remove::<CurrentAction>();
             commands.entity(player_ent).remove::<RequestedAnim>();
             continue;
@@ -339,6 +356,25 @@ pub fn plan_intents_to_actions(
                     }
                 }
 
+                commands.entity(player_ent).remove::<CurrentAction>();
+                commands.entity(player_ent).remove::<RequestedAnim>();
+            }
+
+            Verb::UseBank => {
+                // Walk to the bank booth, then the server interaction sends BankSnapshot.
+                let Some(goal_tile) =
+                    pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, 1)
+                else {
+                    commands.entity(player_ent).remove::<CurrentAction>();
+                    commands.entity(player_ent).remove::<RequestedAnim>();
+                    continue;
+                };
+                path.tiles = world.find_path_bfs(start_tile, goal_tile);
+                if let Some(first) = path.tiles.front().copied() {
+                    *facing = facing_from_step(start_tile, first);
+                } else if goal_tile != start_tile {
+                    *facing = facing_toward(start_tile, goal_tile, *facing);
+                }
                 commands.entity(player_ent).remove::<CurrentAction>();
                 commands.entity(player_ent).remove::<RequestedAnim>();
             }

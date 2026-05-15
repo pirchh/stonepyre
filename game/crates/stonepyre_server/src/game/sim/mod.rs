@@ -1,3 +1,4 @@
+pub mod bank;
 pub mod harvest;
 pub mod inventory;
 pub mod skills;
