@@ -30,6 +30,7 @@ fn main() {
                 }),
         )
         .insert_resource(boot::game_net::PendingGroundItemPickup::default())
+        .insert_resource(boot::game_net::PendingBankOpen::default())
         .insert_resource(stonepyre_engine::plugins::inventory::PlayerBagSlots::default())
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
@@ -96,6 +97,8 @@ fn main() {
                 boot::game_net::sync_bank_from_server
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_bank_item_actions_to_server,
+                boot::game_net::process_pending_bank_open
+                    .after(boot::game_net::pump_game_net_results),
             )
                 .run_if(in_state(Screen::InWorld)),
         )

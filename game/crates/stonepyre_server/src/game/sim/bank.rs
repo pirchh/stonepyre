@@ -603,6 +603,47 @@ pub async fn bank_deposit_all(
         upsert_bank_item(&mut tx, &content, target_container_id, &item_id, qty).await?;
     }
 
+    // Also deposit and clear items from equipped bag slots.
+    let bag_container_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT container_id FROM game.character_containers
+        WHERE character_id = $1::uuid
+          AND kind = 'bag_slot'
+        "#,
+    )
+    .bind(character_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    for bag_container_id in bag_container_ids {
+        let bag_items: Vec<(String, i64)> = sqlx::query_as(
+            r#"
+            SELECT item_id, SUM(quantity)::bigint
+            FROM game.character_container_slots
+            WHERE container_id = $1::uuid AND quantity > 0
+            GROUP BY item_id
+            "#,
+        )
+        .bind(bag_container_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        if !bag_items.is_empty() {
+            sqlx::query(
+                r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid"#,
+            )
+            .bind(bag_container_id)
+            .execute(&mut *tx)
+            .await?;
+
+            for (item_id, qty) in bag_items {
+                let (target_container_id, _) =
+                    route_item_to_tab(&mut tx, character_id, &content, &item_id).await?;
+                upsert_bank_item(&mut tx, &content, target_container_id, &item_id, qty).await?;
+            }
+        }
+    }
+
     tx.commit().await?;
     load_bank_snapshot(pool, character_id).await.map_err(BankError::Db)
 }
@@ -871,7 +912,7 @@ async fn upsert_bank_item(
 ) -> Result<(), sqlx::Error> {
     if item_stacks_in_bank(content, item_id) {
         // Try to merge with an existing stack.
-        let updated = sqlx::query_scalar::<_, i64>(
+        let updated = sqlx::query_scalar::<_, i32>(
             r#"
             UPDATE game.character_container_slots
             SET quantity = quantity + $3::bigint, updated_at = now()

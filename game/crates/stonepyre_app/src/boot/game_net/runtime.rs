@@ -31,6 +31,14 @@ pub struct PendingGroundItemPickupRequest {
     pub tile: TilePos,
 }
 
+/// Booth tile stored when the player clicks a bank. We send a WalkHere to the
+/// server immediately, then fire the actual UseBank interaction only once the
+/// server-reconciled player position is within 1 Chebyshev tile of the booth.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct PendingBankOpen {
+    pub booth_tile: Option<TilePos>,
+}
+
 pub fn spawn_game_ws(
     game_net: &mut GameNetRuntime,
     status: &mut GameNetStatus,
@@ -251,6 +259,12 @@ pub fn send_bank_deposit_all_to_server(game_net: &GameNetRuntime) -> bool {
     tx.send(GameNetCommand::BankDepositAll).is_ok()
 }
 
+pub fn send_bank_create_tab_to_server(game_net: &GameNetRuntime, display_name: String) -> bool {
+    let cmd = GameNetCommand::BankCreateTab { display_name };
+    let guard = game_net.command_tx.lock().unwrap();
+    guard.as_ref().map(|tx| tx.send(cmd).is_ok()).unwrap_or(false)
+}
+
 fn run_game_ws(
     url: String,
     token: String,
@@ -443,6 +457,17 @@ fn run_game_ws(
                 }
                 GameNetCommand::BankClose => {
                     // Client-side only: no message to server needed.
+                }
+                GameNetCommand::BankCreateTab { display_name } => {
+                    let msg = ClientMsg::BankCreateTab {
+                        display_name,
+                        tag_filters: vec![],
+                    };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws bank create tab serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws bank create tab send failed: {e}"))?;
                 }
             }
         }
@@ -1046,6 +1071,7 @@ pub fn send_walk_intents_to_server_runtime(
     game_net: Res<GameNetRuntime>,
     mut status: ResMut<GameNetStatus>,
     mut pending_pickup: ResMut<PendingGroundItemPickup>,
+    mut pending_bank_open: ResMut<PendingBankOpen>,
     grid_pos_q: Query<&GridPos>,
     ground_item_q: Query<(&super::ground_items::ServerGroundItemVisual, &GridPos)>,
     mut player_q: Query<(Entity, &mut TilePath), With<Player>>,
@@ -1059,6 +1085,7 @@ pub fn send_walk_intents_to_server_runtime(
                 };
 
                 pending_pickup.request = None;
+                pending_bank_open.booth_tile = None;
 
                 if !send_move_to_server(&game_net, tile) {
                     warn!("game net move target dropped; websocket is not ready");
@@ -1082,6 +1109,7 @@ pub fn send_walk_intents_to_server_runtime(
                 };
 
                 pending_pickup.request = None;
+                pending_bank_open.booth_tile = None;
 
                 if !send_interaction_to_server(
                     &game_net,
@@ -1115,16 +1143,17 @@ pub fn send_walk_intents_to_server_runtime(
                 }
             }
             Verb::UseBank => {
-                let Some(tile) = intent_target_tile(ev.intent.target, &grid_pos_q) else {
+                let Some(booth_tile) = intent_target_tile(ev.intent.target, &grid_pos_q) else {
                     warn!("game net use bank target dropped; target tile could not be resolved");
                     continue;
                 };
-                if !send_interaction_to_server(
-                    &game_net,
-                    InteractionAction::UseBank,
-                    InteractionTarget::Tile(tile),
-                ) {
-                    warn!("game net use bank dropped; websocket is not ready");
+                // Store the booth tile and send the server a WalkHere so the server-side
+                // player also moves adjacent to the booth. The actual UseBank interaction
+                // is deferred until `process_pending_bank_open` confirms the server-reconciled
+                // position is within 1 Chebyshev tile of the booth.
+                pending_bank_open.booth_tile = Some(booth_tile);
+                if !send_move_to_server(&game_net, booth_tile) {
+                    warn!("game net use bank walk dropped; websocket is not ready");
                 }
             }
             Verb::TalkTo | Verb::Examine => {}
@@ -1166,6 +1195,38 @@ pub fn process_pending_ground_item_pickups(
             "game net pending pickup dropped; websocket is not ready ground_item_id={}",
             request.ground_item_id
         );
+    }
+}
+
+/// Fires the UseBank interaction once the server-reconciled player position is
+/// within 1 Chebyshev tile of the pending booth.
+pub fn process_pending_bank_open(
+    game_net: Res<GameNetRuntime>,
+    status: Res<GameNetStatus>,
+    mut pending: ResMut<PendingBankOpen>,
+) {
+    let Some(booth_tile) = pending.booth_tile else {
+        return;
+    };
+
+    let Some(server_tile) = status.server_tile else {
+        return;
+    };
+
+    let dx = (server_tile.x - booth_tile.x).abs();
+    let dy = (server_tile.y - booth_tile.y).abs();
+    if dx.max(dy) > 1 {
+        return;
+    }
+
+    if send_interaction_to_server(
+        &game_net,
+        InteractionAction::UseBank,
+        InteractionTarget::Tile(booth_tile),
+    ) {
+        pending.booth_tile = None;
+    } else {
+        warn!("game net pending bank open dropped; websocket is not ready");
     }
 }
 

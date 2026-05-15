@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use stonepyre_ui::bank::{BankItemActionQueue, BankItemData, BankTabData, BankUiState};
 
 use super::runtime::{
+    send_bank_create_tab_to_server,
     send_bank_deposit_all_to_server,
     send_bank_deposit_to_server,
     send_bank_withdraw_to_server,
@@ -95,6 +96,12 @@ pub fn send_bank_item_actions_to_server(
                 // Close is purely client-side: flip the status flag so the panel can be
                 // re-opened by walking to a booth again.
                 status.bank_open = false;
+            }
+            BankItemAction::CreateTab { display_name } => {
+                let sent = send_bank_create_tab_to_server(&game_net, display_name.clone());
+                if !sent {
+                    warn!("bank create tab dropped; websocket not ready name={}", display_name);
+                }
             }
         }
     }

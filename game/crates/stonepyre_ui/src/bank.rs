@@ -65,6 +65,8 @@ pub struct BankUiState {
     /// Last known inventory so we can populate a deposit-from-inv view.
     /// Filled by `bank_panel_sync_system` from the Player Inventory component.
     pub inv_slot_count: usize,
+    /// Actual computed panel height (px) from the last rebuild. Used for hit-testing.
+    pub panel_h: f32,
 }
 
 impl Default for BankUiState {
@@ -78,6 +80,7 @@ impl Default for BankUiState {
             context_item: None,
             tabs: Vec::new(),
             inv_slot_count: 0,
+            panel_h: PANEL_MIN_HEIGHT,
         }
     }
 }
@@ -128,6 +131,8 @@ pub enum BankItemAction {
     DepositAll,
     /// Close the bank panel.
     Close,
+    /// Create a new bank tab with the given name.
+    CreateTab { display_name: String },
 }
 
 // ── Supporting types ──────────────────────────────────────────────────────────
@@ -164,6 +169,9 @@ pub(crate) struct BankItemSlotButton {
 
 #[derive(Component)]
 pub(crate) struct BankDepositAllButton;
+
+#[derive(Component)]
+pub(crate) struct BankAddTabButton;
 
 #[derive(Component)]
 pub(crate) struct BankContextMenuRoot;
@@ -215,8 +223,9 @@ pub fn bank_panel_sync_system(
     let tabs_snapshot = state.tabs.clone();
     let active_tab = state.active_tab_idx;
 
-    let root = spawn_bank_panel(&mut commands, &asset_server, &tabs_snapshot, active_tab);
+    let (root, computed_panel_h) = spawn_bank_panel(&mut commands, &asset_server, &tabs_snapshot, active_tab);
     state.root = Some(root);
+    state.panel_h = computed_panel_h;
     state.needs_rebuild = false;
 }
 
@@ -232,6 +241,7 @@ pub fn bank_interaction_system(
     // Interaction queries
     mut close_q: Query<&Interaction, (Changed<Interaction>, With<BankCloseButton>)>,
     mut tab_q: Query<(&Interaction, &BankTabButton), (Changed<Interaction>, With<Button>)>,
+    mut add_tab_q: Query<&Interaction, (Changed<Interaction>, With<BankAddTabButton>)>,
     mut deposit_all_q: Query<&Interaction, (Changed<Interaction>, With<BankDepositAllButton>)>,
     mut item_slot_q: Query<(&Interaction, &BankItemSlotButton), (Changed<Interaction>, With<Button>)>,
     mut ctx_q: Query<(&Interaction, &BankContextOptionButton), (Changed<Interaction>, With<Button>)>,
@@ -246,6 +256,15 @@ pub fn bank_interaction_system(
             action_queue.actions.push(BankItemAction::Close);
             state.open = false;
             state.needs_rebuild = true;
+            return;
+        }
+    }
+
+    // "+" add tab button.
+    for interaction in add_tab_q.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            let new_name = format!("Tab {}", state.tabs.len() + 1);
+            action_queue.actions.push(BankItemAction::CreateTab { display_name: new_name });
             return;
         }
     }
@@ -354,7 +373,7 @@ fn spawn_bank_panel(
     asset_server: &Res<AssetServer>,
     tabs: &[BankTabData],
     active_tab: u8,
-) -> Entity {
+) -> (Entity, f32) {
     let font: Handle<Font> = asset_server.load("fonts/ui.ttf");
 
     // Determine items to display.
@@ -395,7 +414,7 @@ fn spawn_bank_panel(
             },
             // Let clicks pass through the invisible wrapper (only the inner panel blocks them).
             Pickable::IGNORE,
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.35)),
+            BackgroundColor(Color::NONE),
             BankPanelRoot,
             Name::new("bank_panel_wrapper"),
         ))
@@ -411,9 +430,11 @@ fn spawn_bank_panel(
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(8.0),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
+                border: UiRect::all(Val::Px(2.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.05, 0.04, 0.035, 0.97)),
+            BackgroundColor(Color::srgb(0.07, 0.062, 0.054)),
+            BorderColor::all(Color::srgb(0.40, 0.32, 0.20)),
             Name::new("bank_panel"),
         ))
         .id();
@@ -425,14 +446,17 @@ fn spawn_bank_panel(
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: Val::Px(32.0),
+                height: Val::Px(38.0),
                 display: Display::Flex,
                 flex_direction: FlexDirection::Row,
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
+                padding: UiRect::horizontal(Val::Px(4.0)),
+                border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
             },
-            Pickable::IGNORE,
+            BackgroundColor(Color::srgb(0.11, 0.095, 0.080)),
+            BorderColor::all(Color::srgb(0.35, 0.27, 0.17)),
             Name::new("bank_title_row"),
         ))
         .id();
@@ -440,7 +464,7 @@ fn spawn_bank_panel(
     let title_text = commands
         .spawn((
             Text::new("Bank"),
-            TextFont { font: font.clone(), font_size: 20.0, ..default() },
+            TextFont { font: font.clone(), font_size: 18.0, ..default() },
             TextColor(Color::srgb(0.95, 0.88, 0.60)),
             Pickable::IGNORE,
             Name::new("bank_title_text"),
@@ -451,15 +475,15 @@ fn spawn_bank_panel(
         .spawn((
             Button,
             Node {
-                width: Val::Px(28.0),
-                height: Val::Px(28.0),
+                width: Val::Px(26.0),
+                height: Val::Px(26.0),
                 display: Display::Flex,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.30, 0.06, 0.06, 0.92)),
+            BackgroundColor(Color::srgb(0.35, 0.08, 0.08)),
             BankCloseButton,
             Name::new("bank_close_btn"),
         ))
@@ -491,8 +515,10 @@ fn spawn_bank_panel(
                 column_gap: Val::Px(4.0),
                 align_items: AlignItems::Center,
                 overflow: Overflow::clip(),
+                border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
             },
+            BorderColor::all(Color::srgb(0.40, 0.32, 0.20)),
             Pickable::IGNORE,
             Name::new("bank_tab_bar"),
         ))
@@ -507,6 +533,31 @@ fn spawn_bank_panel(
         let btn = spawn_tab_button(commands, &font, tab.tab_idx, &tab.display_name, active_tab == tab.tab_idx);
         commands.entity(tab_bar).add_child(btn);
     }
+
+    // "+" add tab button.
+    let add_tab_btn = commands.spawn((
+        Button,
+        Node {
+            height: Val::Px(28.0),
+            width: Val::Px(28.0),
+            display: Display::Flex,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border_radius: BorderRadius::all(Val::Px(4.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgb(0.10, 0.09, 0.07)),
+        BankAddTabButton,
+        Name::new("bank_add_tab_btn"),
+    )).id();
+    let add_tab_text = commands.spawn((
+        Text::new("+"),
+        TextFont { font: font.clone(), font_size: 18.0, ..default() },
+        TextColor(Color::srgb(0.72, 0.88, 0.72)),
+        Pickable::IGNORE,
+    )).id();
+    commands.entity(add_tab_btn).add_child(add_tab_text);
+    commands.entity(tab_bar).add_child(add_tab_btn);
 
     commands.entity(panel).add_child(tab_bar);
 
@@ -537,9 +588,11 @@ fn spawn_bank_panel(
                 display: Display::Flex,
                 align_items: AlignItems::Center,
                 border_radius: BorderRadius::all(Val::Px(4.0)),
+                border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.08, 0.07, 0.06, 0.95)),
+            BackgroundColor(Color::srgb(0.09, 0.08, 0.068)),
+            BorderColor::all(Color::srgb(0.22, 0.18, 0.14)),
             Pickable::IGNORE,
             Name::new("bank_search_box"),
         ))
@@ -568,7 +621,7 @@ fn spawn_bank_panel(
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.12, 0.22, 0.12, 0.95)),
+            BackgroundColor(Color::srgb(0.10, 0.20, 0.11)),
             BankDepositAllButton,
             Name::new("bank_deposit_all_btn"),
         ))
@@ -578,7 +631,7 @@ fn spawn_bank_panel(
         .spawn((
             Text::new("Deposit All"),
             TextFont { font: font.clone(), font_size: 13.0, ..default() },
-            TextColor(Color::srgb(0.72, 0.92, 0.72)),
+            TextColor(Color::srgb(0.65, 0.95, 0.65)),
             Pickable::IGNORE,
             Name::new("bank_deposit_all_text"),
         ))
@@ -614,7 +667,7 @@ fn spawn_bank_panel(
 
     commands.entity(panel).add_child(grid);
 
-    wrapper
+    (wrapper, panel_h)
 }
 
 fn spawn_tab_button(
@@ -625,14 +678,14 @@ fn spawn_tab_button(
     is_active: bool,
 ) -> Entity {
     let bg = if is_active {
-        Color::srgba(0.18, 0.14, 0.08, 0.98)
+        Color::srgb(0.20, 0.16, 0.11)
     } else {
-        Color::srgba(0.09, 0.08, 0.07, 0.90)
+        Color::srgb(0.10, 0.09, 0.07)
     };
     let text_color = if is_active {
-        Color::srgb(0.95, 0.86, 0.55)
+        Color::srgb(0.96, 0.88, 0.56)
     } else {
-        Color::srgb(0.70, 0.68, 0.60)
+        Color::srgb(0.62, 0.58, 0.50)
     };
 
     let btn = commands
@@ -684,9 +737,11 @@ fn spawn_bank_item_slot(
                 justify_content: JustifyContent::Center,
                 padding: UiRect::all(Val::Px(4.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
+                border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.07, 0.06, 0.05, 0.96)),
+            BackgroundColor(Color::srgb(0.10, 0.088, 0.074)),
+            BorderColor::all(Color::srgb(0.22, 0.18, 0.14)),
             BankItemSlotButton {
                 source_tab_idx: item.source_tab_idx,
                 slot_idx: item.slot_idx,
@@ -785,9 +840,11 @@ fn open_bank_context_menu(
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(4.0),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
+                border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.025, 0.025, 0.030, 0.98)),
+            BackgroundColor(Color::srgb(0.06, 0.055, 0.048)),
+            BorderColor::all(Color::srgb(0.40, 0.32, 0.20)),
             ZIndex(10),
             BankContextMenuRoot,
             Name::new("bank_context_menu"),
@@ -826,7 +883,7 @@ fn open_bank_context_menu(
                     border_radius: BorderRadius::all(Val::Px(4.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.95)),
+                BackgroundColor(Color::srgb(0.14, 0.12, 0.10)),
                 BankContextOptionButton { action: *amount },
                 Name::new(format!("bank_ctx_opt_{label}")),
             ))
@@ -885,10 +942,11 @@ fn cursor_over_bank_panel(
     // Approximate: panel is centered.
     let cx = window.width() * 0.5;
     let cy = window.height() * 0.5;
+    let half_h = state.panel_h * 0.5;
     cursor.x >= cx - PANEL_WIDTH * 0.5
         && cursor.x <= cx + PANEL_WIDTH * 0.5
-        && cursor.y >= cy - PANEL_MIN_HEIGHT * 0.5
-        && cursor.y <= cy + PANEL_MIN_HEIGHT * 0.5
+        && cursor.y >= cy - half_h
+        && cursor.y <= cy + half_h
 }
 
 /// Returns (tab_idx, slot_idx, menu_pos) for the bank item the cursor is over.
@@ -905,7 +963,7 @@ fn bank_slot_at_cursor(
     let cy = window.height() * 0.5;
 
     let panel_left = cx - PANEL_WIDTH * 0.5 + PANEL_PADDING;
-    let panel_top_approx = cy - PANEL_MIN_HEIGHT * 0.5
+    let panel_top_approx = cy - state.panel_h * 0.5
         + PANEL_PADDING
         + 40.0   // title
         + 8.0

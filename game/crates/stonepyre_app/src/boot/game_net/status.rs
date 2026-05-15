@@ -156,6 +156,8 @@ pub enum GameNetCommand {
     BankDepositAll,
     /// Close the bank panel client-side (no server message needed).
     BankClose,
+    /// Create a new bank tab with the given name.
+    BankCreateTab { display_name: String },
 }
 
 #[derive(Debug, Clone)]

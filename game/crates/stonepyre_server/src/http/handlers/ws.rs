@@ -485,7 +485,31 @@ async fn handle_interaction(
                 message: "walk target accepted".to_string(),
             });
         }
-        (InteractionAction::UseBank, _) => {
+        (InteractionAction::UseBank, InteractionTarget::Tile(booth_tile)) => {
+            // Proximity check: the player must be adjacent (Chebyshev ≤ 1) to the booth.
+            let player_tile = {
+                let sim = state.game.sim.read().await;
+                sim.player_tile(player_id)
+            };
+
+            let in_range = player_tile
+                .map(|pt| {
+                    let dx = (pt.x - booth_tile.x).abs();
+                    let dy = (pt.y - booth_tile.y).abs();
+                    dx.max(dy) <= 1
+                })
+                .unwrap_or(false);
+
+            if !in_range {
+                let _ = out_tx.send(ServerMsg::InteractionAck {
+                    accepted: false,
+                    action,
+                    target,
+                    message: "too far from the bank".to_string(),
+                });
+                return;
+            }
+
             let _ = out_tx.send(ServerMsg::InteractionAck {
                 accepted: true,
                 action,
@@ -1031,6 +1055,15 @@ async fn handle_bank_deposit_all(
         Ok(snapshot) => {
             let _ = out_tx.send(ServerMsg::BankSnapshot(snapshot));
             send_inventory_snapshot(state, character_id, out_tx).await;
+            // Also refresh bag snapshots since we emptied them.
+            match crate::game::sim::inventory::load_bag_slots_snapshot(&state.db, character_id).await {
+                Ok(bag_snapshot) => {
+                    let _ = out_tx.send(ServerMsg::BagSlotsSnapshot(bag_snapshot));
+                }
+                Err(e) => {
+                    warn!("bag snapshot refresh after deposit-all failed character_id={} error={:?}", character_id, e);
+                }
+            }
         }
         Err(e) => {
             let msg = bank_error_message(e);
