@@ -45,14 +45,31 @@ pub fn reconcile_local_player_to_server(
     let local_tile = world_to_tile(player_feet_world(&xform));
     status.local_tile = Some(local_tile);
 
-    // If the server just sent us an authoritative path, apply it immediately and
-    // skip the follow-target heuristic for this frame. This is the primary mechanism
-    // for keeping client and server on the same tile sequence.
-    if let Some((_goal, server_tiles)) = status.pending_server_path.take() {
-        let new_path: std::collections::VecDeque<TilePos> = server_tiles.into_iter().collect();
+    // If the server just sent us an authoritative path, apply it — but trim any
+    // tiles the client has already visually passed. The server path starts from
+    // the server's last discrete tile, which may be several tiles behind the
+    // client's current smooth position. Applying it without trimming would cause
+    // the client to walk backward to the server's position before continuing forward.
+    //
+    // Strategy: find the first tile in the server path that is no farther from
+    // the goal than the client currently is. Everything before that is "already
+    // traversed" from the client's perspective.
+    if let Some((goal, server_tiles)) = status.pending_server_path.take() {
+        let client_to_goal = manhattan_distance(local_tile, goal);
+
+        // Find the furthest-along tile the client has reached or passed.
+        // "Passed" = tile whose distance to goal is <= client's distance to goal.
+        let start_idx = server_tiles
+            .iter()
+            .position(|&t| manhattan_distance(t, goal) <= client_to_goal)
+            .unwrap_or(0);
+
+        let new_path: std::collections::VecDeque<TilePos> =
+            server_tiles[start_idx..].iter().copied().collect();
+
         path.tiles = new_path;
         commands.entity(entity).remove::<StepTo>();
-        local_state.last_follow_target = path.tiles.back().copied();
+        local_state.last_follow_target = path.tiles.back().copied().or(Some(goal));
         return;
     }
 
