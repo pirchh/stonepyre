@@ -30,6 +30,7 @@ fn main() {
                 }),
         )
         .insert_resource(boot::game_net::PendingGroundItemPickup::default())
+        .insert_resource(boot::game_net::PendingBankOpen::default())
         .insert_resource(stonepyre_engine::plugins::inventory::PlayerBagSlots::default())
         .add_plugins(boot::BootFlowPlugin)
         .add_plugins(stonepyre_engine::StonepyreEnginePlugin)
@@ -86,6 +87,18 @@ fn main() {
                     .after(boot::game_net::sync_ground_item_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
                 send_debug_grant_actions,
+            )
+                .run_if(in_state(Screen::InWorld)),
+        )
+        // Bank sync systems in a separate add_systems to stay within the 20-item tuple limit.
+        .add_systems(
+            Update,
+            (
+                boot::game_net::sync_bank_from_server
+                    .after(boot::game_net::pump_game_net_results),
+                boot::game_net::send_bank_item_actions_to_server,
+                boot::game_net::process_pending_bank_open
+                    .after(boot::game_net::pump_game_net_results),
             )
                 .run_if(in_state(Screen::InWorld)),
         )

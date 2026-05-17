@@ -1,5 +1,6 @@
 mod action_visuals;
 mod bag_sync;
+mod bank_sync;
 mod ground_items;
 mod harvest_nodes;
 mod inventory_actions;
@@ -20,6 +21,7 @@ pub use harvest_nodes::{
     update_world_object_depths,
 };
 pub use bag_sync::sync_bag_slots_from_server;
+pub use bank_sync::{send_bank_item_actions_to_server, sync_bank_from_server};
 pub use inventory_actions::{send_bag_item_actions_to_server, send_inventory_item_actions_to_server};
 pub use inventory_sync::sync_inventory_from_server;
 pub use overlay::{
@@ -35,10 +37,12 @@ pub use remote_players::{
     RemoteNetPlayer,
 };
 pub use runtime::{
+    process_pending_bank_open,
     process_pending_ground_item_pickups,
     pump_game_net_results,
     send_bag_put_item_to_server,
     send_bag_take_item_to_server,
+    send_bank_create_tab_to_server,
     send_drop_item_to_server,
     send_equip_bag_to_server,
     send_interaction_to_server,
@@ -47,6 +51,7 @@ pub use runtime::{
     send_unequip_bag_to_server,
     send_walk_intents_to_server_runtime,
     spawn_game_ws,
+    PendingBankOpen,
     PendingGroundItemPickup,
 };
 pub use status::{

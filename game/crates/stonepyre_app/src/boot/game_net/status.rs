@@ -12,6 +12,9 @@ use super::protocol::{
     BagSlotChanged,
     BagSlotSnapshot,
     BagSlotsSnapshot,
+    BankItemSnapshot,
+    BankSnapshot,
+    BankTabSnapshot,
     GroundItemEvent,
     GroundItemSnapshot,
     GroundItemsSnapshot,
@@ -75,6 +78,8 @@ pub enum GameNetEvent {
     SkillDelta(SkillDelta),
     BagSlotsSnapshot(BagSlotsSnapshot),
     BagSlotChanged(BagSlotChanged),
+    BankSnapshot(BankSnapshot),
+    BankTabChanged(BankTabSnapshot),
     /// Server's authoritative path in response to a MoveTo. The reconciler
     /// applies this in place of any locally-predicted path.
     PathConfirmed {
@@ -134,6 +139,25 @@ pub enum GameNetCommand {
         bag_item_slot_idx: usize,
         inv_slot_idx: usize,
     },
+    /// Deposit a single inventory slot into the bank.
+    BankDeposit {
+        inv_slot_idx: usize,
+        item_id: String,
+        quantity: u32,
+    },
+    /// Withdraw items from a specific bank tab slot into inventory.
+    BankWithdraw {
+        tab_idx: u8,
+        slot_idx: usize,
+        item_id: String,
+        quantity: u32,
+    },
+    /// Deposit every item in inventory into the bank.
+    BankDepositAll,
+    /// Close the bank panel client-side (no server message needed).
+    BankClose,
+    /// Create a new bank tab with the given name.
+    BankCreateTab { display_name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +198,11 @@ pub struct GameNetStatus {
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
     pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
+    /// Bank tabs (physical tabs 1–11). Empty until first UseBank interaction.
+    pub bank_tabs: Vec<BankTabSnapshot>,
+    pub bank_dirty: bool,
+    /// Whether the bank UI panel is currently open.
+    pub bank_open: bool,
     /// Pending server-authoritative path waiting to be applied by the reconciler.
     /// Set by the pump, consumed (and cleared) by reconcile_local_player_to_server.
     pub pending_server_path: Option<(TilePos, Vec<TilePos>)>,
@@ -222,6 +251,9 @@ impl Default for GameNetStatus {
             skill_entries: Vec::new(),
             skills_dirty: false,
             xp_feedback_queue: Vec::new(),
+            bank_tabs: Vec::new(),
+            bank_dirty: false,
+            bank_open: false,
             pending_server_path: None,
             pending_path_confirmations: 0,
             local_tile: None,

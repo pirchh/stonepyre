@@ -2,8 +2,10 @@
 use bevy::prelude::*;
 
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
+use stonepyre_engine::plugins::input::emit_click_messages;
 
 pub mod bag;
+pub mod bank;
 pub mod character_state;
 pub mod character_tab;
 pub mod config;
@@ -44,7 +46,8 @@ impl Plugin for StonepyreUiPlugin {
             // Reset UI click blocking once per UI frame. Individual panels then opt back in
             // when the cursor is actually over them. This prevents stale blockers from
             // making the world randomly stop accepting clicks.
-            .add_systems(Update, clear_world_interaction_blocker_system.run_if(game_ui_enabled))
+            // Runs in PreUpdate so it always clears before any Update system runs.
+            .add_systems(PreUpdate, clear_world_interaction_blocker_system.run_if(game_ui_enabled))
 
             // HUD
             .insert_resource(hud::HudState::default())
@@ -54,7 +57,9 @@ impl Plugin for StonepyreUiPlugin {
             // Only run HUD interactions/tooltips/keys when enabled
             .add_systems(Update, hud::hud_interactions_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_active_tab_highlight_system.run_if(game_ui_enabled))
-            .add_systems(Update, hud::hud_world_interaction_blocker_system.run_if(game_ui_enabled))
+            .add_systems(Update, hud::hud_world_interaction_blocker_system
+                .before(emit_click_messages)
+                .run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_tooltip_system.run_if(game_ui_enabled))
             .add_systems(Update, hud::hud_keyboard_toggles.run_if(game_ui_enabled))
 
@@ -78,7 +83,8 @@ impl Plugin for StonepyreUiPlugin {
             .add_systems(
                 Update,
                 (
-                    inventory::inventory_panel_sync_system,
+                    inventory::inventory_panel_sync_system
+                        .before(emit_click_messages),
                     inventory::inventory_item_context_menu_system,
                 )
                     .run_if(game_ui_enabled),
@@ -89,7 +95,8 @@ impl Plugin for StonepyreUiPlugin {
             .add_systems(
                 Update,
                 (
-                    character_tab::character_tab_panel_sync_system,
+                    character_tab::character_tab_panel_sync_system
+                        .before(emit_click_messages),
                     character_tab::character_bag_context_menu_system,
                 )
                     .run_if(game_ui_enabled),
@@ -101,8 +108,22 @@ impl Plugin for StonepyreUiPlugin {
             .add_systems(
                 Update,
                 (
-                    bag::bag_panel_sync_system,
+                    bag::bag_panel_sync_system
+                        .before(emit_click_messages),
                     bag::bag_context_menu_system,
+                )
+                    .run_if(game_ui_enabled),
+            )
+
+            // Bank panel (opens when the player interacts with a bank booth)
+            .insert_resource(bank::BankUiState::default())
+            .insert_resource(bank::BankItemActionQueue::default())
+            .add_systems(
+                Update,
+                (
+                    bank::bank_panel_sync_system
+                        .before(emit_click_messages),
+                    bank::bank_interaction_system,
                 )
                     .run_if(game_ui_enabled),
             )

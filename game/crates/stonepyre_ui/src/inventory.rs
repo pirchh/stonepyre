@@ -6,6 +6,7 @@ use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Inventory, PlayerBagSlots};
 
 use crate::bag::BagUiState;
+use crate::bank::{BankItemAction, BankItemActionQueue, BankUiState};
 use crate::config::UiBindings;
 use crate::drag::{DragState, DragTarget};
 
@@ -167,6 +168,8 @@ pub(crate) fn inventory_item_context_menu_system(
     mut state: ResMut<InventoryUiState>,
     mut action_queue: ResMut<InventoryItemActionQueue>,
     player_q: Query<&Inventory>,
+    bank_ui: Res<BankUiState>,
+    mut bank_action_queue: ResMut<BankItemActionQueue>,
     mut option_q: Query<(&Interaction, &InventoryContextOptionButton), (Changed<Interaction>, With<Button>)>,
 ) {
     if !state.open {
@@ -181,6 +184,20 @@ pub(crate) fn inventory_item_context_menu_system(
         state.status_message.clear();
         close_context_menu(&mut commands, &mut state);
         return;
+    }
+
+    // When the bank is open: left-click on an inventory slot deposits that item.
+    if mouse.just_pressed(MouseButton::Left) && bank_ui.open {
+        if let Some((slot_idx, _)) = inventory_slot_at_cursor(&windows) {
+            if let Some(item) = inventory_item_for_slot(inv, slot_idx) {
+                bank_action_queue.actions.push(BankItemAction::DepositInvSlot {
+                    inv_slot_idx: item.slot_idx,
+                    item_id: item.item_id.clone(),
+                    quantity: item.quantity,
+                });
+                return;
+            }
+        }
     }
 
     // Left-click primary action is now handled by the drag system (drag.rs).

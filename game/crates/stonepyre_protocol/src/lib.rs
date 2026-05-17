@@ -64,6 +64,59 @@ pub enum ClientMsg {
         bag_item_slot_idx: usize,
         inv_slot_idx: usize,
     },
+
+    // ------------------------------------------------------------------
+    // Bank
+    // ------------------------------------------------------------------
+
+    /// Deposit one item from inventory into the bank.
+    /// The server routes it to the correct tab via tag filters.
+    BankDeposit {
+        inv_slot_idx: usize,
+        item_id: String,
+        /// How many to deposit. Clamped to available quantity server-side.
+        quantity: i64,
+    },
+
+    /// Withdraw items from a bank tab slot into inventory.
+    /// quantity is clamped to available bank quantity and free inventory slots.
+    BankWithdraw {
+        tab_idx: u8,
+        slot_idx: usize,
+        item_id: String,
+        quantity: i64,
+    },
+
+    /// Deposit every item in inventory into the bank.
+    BankDepositAll,
+
+    /// Create a new bank tab with the given display name and tag filters.
+    /// Fails if the character already has 11 tabs (slots 1–11) or the
+    /// filters overlap with an existing tab's filters.
+    BankCreateTab {
+        display_name: String,
+        tag_filters: Vec<String>,
+    },
+
+    /// Rename or change the tag filters for an existing tab.
+    BankUpdateTab {
+        tab_idx: u8,
+        display_name: String,
+        tag_filters: Vec<String>,
+    },
+
+    /// Delete a bank tab. Its items are moved to tab 1 (General).
+    BankDeleteTab {
+        tab_idx: u8,
+    },
+
+    /// Move an item from one bank tab to another (manual re-organisation).
+    BankMoveItem {
+        from_tab_idx: u8,
+        slot_idx: usize,
+        item_id: String,
+        to_tab_idx: u8,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +179,12 @@ pub enum ServerMsg {
 
     /// A bag slot changed (equipped, unequipped, or item moved in/out).
     BagSlotChanged(BagSlotChanged),
+
+    /// Full bank state sent on UseBank interaction and after any bank mutation.
+    BankSnapshot(BankSnapshot),
+
+    /// A single bank tab changed (items deposited, withdrawn, tab renamed, etc.).
+    BankTabChanged(BankTabSnapshot),
 
     /// Immediate response to a MoveTo request containing the server's authoritative
     /// path. The client should replace its locally-predicted path with this so both
@@ -378,6 +437,7 @@ pub enum SkillXpSource {
 pub enum InteractionAction {
     WalkHere,
     ChopDown,
+    UseBank,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,4 +453,34 @@ pub enum ActionState {
     Cancelled,
     Complete,
     Rejected,
+}
+
+// ------------------------------------------------------------------
+// Bank
+// ------------------------------------------------------------------
+
+/// Full bank state for a character. Tab 0 is the implicit "All" view;
+/// the tabs vec contains the physical storage tabs (indices 1–11).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankSnapshot {
+    pub character_id: Uuid,
+    pub tabs: Vec<BankTabSnapshot>,
+}
+
+/// State of one physical bank tab.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankTabSnapshot {
+    pub character_id: Uuid,
+    pub tab_idx: u8,
+    pub display_name: String,
+    /// Item tag filters. Empty = accept anything (General tab).
+    pub tag_filters: Vec<String>,
+    pub items: Vec<BankItemSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankItemSnapshot {
+    pub slot_idx: usize,
+    pub item_id: String,
+    pub quantity: i64,
 }
