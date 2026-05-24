@@ -2,8 +2,10 @@ use bevy::prelude::*;
 use bevy::animation::graph::AnimationNodeIndex;
 use bevy::gltf::Gltf;
 
+use stonepyre_world::tile_to_world3d;
+
 use crate::plugins::movement::StepTo;
-use crate::plugins::world::{Facing, Player, TilePath};
+use crate::plugins::world::{Facing, Player, TilePath, ARRIVE_EPS};
 
 // ---------------------------------------------------------------------------
 // Components
@@ -186,7 +188,21 @@ pub fn animate_humanoid(
     // -------------------------------------------------------------------
     // Choose clip
     // -------------------------------------------------------------------
-    let walking = step_to.is_some() || !path.tiles.is_empty();
+    // Use physical distance rather than `step_to.is_some()` because
+    // `commands.entity(ent).remove::<StepTo>()` is deferred — on the arrival
+    // frame the component is still present even though the player has snapped
+    // to the tile. Checking actual distance avoids a 1-frame walk→walk flicker.
+    let walking = if let Some(step) = step_to {
+        let target = tile_to_world3d(step.0);
+        let dist = Vec2::new(
+            xform.translation.x - target.x,
+            xform.translation.z - target.z,
+        )
+        .length();
+        dist > ARRIVE_EPS
+    } else {
+        !path.tiles.is_empty()
+    };
     let target_clip = if walking {
         AnimClip3d::Walk
     } else {
