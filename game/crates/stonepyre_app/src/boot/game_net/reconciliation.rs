@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 
 use stonepyre_engine::plugins::{
     movement::StepTo,
-    world::{player_feet_world, Player, TilePath, FOOT_OFFSET_Y},
+    world::{Player, TilePath},
 };
-use stonepyre_world::{tile_to_world_center, world_to_tile, TilePos, WorldGrid};
+use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos, WorldGrid};
 
 use super::status::GameNetStatus;
 
@@ -42,7 +42,7 @@ pub fn reconcile_local_player_to_server(
         return;
     };
 
-    let local_tile = world_to_tile(player_feet_world(&xform));
+    let local_tile = world3d_to_tile(xform.translation);
     status.local_tile = Some(local_tile);
 
     // If the server just sent us an authoritative path, apply it — but trim any
@@ -115,9 +115,10 @@ pub fn reconcile_local_player_to_server(
     };
 
     if server_drift >= HARD_CORRECT_THRESHOLD {
-        let center = tile_to_world_center(effective_server_tile);
+        let center = tile_to_world3d(effective_server_tile);
         xform.translation.x = center.x;
-        xform.translation.y = center.y + FOOT_OFFSET_Y;
+        xform.translation.y = 0.0;
+        xform.translation.z = center.z;
         path.tiles.clear();
         commands.entity(entity).remove::<StepTo>();
         status.correction_count += 1;
