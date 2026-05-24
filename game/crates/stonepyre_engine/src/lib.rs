@@ -32,6 +32,9 @@ impl Plugin for StonepyreEnginePlugin {
             // ✅ Content-owned defs loaded into engine resources:
             .insert_resource(plugins::inventory::ItemDb(content.items.clone()))
             .insert_resource(plugins::inventory::ContainerDb(content.containers.clone()))
+            // ✅ Animation resources — default until the world spawns and populates them:
+            .insert_resource(plugins::animation::PlayerGltfHandle::default())
+            .insert_resource(plugins::animation::PlayerAnimGraph::default())
             // ✅ Harvest definitions come from content
             .insert_resource(plugins::skills::HarvestDb::from_defs(content.harvest.clone()))
             .insert_resource(plugins::rng::GameRng::default())
