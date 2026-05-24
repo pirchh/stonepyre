@@ -177,6 +177,7 @@ pub fn animate_humanoid(
         if let Ok(ent) = player_entity_q.single() {
             commands.entity(ent).remove::<ForceIdleOnce>();
         }
+        ap.stop_all();
         ap.play(idle_node).repeat();
         anim.current = Some(AnimClip3d::Idle);
         anim.last_facing = Some(*facing);
@@ -193,6 +194,10 @@ pub fn animate_humanoid(
     };
 
     if anim.current != Some(target_clip) {
+        // Stop ALL active clips before starting the new one.
+        // In Bevy 0.18, each AnimationNodeIndex plays independently —
+        // calling play(new_node) does NOT stop the old node.
+        ap.stop_all();
         let node = if target_clip == AnimClip3d::Walk {
             walk_node
         } else {
@@ -204,20 +209,19 @@ pub fn animate_humanoid(
 
     // -------------------------------------------------------------------
     // Facing → Y-axis rotation
-    // Model exported from Blender faces -Z by default (glTF convention).
-    //   North (tile Y+) = world -Z = 0° (model default)
-    //   South (tile Y-) = world +Z = 180°
-    //   East  (tile X+) = world +X = -90° (turn right)
-    //   West  (tile X-) = world -X = +90° (turn left)
-    // Adjust these constants if the model faces a different direction.
+    // Mixamo/Blender GLB exports the character facing +Z (toward camera).
+    //   South (tile Y-) = world +Z = 0°   (model default, faces camera)
+    //   North (tile Y+) = world -Z = 180°
+    //   East  (tile X+) = world +X = +90° (turn left from front)
+    //   West  (tile X-) = world -X = -90° (turn right from front)
     // -------------------------------------------------------------------
     if anim.last_facing != Some(*facing) {
         use std::f32::consts::PI;
         let angle = match *facing {
-            Facing::North => 0.0,
-            Facing::South => PI,
-            Facing::East => -PI / 2.0,
-            Facing::West => PI / 2.0,
+            Facing::North =>  PI,
+            Facing::South =>  0.0,
+            Facing::East  =>  PI / 2.0,
+            Facing::West  => -PI / 2.0,
         };
         xform.rotation = Quat::from_rotation_y(angle);
         anim.last_facing = Some(*facing);

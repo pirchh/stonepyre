@@ -13,10 +13,14 @@ pub const MOVE_TILES_PER_SEC: f32 = 1.6;
 // Tweak Y (height) and Z (distance behind) to taste.
 pub const CAM_OFFSET: Vec3 = Vec3::new(0.0, 350.0, 280.0);
 
-// Scale applied to the player GLB.  Mixamo rigs export in centimetres so a
-// character is ~180 units tall.  One tile = TILE_SIZE = 64 world units.
-// A character ~1.5 tiles tall ≈ 96 units → scale ≈ 96 / 180 ≈ 0.53.
-pub const PLAYER_SCALE: f32 = 0.53;
+// Scale applied to the player GLB.
+// Blender exports GLB in metres (1 Blender unit = 1 m with Apply Units on).
+// A Mixamo character is ~1.8 m tall → 1.8 GLB units.
+// One tile = TILE_SIZE = 64 world units; we want the player ~1.5 tiles tall ≈ 96 units.
+// scale = 96 / 1.8 ≈ 53.3
+// If your export used "Export All Actions" WITHOUT Apply Units, the model may
+// already be ~180 units tall; in that case set this back to 0.53.
+pub const PLAYER_SCALE: f32 = 53.3;
 
 pub const MOVE_SPEED: f32 = TILE_SIZE * MOVE_TILES_PER_SEC;
 

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use stonepyre_engine::plugins::world::{Facing, ARRIVE_EPS, MOVE_SPEED, PLAYER_SCALE};
+use stonepyre_engine::plugins::world::{Facing, ARRIVE_EPS, MOVE_SPEED};
 use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos, TILE_SIZE};
 
 use super::status::GameNetStatus;
@@ -58,13 +58,13 @@ pub fn sync_remote_players_from_snapshots(
             });
             commands.spawn((
                 Mesh3d(meshes.add(Cuboid::new(
-                    TILE_SIZE * 0.5 * PLAYER_SCALE,
-                    TILE_SIZE * 1.5 * PLAYER_SCALE,
-                    TILE_SIZE * 0.5 * PLAYER_SCALE,
+                    TILE_SIZE * 0.5,
+                    TILE_SIZE * 1.5,
+                    TILE_SIZE * 0.5,
                 ))),
                 MeshMaterial3d(mat),
                 Transform::from_translation(
-                    world_pos + Vec3::new(0.0, TILE_SIZE * 0.75 * PLAYER_SCALE, 0.0),
+                    world_pos + Vec3::new(0.0, TILE_SIZE * 0.75, 0.0),
                 ),
                 RemoteNetPlayer {
                     player_id: p.player_id,
