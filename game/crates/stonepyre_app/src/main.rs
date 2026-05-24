@@ -140,6 +140,8 @@ fn disable_game_ui_on_exit_world(
 fn start_world_on_enter(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     harvest_defs: Option<Res<stonepyre_engine::plugins::skills::HarvestDb>>,
     mut boot: ResMut<BootState>,
     mut game_net: ResMut<boot::game_net::GameNetRuntime>,
@@ -168,6 +170,8 @@ fn start_world_on_enter(
     stonepyre_engine::plugins::world::spawn_demo_world_for_character(
         &mut commands,
         &asset_server,
+        &mut meshes,
+        &mut materials,
         harvest_defs.as_deref(),
         character_id,
     );

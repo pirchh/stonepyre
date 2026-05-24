@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{world_to_tile, TilePos, WorldGrid, TILE_SIZE};
+use stonepyre_world::{world3d_to_tile, TilePos, WorldGrid, TILE_SIZE};
 
 use crate::plugins::input::ClickMsg;
 use crate::plugins::skills::{AnimClip, RequestedAnim};
@@ -284,7 +284,7 @@ pub fn plan_intents_to_actions(
     let Ok((player_ent, player_xform, mut path, mut facing)) = player_q.single_mut() else {
         return;
     };
-    let start_tile = world_to_tile(player_feet_world(player_xform));
+    let start_tile = stonepyre_world::world3d_to_tile(player_xform.translation);
     let server_authoritative = server_authoritative.as_ref().map(|r| r.0).unwrap_or(false);
 
     for ev in intents.read() {
@@ -452,7 +452,7 @@ pub fn advance_action_to_impact_when_ready(
         return;
     }
 
-    let player_tile = world_to_tile(player_feet_world(player_xform));
+    let player_tile = world3d_to_tile(player_xform.translation);
 
     let target_tile = match action.intent.target {
         Target::Tile(t) => t,

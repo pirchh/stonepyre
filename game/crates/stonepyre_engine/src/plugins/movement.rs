@@ -1,10 +1,8 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{tile_to_world_center, world_to_tile, TilePos};
+use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos};
 
-use crate::plugins::world::{
-    player_feet_world, Facing, MoveSpeed, Player, TilePath, ARRIVE_EPS, FOOT_OFFSET_Y,
-};
+use crate::plugins::world::{Facing, MoveSpeed, Player, TilePath, ARRIVE_EPS};
 
 /// Indicates the player is currently moving toward this tile.
 /// This stays present during in-between frames so animation can reliably detect “walking”.
@@ -36,25 +34,26 @@ pub fn follow_path_to_next_tile(
         };
 
         // Update facing immediately based on next tile.
-        let from = world_to_tile(player_feet_world(&xform));
+        let from = world3d_to_tile(xform.translation);
         *facing = facing_from_step(from, next);
 
         commands.entity(ent).insert(StepTo(next));
         next
     };
 
-    // Move toward the center of the step tile (feet-based).
-    let target_center = tile_to_world_center(step_tile);
-    let target_feet = Vec2::new(target_center.x, target_center.y);
-    let cur_feet = player_feet_world(&xform);
+    // Move toward the 3D world center of the target tile (XZ plane, Y = 0).
+    let target = tile_to_world3d(step_tile);
+    let cur = Vec2::new(xform.translation.x, xform.translation.z);
+    let tgt = Vec2::new(target.x, target.z);
 
-    let to = target_feet - cur_feet;
+    let to = tgt - cur;
     let dist = to.length();
 
     if dist <= ARRIVE_EPS {
         // Snap to target and complete the step.
-        xform.translation.x = target_feet.x;
-        xform.translation.y = target_feet.y + FOOT_OFFSET_Y;
+        xform.translation.x = target.x;
+        xform.translation.y = 0.0;
+        xform.translation.z = target.z;
 
         // Now pop the tile we just reached.
         if let Some(front) = path.tiles.front().copied() {
@@ -68,13 +67,13 @@ pub fn follow_path_to_next_tile(
         return;
     }
 
-    // Move smoothly toward target.
+    // Move smoothly toward target in the XZ plane.
     let dir = to / dist.max(0.0001);
     let step = speed.0 * time.delta_secs();
     let delta = dir * step.min(dist);
 
     xform.translation.x += delta.x;
-    xform.translation.y += delta.y;
+    xform.translation.z += delta.y; // delta.y here is the Z-axis component
 }
 
 /// Same logic as interaction.rs helper, duplicated locally to avoid circular imports.

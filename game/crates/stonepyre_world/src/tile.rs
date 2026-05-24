@@ -32,6 +32,21 @@ pub fn tile_to_world_center(tile: TilePos) -> Vec2 {
     Vec2::new(tile.x as f32 * TILE_SIZE, tile.y as f32 * TILE_HEIGHT)
 }
 
+/// Convert a tile position to a 3D world position.
+/// Tile X maps to world X, tile Y maps to world -Z (Y+ is North = into the screen).
+/// World Y is always 0 (ground plane).
+pub fn tile_to_world3d(tile: TilePos) -> Vec3 {
+    Vec3::new(tile.x as f32 * TILE_SIZE, 0.0, -(tile.y as f32 * TILE_SIZE))
+}
+
+/// Convert a 3D world position back to the nearest tile.
+pub fn world3d_to_tile(world: Vec3) -> TilePos {
+    TilePos {
+        x: (world.x / TILE_SIZE).round() as i32,
+        y: -(world.z / TILE_SIZE).round() as i32,
+    }
+}
+
 pub fn neighbors_4(tile: TilePos) -> [TilePos; 4] {
     [
         TilePos::new(tile.x + 1, tile.y),

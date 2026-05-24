@@ -57,6 +57,11 @@ impl Plugin for StonepyreEnginePlugin {
                 // ---- World maintenance ----
                 plugins::world::sync_world_grid_blocked,
                 plugins::world::debug_draw_target_marker,
+                plugins::world::camera_follow_player,
+                // ---- Animation graph setup (runs until GLB is loaded & linked) ----
+                plugins::animation::setup_player_anim_graph,
+                plugins::animation::link_anim_player_to_player
+                    .after(plugins::animation::setup_player_anim_graph),
                 // ---- Input + context menu + interaction intent planning ----
                 (
                     plugins::input::emit_click_messages,
@@ -79,7 +84,8 @@ impl Plugin for StonepyreEnginePlugin {
                 // ---- Movement + Animation ----
                 plugins::movement::follow_path_to_next_tile,
                 plugins::animation::animate_humanoid
-                    .after(plugins::movement::follow_path_to_next_tile),
+                    .after(plugins::movement::follow_path_to_next_tile)
+                    .after(plugins::animation::link_anim_player_to_player),
                 // ---- Harvest regen + visibility sync (generic) ----
                 plugins::skills::tick_harvest_regen
                     .run_if(resource_exists::<plugins::skills::HarvestDb>),
