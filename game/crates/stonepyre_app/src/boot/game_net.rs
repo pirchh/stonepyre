@@ -50,6 +50,7 @@ pub use runtime::{
     send_pickup_ground_item_to_server,
     send_unequip_bag_to_server,
     send_walk_intents_to_server_runtime,
+    send_wasd_movement_to_server,
     spawn_game_ws,
     PendingBankOpen,
     PendingGroundItemPickup,
@@ -60,7 +61,6 @@ pub use status::{
     GameNetRuntime,
     GameNetStatus,
 };
-pub use target_marker::sync_network_target_marker_from_last_move;
 pub use xp_feedback::{
     despawn_xp_feedback_layer,
     spawn_xp_feedback_layer,

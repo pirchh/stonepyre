@@ -5,6 +5,7 @@ use uuid::Uuid;
 use stonepyre_world::{tile_to_world3d, TilePos, WorldGrid, TILE_SIZE};
 
 use crate::plugins::inventory::{Equipment, EquippedBackpack, Inventory, ItemStack};
+use crate::plugins::movement::IsWalking;
 
 pub const ARRIVE_EPS: f32 = 1.5;
 pub const MOVE_TILES_PER_SEC: f32 = 1.6;
@@ -55,10 +56,29 @@ pub struct TilePath {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Facing {
     North,
+    NorthEast,
     East,
+    SouthEast,
     South,
+    SouthWest,
     West,
+    NorthWest,
 }
+
+/// Source-of-truth XZ position for the player, immune to animation root-motion.
+///
+/// Bevy's animation system runs in PostUpdate and can overwrite `Transform.translation`
+/// via root-motion curves baked into walk/idle clips. Because movement runs in Update
+/// (incrementally adding to `Transform`), the animation PostUpdate reset wins and the
+/// player gets stuck mid-step forever.
+///
+/// `LogicalPos2d` stores the movement system's intended (x, z) and is re-applied to
+/// `Transform` in a PostUpdate system that runs after animation — so the final
+/// per-frame transform is always the movement-owned position, not the animation's.
+///
+/// Stored as `Vec2(x, z)` — the `z` world axis is in `y`.
+#[derive(Component, Default, Clone, Copy)]
+pub struct LogicalPos2d(pub Vec2);
 
 #[derive(Component, Default)]
 pub struct TargetMarker;
@@ -179,6 +199,8 @@ pub fn spawn_demo_world_for_character(
         TilePath::default(),
         Facing::South,
         crate::plugins::animation::HumanoidAnim3d::default(),
+        LogicalPos2d(Vec2::ZERO), // starts at tile (0,0) = world (0,0)
+        IsWalking::default(),
         PlayerAppearance::default(),
         inv,
         Equipment::default(),
@@ -225,21 +247,7 @@ pub fn spawn_demo_world_for_character(
         ));
     }
 
-    // ------------------------------------------------------------------
-    // Target marker — flat green tile highlight
-    // ------------------------------------------------------------------
-    let marker_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.2, 0.8, 0.2, 0.4),
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    });
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(TILE_SIZE * 0.9, TILE_SIZE * 0.9))),
-        MeshMaterial3d(marker_mat),
-        Transform::from_translation(Vec3::new(0.0, 0.02, 0.0)), // just above ground
-        TargetMarker::default(),
-        Visibility::Hidden,
-    ));
+    // Target marker removed — no longer needed with WASD movement.
 }
 
 /// Optional helper if you want a legacy call with no character id.
@@ -265,8 +273,9 @@ pub fn camera_follow_player(
     let Ok(mut cam_xform) = cam_q.single_mut() else { return; };
 
     let target = player_xform.translation + CAM_OFFSET;
-    // Smooth follow — lerp toward the desired position.
-    cam_xform.translation = cam_xform.translation.lerp(target, 0.12);
+    // Snap directly — no lerp lag. Lag causes the player to drift in viewport
+    // space each frame which makes smooth animations appear to jitter.
+    cam_xform.translation = target;
     cam_xform.look_at(player_xform.translation, Vec3::Y);
 }
 
@@ -304,5 +313,41 @@ pub fn debug_draw_target_marker(
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Root-motion correction (PostUpdate)
+// ---------------------------------------------------------------------------
+
+/// Re-apply the movement system's intended XZ position after Bevy's animation
+/// system has had a chance to overwrite it with root-motion data from walk/idle
+/// clips. Must run in PostUpdate, after animation, before transform propagation.
+///
+/// Two things are corrected each frame:
+/// 1. The Player entity's world XZ is forced to `LogicalPos2d` — this handles
+///    root motion applied directly to the SceneRoot entity.
+/// 2. The XZ of every **direct child** of the Player entity (i.e. the GLB
+///    Armature node) is zeroed out in local space — this handles root motion
+///    applied to the Armature child, which would otherwise visually slide the
+///    mesh past the destination tile before snapping on idle.
+pub fn apply_logical_pos(
+    mut player_q: Query<(&LogicalPos2d, &mut Transform, &Children), With<Player>>,
+    mut child_xforms: Query<&mut Transform, Without<Player>>,
+) {
+    let Ok((logical, mut xform, children)) = player_q.single_mut() else { return; };
+
+    // 1. Keep Player entity at logical movement position.
+    xform.translation.x = logical.0.x;
+    xform.translation.z = logical.0.y; // Vec2.y stores the world-Z axis
+
+    // 2. Zero out any root-motion XZ translation on the direct GLB child node
+    //    (usually the Armature). We preserve Y so the model doesn't sink into
+    //    the ground if the animation bobs the root in Y.
+    for child in children.iter() {
+        if let Ok(mut child_xform) = child_xforms.get_mut(child) {
+            child_xform.translation.x = 0.0;
+            child_xform.translation.z = 0.0;
+        }
     }
 }

@@ -1,90 +1,115 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos};
+use stonepyre_world::{world3d_to_tile, WorldGrid};
 
-use crate::plugins::world::{Facing, MoveSpeed, Player, TilePath, ARRIVE_EPS};
+use crate::plugins::world::{Facing, LogicalPos2d, MoveSpeed, Player};
 
-/// Indicates the player is currently moving toward this tile.
-/// This stays present during in-between frames so animation can reliably detect “walking”.
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
+
+/// Set every frame by `wasd_movement` so other systems (animation, networking)
+/// can tell whether the player is currently walking without re-reading input.
+#[derive(Component, Default)]
+pub struct IsWalking(pub bool);
+
+/// Legacy tile-step component kept so the reconciliation code compiles.
+/// No longer driven by the player movement system.
 #[derive(Component, Clone, Copy, Debug)]
-pub struct StepTo(pub TilePos);
+pub struct StepTo(pub stonepyre_world::TilePos);
 
-pub fn follow_path_to_next_tile(
+// ---------------------------------------------------------------------------
+// System
+// ---------------------------------------------------------------------------
+
+pub fn wasd_movement(
     time: Res<Time>,
-    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    world: Option<Res<WorldGrid>>,
     mut q: Query<(
-        Entity,
         &mut Transform,
+        &mut LogicalPos2d,
         &MoveSpeed,
-        &mut TilePath,
         &mut Facing,
-        Option<&StepTo>,
+        &mut IsWalking,
     ), With<Player>>,
 ) {
-    let Ok((ent, mut xform, speed, mut path, mut facing, step_opt)) = q.single_mut() else {
+    let Ok((mut xform, mut logical, speed, mut facing, mut is_walking)) = q.single_mut() else {
         return;
     };
 
-    // If we are not currently stepping, pick the next tile (but DO NOT pop yet).
-    let step_tile = if let Some(step) = step_opt {
-        step.0
-    } else {
-        let Some(next) = path.tiles.front().copied() else {
-            return;
-        };
+    // --- 8-directional input (WASD + arrow keys) ---
+    // Vec2 convention: x = world X, y = world Z (matches LogicalPos2d)
+    let mut dir = Vec2::ZERO;
+    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp)    { dir.y -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown)  { dir.y += 1.0; }
+    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft)  { dir.x -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) { dir.x += 1.0; }
 
-        // Update facing immediately based on next tile.
-        let from = world3d_to_tile(xform.translation);
-        *facing = facing_from_step(from, next);
+    is_walking.0 = dir != Vec2::ZERO;
 
-        commands.entity(ent).insert(StepTo(next));
-        next
-    };
-
-    // Move toward the 3D world center of the target tile (XZ plane, Y = 0).
-    let target = tile_to_world3d(step_tile);
-    let cur = Vec2::new(xform.translation.x, xform.translation.z);
-    let tgt = Vec2::new(target.x, target.z);
-
-    let to = tgt - cur;
-    let dist = to.length();
-
-    if dist <= ARRIVE_EPS {
-        // Snap to target and complete the step.
-        xform.translation.x = target.x;
-        xform.translation.y = 0.0;
-        xform.translation.z = target.z;
-
-        // Now pop the tile we just reached.
-        if let Some(front) = path.tiles.front().copied() {
-            if front == step_tile {
-                path.tiles.pop_front();
-            }
-        }
-
-        // Clear stepping state; next tick will pick the next tile if available.
-        commands.entity(ent).remove::<StepTo>();
+    if dir == Vec2::ZERO {
         return;
     }
 
-    // Move smoothly toward target in the XZ plane.
-    let dir = to / dist.max(0.0001);
-    let step = speed.0 * time.delta_secs();
-    let delta = dir * step.min(dist);
+    let dir = dir.normalize();
 
-    xform.translation.x += delta.x;
-    xform.translation.z += delta.y; // delta.y here is the Z-axis component
+    // Update facing from dominant movement axis.
+    *facing = facing_from_dir(dir);
+
+    let delta = dir * speed.0 * time.delta_secs();
+
+    let new_pos = if let Some(world) = &world {
+        try_move(logical.0, delta, world)
+    } else {
+        logical.0 + delta
+    };
+
+    logical.0 = new_pos;
+    xform.translation.x = new_pos.x;
+    xform.translation.z = new_pos.y; // Vec2.y stores world-Z
 }
 
-/// Same logic as interaction.rs helper, duplicated locally to avoid circular imports.
-fn facing_from_step(from: TilePos, to: TilePos) -> Facing {
-    if to.x > from.x {
-        Facing::East
-    } else if to.x < from.x {
-        Facing::West
-    } else if to.y > from.y {
-        Facing::North
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Try the full move, then slide along X, then Z on collision.
+fn try_move(pos: Vec2, delta: Vec2, world: &WorldGrid) -> Vec2 {
+    let full = pos + delta;
+    if !tile_blocked(full, world) {
+        return full;
+    }
+    let slide_x = Vec2::new(pos.x + delta.x, pos.y);
+    if !tile_blocked(slide_x, world) {
+        return slide_x;
+    }
+    let slide_z = Vec2::new(pos.x, pos.y + delta.y);
+    if !tile_blocked(slide_z, world) {
+        return slide_z;
+    }
+    pos
+}
+
+fn tile_blocked(pos: Vec2, world: &WorldGrid) -> bool {
+    world.is_blocked(world3d_to_tile(Vec3::new(pos.x, 0.0, pos.y)))
+}
+
+pub fn facing_from_dir(dir: Vec2) -> Facing {
+    // If both axes are meaningful (diagonal), return an intercardinal direction.
+    // Threshold of 0.35 cleanly separates diagonal from cardinal for a
+    // normalised 2-D vector (pure diagonal ≈ 0.707 on each axis).
+    let diagonal = dir.x.abs() > 0.35 && dir.y.abs() > 0.35;
+    if diagonal {
+        match (dir.x > 0.0, dir.y < 0.0) {
+            (true,  true)  => Facing::NorthEast,
+            (false, true)  => Facing::NorthWest,
+            (true,  false) => Facing::SouthEast,
+            (false, false) => Facing::SouthWest,
+        }
+    } else if dir.x.abs() >= dir.y.abs() {
+        if dir.x > 0.0 { Facing::East } else { Facing::West }
     } else {
-        Facing::South
+        if dir.y < 0.0 { Facing::North } else { Facing::South }
     }
 }

@@ -227,6 +227,20 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             }
                         }
                     }
+                    ClientMsg::MoveDir { dx, dy } => {
+                        if let Some(pid) = player_id {
+                            // Normalise on the server as a safety measure — reject
+                            // any inflated magnitude the client might send.
+                            let len = (dx * dx + dy * dy).sqrt();
+                            let dir = if len > 1e-6 {
+                                [dx / len, dy / len]
+                            } else {
+                                [0.0, 0.0]
+                            };
+                            let mut sim = state.game.sim.write().await;
+                            sim.set_move_dir(pid, dir);
+                        }
+                    }
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
                             let (cancelled_event, path_confirmed) = {

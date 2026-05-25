@@ -2,8 +2,9 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 use uuid::Uuid;
 
+use stonepyre_engine::plugins::movement::facing_from_dir;
 use stonepyre_engine::plugins::world::{Facing, ARRIVE_EPS, MOVE_SPEED};
-use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos, TILE_SIZE};
+use stonepyre_world::TILE_SIZE;
 
 use super::status::GameNetStatus;
 
@@ -11,7 +12,8 @@ use super::status::GameNetStatus;
 pub struct RemoteNetPlayer {
     pub player_id: Uuid,
     pub character_id: Uuid,
-    pub target_tile: TilePos,
+    /// Authoritative world-space position from the latest server snapshot.
+    pub target_pos: Vec2,
     pub facing: Facing,
 }
 
@@ -37,21 +39,20 @@ pub fn sync_remote_players_from_snapshots(
 
         expected.insert(p.player_id);
 
+        let target_pos = Vec2::new(p.pos_x, p.pos_z);
         let mut found = false;
+
         for (_, mut remote, _) in remotes.iter_mut() {
             if remote.player_id == p.player_id {
-                if remote.target_tile != p.tile {
-                    remote.facing = Facing::South; // placeholder; real facing updated in animate system
-                    remote.target_tile = p.tile;
-                }
+                remote.target_pos = target_pos;
                 found = true;
                 break;
             }
         }
 
         if !found {
-            let world_pos = tile_to_world3d(p.tile);
-            // Spawn a simple teal box as a placeholder for remote player 3-D models.
+            // Spawn position comes directly from the server's continuous position.
+            let spawn_y = TILE_SIZE * 0.75;
             let mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.1, 0.7, 0.6),
                 ..default()
@@ -63,13 +64,11 @@ pub fn sync_remote_players_from_snapshots(
                     TILE_SIZE * 0.5,
                 ))),
                 MeshMaterial3d(mat),
-                Transform::from_translation(
-                    world_pos + Vec3::new(0.0, TILE_SIZE * 0.75, 0.0),
-                ),
+                Transform::from_translation(Vec3::new(p.pos_x, spawn_y, p.pos_z)),
                 RemoteNetPlayer {
                     player_id: p.player_id,
                     character_id: p.character_id,
-                    target_tile: p.tile,
+                    target_pos,
                     facing: Facing::South,
                 },
                 Name::new(format!("remote_player_{}", p.player_id)),
@@ -89,49 +88,28 @@ pub fn sync_remote_players_from_snapshots(
     status.remote_player_count = expected.len();
 }
 
-/// Smoothly move remote players toward their latest authoritative server tile.
+/// Smoothly move remote players toward their latest authoritative server position.
 pub fn animate_remote_players_from_snapshots(
     time: Res<Time>,
     mut remotes: Query<(&mut Transform, &mut RemoteNetPlayer)>,
 ) {
     for (mut xform, mut remote) in remotes.iter_mut() {
-        let target = tile_to_world3d(remote.target_tile);
         let cur = Vec2::new(xform.translation.x, xform.translation.z);
-        let tgt = Vec2::new(target.x, target.z);
-        let to = tgt - cur;
+        let to = remote.target_pos - cur;
         let dist = to.length();
 
         if dist > ARRIVE_EPS {
-            let current_tile = world3d_to_tile(xform.translation);
-            remote.facing = facing_toward(current_tile, remote.target_tile, remote.facing);
+            let dir = to / dist.max(f32::EPSILON);
+            remote.facing = facing_from_dir(dir);
 
-            let dir = to / dist.max(0.0001);
             let step = MOVE_SPEED * time.delta_secs();
             let delta = dir * step.min(dist);
-
             xform.translation.x += delta.x;
             xform.translation.z += delta.y;
         } else {
-            xform.translation.x = target.x;
-            xform.translation.z = target.z;
+            xform.translation.x = remote.target_pos.x;
+            xform.translation.z = remote.target_pos.y;
         }
-    }
-}
-
-fn facing_toward(from: TilePos, to: TilePos, current: Facing) -> Facing {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-
-    if dx == 0 && dy == 0 {
-        return current;
-    }
-
-    if dx.abs() >= dy.abs() {
-        if dx > 0 { Facing::East } else { Facing::West }
-    } else if dy > 0 {
-        Facing::North
-    } else {
-        Facing::South
     }
 }
 

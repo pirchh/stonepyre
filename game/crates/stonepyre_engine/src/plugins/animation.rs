@@ -1,21 +1,33 @@
 use bevy::prelude::*;
 use bevy::animation::graph::AnimationNodeIndex;
 use bevy::gltf::Gltf;
+use std::time::Duration;
 
-use stonepyre_world::tile_to_world3d;
-
-use crate::plugins::movement::StepTo;
-use crate::plugins::world::{Facing, Player, TilePath, ARRIVE_EPS};
+use crate::plugins::movement::IsWalking;
+use crate::plugins::world::{Facing, LogicalPos2d, Player};
 
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
 
 /// Which 3-D animation clip is currently playing on the player.
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct HumanoidAnim3d {
     pub current: Option<AnimClip3d>,
     pub last_facing: Option<Facing>,
+    /// The Y-rotation we are slerping toward this frame.
+    /// Updated whenever `Facing` changes; the mesh smoothly turns each frame.
+    pub target_rotation: Quat,
+}
+
+impl Default for HumanoidAnim3d {
+    fn default() -> Self {
+        Self {
+            current: None,
+            last_facing: None,
+            target_rotation: Quat::IDENTITY, // faces South (model default)
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,6 +58,11 @@ pub struct PlayerAnimGraph {
     pub graph: Handle<AnimationGraph>,
     pub idle: Option<AnimationNodeIndex>,
     pub walk: Option<AnimationNodeIndex>,
+    /// Duration of the walk clip in seconds — used to maintain a continuous
+    /// walk phase so re-entering walk state doesn't restart from frame 0.
+    pub walk_duration: f32,
+    /// Raw handle kept so `animate_humanoid` can look up the duration once loaded.
+    pub walk_clip: Option<Handle<AnimationClip>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -83,9 +100,9 @@ pub fn setup_player_anim_graph(
         .get("idle")
         .map(|h| graph.add_clip(h.clone(), 1.0, graph.root));
 
-    let walk_node = gltf
-        .named_animations
-        .get("walk")
+    let walk_clip = gltf.named_animations.get("walk").cloned();
+    let walk_node = walk_clip
+        .as_ref()
         .map(|h| graph.add_clip(h.clone(), 1.0, graph.root));
 
     if idle_node.is_none() {
@@ -98,6 +115,7 @@ pub fn setup_player_anim_graph(
     anim_graph_res.graph = animation_graphs.add(graph);
     anim_graph_res.idle = idle_node;
     anim_graph_res.walk = walk_node;
+    anim_graph_res.walk_clip = walk_clip;
 }
 
 /// Walk the scene hierarchy of player entities to find their `AnimationPlayer`
@@ -122,15 +140,17 @@ pub fn link_anim_player_to_player(
             continue; // scene not spawned yet, retry next frame
         };
 
-        // Attach the graph to the AnimationPlayer entity.
+        // Attach the graph and transitions component to the AnimationPlayer entity.
         commands
             .entity(anim_entity)
-            .insert(AnimationGraphHandle(anim_graph_res.graph.clone()));
+            .insert(AnimationGraphHandle(anim_graph_res.graph.clone()))
+            .insert(AnimationTransitions::new());
 
-        // Start idle immediately.
+        // Start idle immediately (no transition needed on first play).
         if let Ok(mut player) = anim_player_mut.get_mut(anim_entity) {
             player.play(idle_node).repeat();
         }
+        // AnimationTransitions is already inserted above; nothing else needed here.
 
         commands
             .entity(player_entity)
@@ -141,20 +161,29 @@ pub fn link_anim_player_to_player(
 /// Drive the `AnimationPlayer` each frame based on whether the player is
 /// walking or idle, and rotate the root transform to match `Facing`.
 pub fn animate_humanoid(
+    time: Res<Time>,
+    mut log_timer: Local<f32>,
+    // walk_elapsed: continuous clock, never resets — used to seek to the
+    // correct phase when re-entering walk state so the cycle doesn't restart
+    // from frame 0 on every tile click.
+    mut walk_elapsed: Local<f32>,
+    // walk_duration_cache: resolved once from Assets<AnimationClip>.
+    mut walk_duration_cache: Local<f32>,
+    anim_clips: Res<Assets<AnimationClip>>,
     anim_graph_res: Res<PlayerAnimGraph>,
     mut player_q: Query<
         (
             &Facing,
-            &TilePath,
-            Option<&StepTo>,
+            &IsWalking,
             &AnimPlayerLink,
             &mut HumanoidAnim3d,
             &mut Transform,
             Option<&ForceIdleOnce>,
+            &LogicalPos2d,
         ),
         With<Player>,
     >,
-    mut anim_player_q: Query<&mut AnimationPlayer>,
+    mut anim_player_q: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
     mut commands: Commands,
     player_entity_q: Query<Entity, With<Player>>,
 ) {
@@ -162,15 +191,19 @@ pub fn animate_humanoid(
         return;
     };
 
-    let Ok((facing, path, step_to, anim_link, mut anim, mut xform, force_idle)) =
+    let Ok((facing, is_walking, anim_link, mut anim, mut xform, force_idle, logical)) =
         player_q.single_mut()
     else {
         return;
     };
 
-    let Ok(mut ap) = anim_player_q.get_mut(anim_link.0) else {
+    let Ok((mut ap, mut transitions)) = anim_player_q.get_mut(anim_link.0) else {
         return;
     };
+
+    // Advance the continuous walk phase clock every frame regardless of
+    // whether the player is currently walking or idle.
+    *walk_elapsed += time.delta_secs();
 
     // -------------------------------------------------------------------
     // Force idle snap (used when e.g. stopping a woodcutting action)
@@ -179,47 +212,49 @@ pub fn animate_humanoid(
         if let Ok(ent) = player_entity_q.single() {
             commands.entity(ent).remove::<ForceIdleOnce>();
         }
-        ap.stop_all();
-        ap.play(idle_node).repeat();
+        transitions.play(&mut ap, idle_node, Duration::ZERO).repeat();
         anim.current = Some(AnimClip3d::Idle);
         anim.last_facing = Some(*facing);
     }
 
     // -------------------------------------------------------------------
-    // Choose clip
+    // Choose clip — driven directly by WASD input via IsWalking
     // -------------------------------------------------------------------
-    // Use physical distance rather than `step_to.is_some()` because
-    // `commands.entity(ent).remove::<StepTo>()` is deferred — on the arrival
-    // frame the component is still present even though the player has snapped
-    // to the tile. Checking actual distance avoids a 1-frame walk→walk flicker.
-    let walking = if let Some(step) = step_to {
-        let target = tile_to_world3d(step.0);
-        let dist = Vec2::new(
-            xform.translation.x - target.x,
-            xform.translation.z - target.z,
-        )
-        .length();
-        dist > ARRIVE_EPS
-    } else {
-        !path.tiles.is_empty()
-    };
-    let target_clip = if walking {
+    let target_clip = if is_walking.0 {
         AnimClip3d::Walk
     } else {
         AnimClip3d::Idle
     };
 
+    // Resolve walk clip duration once (asset may not be ready on first frame).
+    if *walk_duration_cache == 0.0 {
+        if let Some(dur) = anim_graph_res
+            .walk_clip
+            .as_ref()
+            .and_then(|h| anim_clips.get(h))
+            .map(|c| c.duration())
+        {
+            *walk_duration_cache = dur;
+        }
+    }
+
     if anim.current != Some(target_clip) {
-        // Stop ALL active clips before starting the new one.
-        // In Bevy 0.18, each AnimationNodeIndex plays independently —
-        // calling play(new_node) does NOT stop the old node.
-        ap.stop_all();
         let node = if target_clip == AnimClip3d::Walk {
             walk_node
         } else {
             idle_node
         };
-        ap.play(node).repeat();
+        // Both transitions instant — OSRS-style tile movement cuts directly
+        // between walk and idle without blending.
+        let active = transitions.play(&mut ap, node, Duration::ZERO);
+        // When re-entering walk state, seek to the current phase of the
+        // continuous walk clock so the cycle resumes where it would have been
+        // rather than snapping back to frame 0 on every tile click.
+        if target_clip == AnimClip3d::Walk && *walk_duration_cache > 0.0 {
+            let phase = *walk_elapsed % *walk_duration_cache;
+            active.seek_to(phase);
+        }
+        active.repeat();
         anim.current = Some(target_clip);
     }
 
@@ -231,17 +266,31 @@ pub fn animate_humanoid(
     //   East  (tile X+) = world +X = +90° (turn left from front)
     //   West  (tile X-) = world -X = -90° (turn right from front)
     // -------------------------------------------------------------------
+    // When facing changes, update the target rotation.
+    // The mesh slerps toward it every frame rather than snapping.
     if anim.last_facing != Some(*facing) {
         use std::f32::consts::PI;
+        // Rotation around Y: positive = CCW from above.
+        // Model default faces +Z (South = toward camera) at angle 0.
         let angle = match *facing {
-            Facing::North =>  PI,
-            Facing::South =>  0.0,
-            Facing::East  =>  PI / 2.0,
-            Facing::West  => -PI / 2.0,
+            Facing::South     =>  0.0,
+            Facing::SouthEast =>  PI / 4.0,
+            Facing::East      =>  PI / 2.0,
+            Facing::NorthEast =>  3.0 * PI / 4.0,
+            Facing::North     =>  PI,
+            Facing::NorthWest => -3.0 * PI / 4.0,
+            Facing::West      => -PI / 2.0,
+            Facing::SouthWest => -PI / 4.0,
         };
-        xform.rotation = Quat::from_rotation_y(angle);
+        anim.target_rotation = Quat::from_rotation_y(angle);
         anim.last_facing = Some(*facing);
     }
+
+    // Smoothly rotate toward the target facing every frame.
+    // t = 15 × dt gives a ~3-frame turn at 60 fps — snappy but not instant.
+    // Quat::slerp always takes the short arc, so ±PI wrapping is handled.
+    let t = (time.delta_secs() * 15.0).min(1.0);
+    xform.rotation = xform.rotation.slerp(anim.target_rotation, t);
 }
 
 // ---------------------------------------------------------------------------

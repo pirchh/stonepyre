@@ -1,5 +1,7 @@
+use bevy::app::AnimationSystems;
 use bevy::ecs::schedule::common_conditions::resource_exists;
 use bevy::prelude::*;
+use bevy::transform::TransformSystems;
 
 pub mod plugins;
 
@@ -59,7 +61,6 @@ impl Plugin for StonepyreEnginePlugin {
             (
                 // ---- World maintenance ----
                 plugins::world::sync_world_grid_blocked,
-                plugins::world::debug_draw_target_marker,
                 plugins::world::camera_follow_player,
                 // ---- Animation graph setup (runs until GLB is loaded & linked) ----
                 plugins::animation::setup_player_anim_graph,
@@ -85,9 +86,9 @@ impl Plugin for StonepyreEnginePlugin {
                     .chain(),
                 plugins::interaction::debug_print_resolved_actions,
                 // ---- Movement + Animation ----
-                plugins::movement::follow_path_to_next_tile,
+                plugins::movement::wasd_movement,
                 plugins::animation::animate_humanoid
-                    .after(plugins::movement::follow_path_to_next_tile)
+                    .after(plugins::movement::wasd_movement)
                     .after(plugins::animation::link_anim_player_to_player),
                 // ---- Harvest regen + visibility sync (generic) ----
                 plugins::skills::tick_harvest_regen
@@ -101,6 +102,17 @@ impl Plugin for StonepyreEnginePlugin {
                 plugins::progression::xp::apply_xp_system,
             )
                 .in_set(EngineSet::Runtime),
+        );
+
+        // Re-apply the movement system's logical XZ position after Bevy's animation
+        // system (PostUpdate) has potentially overwritten it with root-motion data.
+        // Must run after animation and before transform propagation so children
+        // inherit the corrected world position in the same frame.
+        app.add_systems(
+            PostUpdate,
+            plugins::world::apply_logical_pos
+                .after(AnimationSystems)
+                .before(TransformSystems::Propagate),
         );
     }
 }
