@@ -62,6 +62,7 @@ pub fn spawn_game_ws(
     status.harvest_nodes.clear();
     status.ground_items.clear();
     status.ground_items_dirty = true;
+    status.server_pos = None;
     status.server_tile = None;
     status.server_next_tile = None;
     status.server_goal = None;
@@ -308,6 +309,14 @@ fn run_game_ws(
     loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
+                GameNetCommand::MoveDir { dx, dy } => {
+                    let msg = ClientMsg::MoveDir { dx, dy };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws move_dir serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws move_dir send failed: {e}"))?;
+                }
                 GameNetCommand::MoveTo { tile } => {
                     let msg = ClientMsg::MoveTo { tile };
                     let json = serde_json::to_string(&msg)
@@ -509,6 +518,8 @@ fn run_game_ws(
                             .map(|p| NetPlayerSnapshot {
                                 player_id: p.player_id,
                                 character_id: p.character_id,
+                                pos_x: p.pos_x,
+                                pos_z: p.pos_z,
                                 tile: p.tile,
                                 next_tile: p.next_tile,
                                 goal: p.goal,
@@ -521,6 +532,7 @@ fn run_game_ws(
                         let local_player = player_id
                             .and_then(|pid| snap.players.iter().find(|p| p.player_id == pid));
 
+                        let server_pos = local_player.map(|p| [p.pos_x, p.pos_z]);
                         let server_tile = local_player.map(|p| p.tile);
                         let server_next_tile = local_player.and_then(|p| p.next_tile);
                         let server_goal = local_player.and_then(|p| p.goal);
@@ -532,6 +544,7 @@ fn run_game_ws(
                             server_tick: snap.server_tick,
                             players,
                             harvest_nodes: snap.harvest_nodes,
+                            server_pos,
                             server_tile,
                             server_next_tile,
                             server_goal,
@@ -681,6 +694,7 @@ pub fn pump_game_net_results(
                 server_tick,
                 players,
                 harvest_nodes,
+                server_pos,
                 server_tile,
                 server_next_tile,
                 server_goal,
@@ -692,6 +706,7 @@ pub fn pump_game_net_results(
                 status.snapshot_players = players.len();
                 status.latest_players = players;
                 status.harvest_nodes = harvest_nodes;
+                status.server_pos = server_pos;
                 status.server_moving = server_moving;
                 status.server_move_progress = server_move_progress;
                 status.server_next_tile = server_next_tile;
@@ -1227,6 +1242,48 @@ pub fn process_pending_bank_open(
         pending.booth_tile = None;
     } else {
         warn!("game net pending bank open dropped; websocket is not ready");
+    }
+}
+
+/// Sends `ClientMsg::MoveDir` to the server whenever the player's movement
+/// direction changes (key pressed or released).  Fires immediately on change —
+/// no polling timer — so the server always has the current direction within one
+/// frame of input.
+///
+/// Uses `[f32; 2]` stored in a `Local` to track the last sent direction and
+/// avoid spamming identical messages every frame.
+pub fn send_wasd_movement_to_server(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    game_net: Res<GameNetRuntime>,
+    mut last_sent: Local<[f32; 2]>,
+) {
+    // Build float direction — same axes as the client movement system.
+    // Vec2 convention: x = world-X, y = world-Z (LogicalPos2d).
+    let mut dx = 0.0f32;
+    let mut dy = 0.0f32;
+    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp)    { dy -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown)  { dy += 1.0; }
+    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft)  { dx -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) { dx += 1.0; }
+
+    // Normalise so diagonal doesn't move faster.
+    let len = (dx * dx + dy * dy).sqrt();
+    let (dx, dy) = if len > 1e-6 {
+        (dx / len, dy / len)
+    } else {
+        (0.0, 0.0)
+    };
+
+    // Only send when direction actually changes — avoids flooding the websocket.
+    if (dx - last_sent[0]).abs() < 1e-6 && (dy - last_sent[1]).abs() < 1e-6 {
+        return;
+    }
+
+    let guard = game_net.command_tx.lock().unwrap();
+    if let Some(tx) = guard.as_ref() {
+        if tx.send(GameNetCommand::MoveDir { dx, dy }).is_ok() {
+            *last_sent = [dx, dy];
+        }
     }
 }
 

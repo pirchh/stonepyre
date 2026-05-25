@@ -7,7 +7,11 @@ pub mod world;
 use self::harvest::HarvestSkill;
 use self::inventory::InventoryGrantRequest;
 use self::skills::SkillXpGrantRequest;
-use self::world::{PlayerState, ServerAction, WorldState, SERVER_MOVE_TILES_PER_SEC};
+use self::world::{
+    pos_to_tile, tile_to_pos, try_move_continuous,
+    PlayerState, ServerAction, WorldState,
+    SERVER_MOVE_SPEED, SERVER_MOVE_TILES_PER_SEC,
+};
 use crate::game::protocol::{
     ActionState, GroundItemEvent, HarvestNodeEvent, HarvestNodeEventKind, HarvestNodeSnapshot,
     HarvestResult, InteractionAction, InteractionTarget, PlayerSnapshot, ServerMsg, SkillXpSource,
@@ -67,11 +71,14 @@ impl GameSim {
 
     pub fn add_player(&mut self, player_id: Uuid, character_id: Uuid) {
         let spawn = TilePos::new(0, 0);
+        let pos = tile_to_pos(spawn);
         self.world.players.insert(
             player_id,
             PlayerState {
                 player_id,
                 character_id,
+                pos,
+                move_dir: [0.0, 0.0],
                 tile: spawn,
                 goal: None,
                 path: Default::default(),
@@ -80,6 +87,23 @@ impl GameSim {
                 action: None,
             },
         );
+    }
+
+    /// Update the player's movement direction from WASD input.
+    /// `dir` should be a normalised Vec2 [dx, dz] or [0, 0] to stop.
+    /// Any non-zero dir cancels harvest walk-to-range (player chose to move manually).
+    pub fn set_move_dir(&mut self, player_id: Uuid, dir: [f32; 2]) {
+        let Some(p) = self.world.players.get_mut(&player_id) else {
+            return;
+        };
+        p.move_dir = dir;
+
+        // Manual movement cancels any pending harvest path.
+        if dir[0] != 0.0 || dir[1] != 0.0 {
+            p.goal = None;
+            p.path.clear();
+            p.move_progress_tiles = 0.0;
+        }
     }
 
     pub fn remove_player(&mut self, player_id: Uuid) {
@@ -354,9 +378,26 @@ impl GameSim {
             )).into());
         }
 
+        let tick_dt = 1.0 / self.ticks_per_second as f32;
         let blocked_snapshot = self.world.blocked.clone();
 
         for p in self.world.players.values_mut() {
+            // ------------------------------------------------------------------
+            // Continuous WASD movement — applied every tick regardless of goals.
+            // ------------------------------------------------------------------
+            if p.move_dir[0] != 0.0 || p.move_dir[1] != 0.0 {
+                let delta = [
+                    p.move_dir[0] * SERVER_MOVE_SPEED * tick_dt,
+                    p.move_dir[1] * SERVER_MOVE_SPEED * tick_dt,
+                ];
+                p.pos = try_move_continuous(p.pos, delta, &blocked_snapshot);
+                p.tile = pos_to_tile(p.pos);
+            }
+
+            // ------------------------------------------------------------------
+            // Harvest walk-to-range tile movement (only runs when goal is set
+            // by ChopDown and WASD is not active).
+            // ------------------------------------------------------------------
             let Some(goal) = p.goal else {
                 maybe_request_harvest_capacity_check(p, &mut events);
                 continue;
@@ -402,6 +443,7 @@ impl GameSim {
                 }
 
                 p.tile = next;
+                p.pos = tile_to_pos(next);
                 p.path.pop_front();
                 p.move_progress_tiles -= 1.0;
 
@@ -431,6 +473,8 @@ impl GameSim {
                 .map(|p| PlayerSnapshot {
                     player_id: p.player_id,
                     character_id: p.character_id,
+                    pos_x: p.pos[0],
+                    pos_z: p.pos[1],
                     tile: p.tile,
                     next_tile: p.path.front().copied(),
                     goal: p.goal,

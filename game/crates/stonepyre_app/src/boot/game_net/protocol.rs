@@ -38,6 +38,10 @@ use uuid::Uuid;
 pub struct NetPlayerSnapshot {
     pub player_id: Uuid,
     pub character_id: Uuid,
+    /// Continuous server-authoritative position (world X).
+    pub pos_x: f32,
+    /// Continuous server-authoritative position (world Z).
+    pub pos_z: f32,
     pub tile: TilePos,
     pub next_tile: Option<TilePos>,
     pub goal: Option<TilePos>,

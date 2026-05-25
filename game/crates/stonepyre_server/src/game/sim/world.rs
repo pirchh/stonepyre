@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use stonepyre_world::{neighbors_4, TilePos};
+use stonepyre_world::{neighbors_4, TilePos, TILE_SIZE};
 use uuid::Uuid;
 
 use super::harvest::{HarvestCatalog, HarvestLootPreview, HarvestNodeDef, HarvestSkill};
@@ -14,9 +14,52 @@ use crate::game::protocol::{
     PlayerActionSnapshot,
 };
 
-/// Server-side movement speed in tiles/sec.
-/// Keep this aligned with stonepyre_engine::plugins::world::MOVE_TILES_PER_SEC.
+/// Server-side movement speed in tiles/sec (kept for harvest walk-to-range).
 pub const SERVER_MOVE_TILES_PER_SEC: f32 = 1.6;
+
+/// World-units per second for continuous WASD movement.
+/// Must match stonepyre_engine::plugins::world::MOVE_SPEED (TILE_SIZE * 1.6).
+pub const SERVER_MOVE_SPEED: f32 = TILE_SIZE * SERVER_MOVE_TILES_PER_SEC;
+
+// ---------------------------------------------------------------------------
+// Continuous movement helpers
+// ---------------------------------------------------------------------------
+
+/// Convert a world-space Vec2(x, z) to the tile it sits in.
+pub fn pos_to_tile(pos: [f32; 2]) -> TilePos {
+    let half = TILE_SIZE * 0.5;
+    TilePos {
+        x: ((pos[0] + half) / TILE_SIZE).floor() as i32,
+        y: ((pos[1] + half) / TILE_SIZE).floor() as i32,
+    }
+}
+
+/// Convert tile centre to world pos [x, z].
+pub fn tile_to_pos(tile: TilePos) -> [f32; 2] {
+    [tile.x as f32 * TILE_SIZE, tile.y as f32 * TILE_SIZE]
+}
+
+/// Try to move from `pos` by `delta`, sliding along walls.
+/// Returns the furthest unblocked position.
+pub fn try_move_continuous(pos: [f32; 2], delta: [f32; 2], blocked: &HashSet<TilePos>) -> [f32; 2] {
+    let full = [pos[0] + delta[0], pos[1] + delta[1]];
+    if !pos_blocked(full, blocked) {
+        return full;
+    }
+    let slide_x = [pos[0] + delta[0], pos[1]];
+    if !pos_blocked(slide_x, blocked) {
+        return slide_x;
+    }
+    let slide_z = [pos[0], pos[1] + delta[1]];
+    if !pos_blocked(slide_z, blocked) {
+        return slide_z;
+    }
+    pos
+}
+
+fn pos_blocked(pos: [f32; 2], blocked: &HashSet<TilePos>) -> bool {
+    blocked.contains(&pos_to_tile(pos))
+}
 
 pub const GROUND_ITEM_DESPAWN_TICKS: u64 = 300;
 
@@ -311,10 +354,26 @@ pub struct PlayerState {
     pub player_id: Uuid,
     pub character_id: Uuid,
 
-    /// Current authoritative tile pos.
+    // ------------------------------------------------------------------
+    // Continuous WASD position (primary for rendering)
+    // ------------------------------------------------------------------
+
+    /// Authoritative world-space position [x, z] in world units.
+    /// Updated every tick from `move_dir`.
+    pub pos: [f32; 2],
+
+    /// Normalised movement direction received from the client this tick.
+    /// `[0, 0]` means the player is standing still.
+    pub move_dir: [f32; 2],
+
+    // ------------------------------------------------------------------
+    // Tile-based state (derived from pos; used for interaction checks)
+    // ------------------------------------------------------------------
+
+    /// Derived tile — `pos_to_tile(pos)` computed each tick.
     pub tile: TilePos,
 
-    /// Desired destination tile (unblocked goal after adjustment).
+    /// Desired destination tile for harvest walk-to-range movement.
     pub goal: Option<TilePos>,
 
     /// Current computed path (steps from current tile -> goal).
@@ -323,7 +382,7 @@ pub struct PlayerState {
     /// Used to rate-limit repathing attempts.
     pub last_repath_tick: u64,
 
-    /// Fractional movement accumulator in tiles.
+    /// Fractional movement accumulator in tiles (harvest walk-to-range only).
     pub move_progress_tiles: f32,
 
     /// Current server-owned non-movement action lifecycle.

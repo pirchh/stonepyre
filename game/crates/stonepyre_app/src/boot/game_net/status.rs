@@ -47,6 +47,8 @@ pub enum GameNetEvent {
         server_tick: u64,
         players: Vec<NetPlayerSnapshot>,
         harvest_nodes: Vec<HarvestNodeSnapshot>,
+        /// Continuous server position for the local player, if present.
+        server_pos: Option<[f32; 2]>,
         server_tile: Option<TilePos>,
         server_next_tile: Option<TilePos>,
         server_goal: Option<TilePos>,
@@ -92,6 +94,8 @@ pub enum GameNetEvent {
 
 #[derive(Debug)]
 pub enum GameNetCommand {
+    /// Continuous WASD direction — sent on key change.
+    MoveDir { dx: f32, dy: f32 },
     MoveTo { tile: TilePos },
     Interact {
         action: InteractionAction,
@@ -183,6 +187,8 @@ pub struct GameNetStatus {
     pub harvest_nodes: Vec<HarvestNodeSnapshot>,
     pub ground_items: Vec<GroundItemSnapshot>,
     pub ground_items_dirty: bool,
+    /// Server-authoritative continuous world position for the local player.
+    pub server_pos: Option<[f32; 2]>,
     pub server_tile: Option<TilePos>,
     pub server_next_tile: Option<TilePos>,
     pub server_goal: Option<TilePos>,
@@ -237,6 +243,7 @@ impl Default for GameNetStatus {
             harvest_nodes: Vec::new(),
             ground_items: Vec::new(),
             ground_items_dirty: false,
+            server_pos: None,
             server_tile: None,
             server_next_tile: None,
             server_goal: None,

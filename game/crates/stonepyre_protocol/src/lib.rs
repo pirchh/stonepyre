@@ -8,6 +8,11 @@ pub enum ClientMsg {
     Ping,
     JoinWorld { character_id: Uuid },
     MoveTo { tile: TilePos },
+    /// Continuous WASD movement input.
+    /// `dx` = world-X axis, `dy` = world-Z axis (Vec2 convention used by the client).
+    /// Send a normalised non-zero vec while keys are held; send `{0,0}` on key release.
+    /// The server applies its own speed cap, so the magnitude is advisory only.
+    MoveDir { dx: f32, dy: f32 },
     Interact {
         action: InteractionAction,
         target: InteractionTarget,
@@ -214,7 +219,15 @@ pub struct PlayerSnapshot {
     pub player_id: Uuid,
     pub character_id: Uuid,
 
-    /// Last fully-authoritative tile reached by the server simulation.
+    /// Server-authoritative continuous world position (X axis).
+    /// Replaces tile-interpolation for rendering; tile is still used for interaction distance.
+    pub pos_x: f32,
+
+    /// Server-authoritative continuous world position (Z axis).
+    pub pos_z: f32,
+
+    /// Last fully-authoritative tile — derived from pos each tick.
+    /// Still used by harvest/bank/pickup distance checks.
     pub tile: TilePos,
 
     /// Next tile the server is currently moving this player toward, if any.
@@ -227,8 +240,6 @@ pub struct PlayerSnapshot {
     pub moving: bool,
 
     /// Fractional progress (0.0–1.0) toward `next_tile` within the current tile step.
-    /// 0.0 = just reached `tile`, 1.0 = arrived at `next_tile`.
-    /// Only meaningful when `moving` is true and `next_tile` is `Some`.
     pub move_progress: f32,
 
     /// Current server-owned non-movement action state for this player.

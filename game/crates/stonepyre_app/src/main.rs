@@ -63,25 +63,24 @@ fn main() {
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_walk_intents_to_server_runtime
                     .after(stonepyre_engine::plugins::interaction::plan_intents_to_actions)
-                    .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                    .before(stonepyre_engine::plugins::movement::wasd_movement),
+                boot::game_net::send_wasd_movement_to_server
+                    .after(boot::game_net::pump_game_net_results),
                 boot::game_net::process_pending_ground_item_pickups
                     .after(boot::game_net::pump_game_net_results)
                     .after(boot::game_net::reconcile_local_player_to_server),
                 boot::game_net::reconcile_local_player_to_server
                     .after(boot::game_net::pump_game_net_results)
                     .after(boot::game_net::send_walk_intents_to_server_runtime)
-                    .before(stonepyre_engine::plugins::movement::follow_path_to_next_tile),
+                    .before(stonepyre_engine::plugins::movement::wasd_movement),
                 boot::game_net::play_server_authoritative_action_visuals
                     .after(boot::game_net::reconcile_local_player_to_server)
-                    .after(stonepyre_engine::plugins::movement::follow_path_to_next_tile)
+                    .after(stonepyre_engine::plugins::movement::wasd_movement)
                     .before(stonepyre_engine::plugins::animation::animate_humanoid),
-                boot::game_net::sync_network_target_marker_from_last_move
-                    .after(stonepyre_engine::plugins::world::debug_draw_target_marker)
-                    .after(boot::game_net::pump_game_net_results),
                 boot::game_net::sync_remote_players_from_snapshots,
                 boot::game_net::animate_remote_players_from_snapshots,
                 boot::game_net::update_world_object_depths
-                    .after(stonepyre_engine::plugins::movement::follow_path_to_next_tile)
+                    .after(stonepyre_engine::plugins::movement::wasd_movement)
                     .after(boot::game_net::animate_remote_players_from_snapshots)
                     .after(boot::game_net::sync_harvest_node_visuals_from_server)
                     .after(boot::game_net::sync_ground_item_visuals_from_server),
@@ -140,6 +139,8 @@ fn disable_game_ui_on_exit_world(
 fn start_world_on_enter(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     harvest_defs: Option<Res<stonepyre_engine::plugins::skills::HarvestDb>>,
     mut boot: ResMut<BootState>,
     mut game_net: ResMut<boot::game_net::GameNetRuntime>,
@@ -168,6 +169,8 @@ fn start_world_on_enter(
     stonepyre_engine::plugins::world::spawn_demo_world_for_character(
         &mut commands,
         &asset_server,
+        &mut meshes,
+        &mut materials,
         harvest_defs.as_deref(),
         character_id,
     );
