@@ -383,7 +383,16 @@ impl GameSim {
 
         for p in self.world.players.values_mut() {
             // ------------------------------------------------------------------
-            // Continuous WASD movement — applied every tick regardless of goals.
+            // Continuous WASD movement — takes priority over tile-walk.
+            //
+            // When WASD is active we apply collision-aware delta movement and
+            // then `continue` so tile-walk never runs in the same tick.
+            // set_move_dir already clears the goal on key-down, but a
+            // MoveTo/ChopDown command can arrive between set_move_dir and the
+            // next tick via the async message queue, leaving both move_dir and
+            // goal set simultaneously.  The explicit `continue` here ensures
+            // tile-walk can never override the collision-clamped pos and
+            // teleport the player through a blocked tile.
             // ------------------------------------------------------------------
             if p.move_dir[0] != 0.0 || p.move_dir[1] != 0.0 {
                 let delta = [
@@ -392,11 +401,11 @@ impl GameSim {
                 ];
                 p.pos = try_move_continuous(p.pos, delta, &blocked_snapshot);
                 p.tile = pos_to_tile(p.pos);
+                continue; // tile-walk does not run while WASD is active
             }
 
             // ------------------------------------------------------------------
-            // Harvest walk-to-range tile movement (only runs when goal is set
-            // by ChopDown and WASD is not active).
+            // Harvest walk-to-range tile movement (WASD is idle this tick).
             // ------------------------------------------------------------------
             let Some(goal) = p.goal else {
                 maybe_request_harvest_capacity_check(p, &mut events);

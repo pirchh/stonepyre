@@ -41,6 +41,7 @@ fn main() {
                 enable_game_ui_on_enter_world,
                 boot::game_net::spawn_game_net_overlay,
                 boot::game_net::spawn_xp_feedback_layer,
+                boot::game_net::spawn_proximity_prompt,
                 start_world_on_enter,
             ),
         )
@@ -85,6 +86,7 @@ fn main() {
                     .after(boot::game_net::sync_harvest_node_visuals_from_server)
                     .after(boot::game_net::sync_ground_item_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
+                boot::game_net::update_proximity_prompt,
                 send_debug_grant_actions,
             )
                 .run_if(in_state(Screen::InWorld)),
@@ -107,6 +109,7 @@ fn main() {
                 disable_game_ui_on_exit_world,
                 boot::game_net::despawn_game_net_overlay,
                 boot::game_net::despawn_xp_feedback_layer,
+                boot::game_net::despawn_proximity_prompt,
                 boot::game_net::despawn_remote_players,
             ),
         )

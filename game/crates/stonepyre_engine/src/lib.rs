@@ -31,6 +31,10 @@ impl Plugin for StonepyreEnginePlugin {
             ))
             // ✅ Input bindings (configurable later via settings)
             .insert_resource(plugins::input::InputBindings::default())
+            // ✅ Camera rig — zoom and pitch, updated by scroll wheel
+            .insert_resource(plugins::world::CameraRig::default())
+            // ✅ Nearest interactable within range (updated every frame)
+            .insert_resource(plugins::world::NearbyInteractable::default())
             // ✅ Content-owned defs loaded into engine resources:
             .insert_resource(plugins::inventory::ItemDb(content.items.clone()))
             .insert_resource(plugins::inventory::ContainerDb(content.containers.clone()))
@@ -56,19 +60,24 @@ impl Plugin for StonepyreEnginePlugin {
         // The app crate will gate EngineSet::Runtime with:
         //   app.configure_sets(Update, EngineSet::Runtime.run_if(in_state(AppMode::InWorld)));
 
+        // World + input + interaction systems (batch 1 of 2).
         app.add_systems(
             Update,
             (
                 // ---- World maintenance ----
                 plugins::world::sync_world_grid_blocked,
                 plugins::world::camera_follow_player,
+                plugins::world::camera_zoom_and_pitch,
                 // ---- Animation graph setup (runs until GLB is loaded & linked) ----
                 plugins::animation::setup_player_anim_graph,
                 plugins::animation::link_anim_player_to_player
                     .after(plugins::animation::setup_player_anim_graph),
+                // ---- Proximity detection ----
+                plugins::interaction::update_nearby_interactable,
                 // ---- Input + context menu + interaction intent planning ----
                 (
                     plugins::input::emit_click_messages,
+                    plugins::interaction::handle_interact_key,
                     plugins::ui::context_menu_overlay_system,
                     plugins::ui::handle_context_menu_overlay_clicks,
                     plugins::interaction::handle_clicks_build_candidates,
@@ -77,6 +86,14 @@ impl Plugin for StonepyreEnginePlugin {
                     plugins::interaction::plan_intents_to_actions,
                 )
                     .chain(),
+            )
+                .in_set(EngineSet::Runtime),
+        );
+
+        // Movement + skills + progression systems (batch 2 of 2).
+        app.add_systems(
+            Update,
+            (
                 // ---- Action execution/resolution ----
                 (
                     plugins::interaction::advance_action_to_impact_when_ready,

@@ -85,6 +85,7 @@ pub fn spawn_game_ws(
     status.action_marker_target = None;
     status.last_error = None;
     status.remote_player_count = 0;
+    status.initial_sync_done = false;
 
     let _ = tx.send(GameNetEvent::Connecting {
         url: url.clone(),
@@ -1162,14 +1163,17 @@ pub fn send_walk_intents_to_server_runtime(
                     warn!("game net use bank target dropped; target tile could not be resolved");
                     continue;
                 };
-                // Store the booth tile and send the server a WalkHere so the server-side
-                // player also moves adjacent to the booth. The actual UseBank interaction
-                // is deferred until `process_pending_bank_open` confirms the server-reconciled
-                // position is within 1 Chebyshev tile of the booth.
+                // Store the booth tile. process_pending_bank_open will fire the
+                // actual UseBank interaction once the server-reconciled position is
+                // within 1 Chebyshev tile of the booth.
+                //
+                // We deliberately do NOT send MoveTo here. Sending MoveTo switches
+                // the server into tile-walk mode, which makes server_pos tile-aligned
+                // and causes the client reconciler to snap to those tile positions.
+                // Since UseBank is only triggered via E-key proximity (player already
+                // adjacent) or a right-click from nearby, the server will be close
+                // enough within one tick. Let the WASD-continuous flow stay clean.
                 pending_bank_open.booth_tile = Some(booth_tile);
-                if !send_move_to_server(&game_net, booth_tile) {
-                    warn!("game net use bank walk dropped; websocket is not ready");
-                }
             }
             Verb::TalkTo | Verb::Examine => {}
         }
@@ -1261,10 +1265,10 @@ pub fn send_wasd_movement_to_server(
     // Vec2 convention: x = world-X, y = world-Z (LogicalPos2d).
     let mut dx = 0.0f32;
     let mut dy = 0.0f32;
-    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp)    { dy -= 1.0; }
-    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown)  { dy += 1.0; }
-    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft)  { dx -= 1.0; }
-    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) { dx += 1.0; }
+    if keyboard.pressed(KeyCode::KeyW) { dy -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyS) { dy += 1.0; }
+    if keyboard.pressed(KeyCode::KeyA) { dx -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyD) { dx += 1.0; }
 
     // Normalise so diagonal doesn't move faster.
     let len = (dx * dx + dy * dy).sqrt();

@@ -1,3 +1,4 @@
+use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::prelude::*;
 use std::collections::{HashSet, VecDeque};
 use uuid::Uuid;
@@ -10,9 +11,39 @@ use crate::plugins::movement::IsWalking;
 pub const ARRIVE_EPS: f32 = 1.5;
 pub const MOVE_TILES_PER_SEC: f32 = 1.6;
 
-// Camera offset above/behind the player (isometric-ish, OSRS-style).
-// Tweak Y (height) and Z (distance behind) to taste.
-pub const CAM_OFFSET: Vec3 = Vec3::new(0.0, 350.0, 280.0);
+// ---------------------------------------------------------------------------
+// Camera rig
+// ---------------------------------------------------------------------------
+
+/// Base arm length matching the original CAM_OFFSET = Vec3(0, 350, 280).
+/// sqrt(350² + 280²) ≈ 448. At zoom=1 and pitch≈51° this reproduces the
+/// original camera position exactly.
+const CAM_BASE_ARM: f32 = 448.0;
+const ZOOM_MIN: f32 = 1.0;
+const ZOOM_MAX: f32 = 4.0;
+const PITCH_MIN_DEG: f32 = 25.0;
+const PITCH_MAX_DEG: f32 = 70.0;
+/// atan2(350, 280) ≈ 51.3° — preserves original camera angle as default.
+const PITCH_DEFAULT_DEG: f32 = 51.3;
+
+/// Drives the camera arm length (zoom) and vertical angle (pitch).
+/// Scroll wheel → zoom. Ctrl + scroll wheel → pitch.
+#[derive(Resource, Clone, Debug)]
+pub struct CameraRig {
+    /// Arm length multiplier. 1.0 = default distance, 4.0 = fully zoomed out.
+    pub zoom: f32,
+    /// Camera elevation angle in degrees. 25° = side-on, 70° = top-down.
+    pub pitch_deg: f32,
+}
+
+impl Default for CameraRig {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            pitch_deg: PITCH_DEFAULT_DEG,
+        }
+    }
+}
 
 // Scale applied to the player GLB.
 // Blender exports GLB in metres (1 Blender unit = 1 m with Apply Units on).
@@ -90,13 +121,35 @@ pub struct GridPos(pub TilePos);
 pub struct BlocksMovement;
 
 /// Marks what kind of interactable an entity is.
-/// Used by the interaction system to build right-click context menus.
+/// Used by the interaction system to build right-click context menus
+/// and proximity prompts.
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub enum InteractableKind {
     Tree,
     Npc,
     BankBooth,
     GroundItem { display_name: String },
+}
+
+impl InteractableKind {
+    /// Short prompt shown to the player when they are within interaction range.
+    pub fn proximity_prompt(&self) -> &'static str {
+        match self {
+            InteractableKind::BankBooth          => "Press E to use Bank",
+            InteractableKind::Npc                => "Press E to Talk",
+            InteractableKind::Tree               => "Press E to Chop",
+            InteractableKind::GroundItem { .. }  => "Press E to Take",
+        }
+    }
+}
+
+/// Tracks the closest interactable within range of the player.
+/// Updated each frame by `update_nearby_interactable`.
+/// Read by the proximity prompt UI and the E-key handler.
+#[derive(Resource, Default, Debug)]
+pub struct NearbyInteractable {
+    pub entity: Option<Entity>,
+    pub kind: Option<InteractableKind>,
 }
 
 /// Marker on the 3-D main camera so the follow system can find it.
@@ -124,9 +177,15 @@ pub fn spawn_demo_world_for_character(
     // ------------------------------------------------------------------
     // Camera (3-D, isometric-ish)
     // ------------------------------------------------------------------
+    // Initial transform is derived from CameraRig defaults so it matches
+    // the first frame output of camera_follow_player.
+    let default_rig = CameraRig::default();
+    let pitch = default_rig.pitch_deg.to_radians();
+    let arm = CAM_BASE_ARM * default_rig.zoom;
+    let initial_cam_offset = Vec3::new(0.0, arm * pitch.sin(), arm * pitch.cos());
     commands.spawn((
         Camera3d::default(),
-        Transform::from_translation(CAM_OFFSET).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_translation(initial_cam_offset).looking_at(Vec3::ZERO, Vec3::Y),
         MainCamera,
         IsDefaultUiCamera,
     ));
@@ -227,23 +286,37 @@ pub fn spawn_demo_world_for_character(
     ));
 
     // ------------------------------------------------------------------
-    // Demo bank booths — gold boxes
+    // Demo bank booths — wooden counter with a raised back panel
     // ------------------------------------------------------------------
-    let booth_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.85, 0.7, 0.1),
+    let counter_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.52, 0.32, 0.10), // warm oak brown
+        perceptual_roughness: 0.8,
+        ..default()
+    });
+    let panel_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.40, 0.24, 0.08), // darker backing panel
+        perceptual_roughness: 0.85,
         ..default()
     });
     for (x, y) in [(-4i32, 1i32), (-5, 1)] {
         let booth_tile = TilePos::new(x, y);
+        let base = tile_to_world3d(booth_tile);
+
+        // Counter top — wide, low surface
         commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(TILE_SIZE * 0.9, TILE_SIZE * 1.2, TILE_SIZE * 0.9))),
-            MeshMaterial3d(booth_mat.clone()),
-            Transform::from_translation(
-                tile_to_world3d(booth_tile) + Vec3::new(0.0, TILE_SIZE * 0.6, 0.0),
-            ),
+            Mesh3d(meshes.add(Cuboid::new(TILE_SIZE * 0.92, TILE_SIZE * 0.45, TILE_SIZE * 0.80))),
+            MeshMaterial3d(counter_mat.clone()),
+            Transform::from_translation(base + Vec3::new(0.0, TILE_SIZE * 0.225, 0.0)),
             GridPos(booth_tile),
             BlocksMovement,
             InteractableKind::BankBooth,
+        ));
+
+        // Raised back panel
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(TILE_SIZE * 0.92, TILE_SIZE * 0.75, TILE_SIZE * 0.12))),
+            MeshMaterial3d(panel_mat.clone()),
+            Transform::from_translation(base + Vec3::new(0.0, TILE_SIZE * 0.375, TILE_SIZE * 0.34)),
         ));
     }
 
@@ -266,17 +339,47 @@ pub fn spawn_demo_world_legacy(
 // ---------------------------------------------------------------------------
 
 pub fn camera_follow_player(
+    rig: Res<CameraRig>,
     player_q: Query<&Transform, (With<Player>, Without<MainCamera>)>,
     mut cam_q: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
 ) {
     let Ok(player_xform) = player_q.single() else { return; };
     let Ok(mut cam_xform) = cam_q.single_mut() else { return; };
 
-    let target = player_xform.translation + CAM_OFFSET;
+    let pitch = rig.pitch_deg.to_radians();
+    let arm = CAM_BASE_ARM * rig.zoom;
+    let offset = Vec3::new(0.0, arm * pitch.sin(), arm * pitch.cos());
+
     // Snap directly — no lerp lag. Lag causes the player to drift in viewport
     // space each frame which makes smooth animations appear to jitter.
-    cam_xform.translation = target;
+    cam_xform.translation = player_xform.translation + offset;
     cam_xform.look_at(player_xform.translation, Vec3::Y);
+}
+
+/// Scroll wheel → zoom. Arrow Up / Arrow Down (held) → pitch tilt.
+pub fn camera_zoom_and_pitch(
+    scroll: Res<AccumulatedMouseScroll>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut rig: ResMut<CameraRig>,
+) {
+    // Scroll wheel → zoom. Up = zoom in (shorter arm).
+    let scroll_delta = scroll.delta.y;
+    if scroll_delta != 0.0 {
+        rig.zoom = (rig.zoom - scroll_delta * 0.15).clamp(ZOOM_MIN, ZOOM_MAX);
+    }
+
+    // Arrow Up / Down → pitch tilt (hold to pan continuously).
+    // 30°/sec means full range (25°→70°) takes ~1.5s — feels responsive but not jerky.
+    let pitch_input =
+        if keyboard.pressed(KeyCode::ArrowUp)   {  1.0_f32 }
+        else if keyboard.pressed(KeyCode::ArrowDown) { -1.0_f32 }
+        else { 0.0 };
+
+    if pitch_input != 0.0 {
+        rig.pitch_deg = (rig.pitch_deg + pitch_input * 30.0 * time.delta_secs())
+            .clamp(PITCH_MIN_DEG, PITCH_MAX_DEG);
+    }
 }
 
 // ---------------------------------------------------------------------------
