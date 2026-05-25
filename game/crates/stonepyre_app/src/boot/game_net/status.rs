@@ -227,6 +227,9 @@ pub struct GameNetStatus {
     pub last_error: Option<String>,
     pub correction_count: u64,
     pub remote_player_count: usize,
+    /// True after the first authoritative position has been applied.
+    /// Suppresses the hard-snap warning on initial load.
+    pub initial_sync_done: bool,
 }
 
 impl Default for GameNetStatus {
@@ -270,6 +273,7 @@ impl Default for GameNetStatus {
             last_error: None,
             correction_count: 0,
             remote_player_count: 0,
+            initial_sync_done: false,
         }
     }
 }

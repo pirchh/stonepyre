@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{world3d_to_tile, TilePos, WorldGrid, TILE_SIZE};
+use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos, WorldGrid, TILE_SIZE};
 
-use crate::plugins::input::ClickMsg;
+use crate::plugins::input::{ClickMsg, InputBindings};
 use crate::plugins::skills::{AnimClip, RequestedAnim};
 use crate::plugins::ui::{ContextMenuState, MenuSelectMsg};
 use crate::plugins::world::*;
@@ -621,6 +621,87 @@ pub fn debug_print_resolved_actions(mut reader: MessageReader<ActionResolvedMsg>
             ev.actor, ev.intent.verb, ev.intent.target
         );
     }
+}
+
+// ------------------------------------------------------------
+// Proximity interaction
+// ------------------------------------------------------------
+
+/// Within this world-unit distance the E-key prompt appears.
+/// 1.5 tiles gives a comfortable adjacent-tile feel.
+const PROXIMITY_RANGE: f32 = TILE_SIZE * 1.5;
+
+/// Scans all interactables each frame and updates `NearbyInteractable`
+/// with whichever is closest to the player within `PROXIMITY_RANGE`.
+/// Ground items are excluded — they have their own pickup flow.
+pub fn update_nearby_interactable(
+    player_q: Query<&LogicalPos2d, With<Player>>,
+    interactables: Query<(Entity, &GridPos, &InteractableKind)>,
+    mut nearby: ResMut<NearbyInteractable>,
+) {
+    let Ok(player_pos) = player_q.single() else {
+        nearby.entity = None;
+        nearby.kind = None;
+        return;
+    };
+
+    let mut closest_dist = f32::MAX;
+    let mut closest: Option<(Entity, InteractableKind)> = None;
+
+    for (ent, gp, kind) in interactables.iter() {
+        if matches!(kind, InteractableKind::GroundItem { .. }) {
+            continue;
+        }
+        let w = tile_to_world3d(gp.0);
+        let ent_world = Vec2::new(w.x, w.z);
+        let dist = (player_pos.0 - ent_world).length();
+        if dist < PROXIMITY_RANGE && dist < closest_dist {
+            closest_dist = dist;
+            closest = Some((ent, kind.clone()));
+        }
+    }
+
+    if let Some((ent, kind)) = closest {
+        nearby.entity = Some(ent);
+        nearby.kind = Some(kind);
+    } else {
+        nearby.entity = None;
+        nearby.kind = None;
+    }
+}
+
+/// Fires an `IntentMsg` for the nearest interactable when the interact key
+/// (default E) is pressed.
+pub fn handle_interact_key(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    bindings: Res<InputBindings>,
+    nearby: Res<NearbyInteractable>,
+    player_q: Query<Entity, With<Player>>,
+    mut intent_writer: MessageWriter<IntentMsg>,
+) {
+    if !keyboard.just_pressed(bindings.interact) {
+        return;
+    }
+
+    let Some(target_ent) = nearby.entity else { return };
+    let Some(ref kind) = nearby.kind else { return };
+    let Ok(player_ent) = player_q.single() else { return };
+
+    let verb = match kind {
+        InteractableKind::BankBooth         => Verb::UseBank,
+        InteractableKind::Npc               => Verb::TalkTo,
+        InteractableKind::Tree              => Verb::ChopDown,
+        InteractableKind::GroundItem { .. } => Verb::Take,
+    };
+
+    intent_writer.write(IntentMsg {
+        actor: player_ent,
+        intent: Intent {
+            verb,
+            target: Target::Entity(target_ent),
+            range: 1,
+        },
+    });
 }
 
 // ------------------------------------------------------------

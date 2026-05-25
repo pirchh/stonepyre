@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use stonepyre_world::{world3d_to_tile, WorldGrid};
 
+use crate::plugins::input::InputBindings;
 use crate::plugins::world::{Facing, LogicalPos2d, MoveSpeed, Player};
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ pub struct StepTo(pub stonepyre_world::TilePos);
 pub fn wasd_movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    bindings: Res<InputBindings>,
     world: Option<Res<WorldGrid>>,
     mut q: Query<(
         &mut Transform,
@@ -38,13 +40,13 @@ pub fn wasd_movement(
         return;
     };
 
-    // --- 8-directional input (WASD + arrow keys) ---
+    // --- 8-directional input from bound keys ---
     // Vec2 convention: x = world X, y = world Z (matches LogicalPos2d)
     let mut dir = Vec2::ZERO;
-    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp)    { dir.y -= 1.0; }
-    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown)  { dir.y += 1.0; }
-    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft)  { dir.x -= 1.0; }
-    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) { dir.x += 1.0; }
+    if keyboard.pressed(bindings.move_forward) { dir.y -= 1.0; }
+    if keyboard.pressed(bindings.move_back)    { dir.y += 1.0; }
+    if keyboard.pressed(bindings.move_left)    { dir.x -= 1.0; }
+    if keyboard.pressed(bindings.move_right)   { dir.x += 1.0; }
 
     is_walking.0 = dir != Vec2::ZERO;
 

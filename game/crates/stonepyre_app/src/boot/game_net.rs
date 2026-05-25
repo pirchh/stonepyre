@@ -7,6 +7,7 @@ mod inventory_actions;
 mod inventory_sync;
 mod overlay;
 mod protocol;
+mod proximity_prompt;
 mod reconciliation;
 mod remote_players;
 mod runtime;
@@ -28,6 +29,11 @@ pub use overlay::{
     despawn_game_net_overlay,
     spawn_game_net_overlay,
     update_game_net_overlay,
+};
+pub use proximity_prompt::{
+    despawn_proximity_prompt,
+    spawn_proximity_prompt,
+    update_proximity_prompt,
 };
 pub use reconciliation::reconcile_local_player_to_server;
 pub use remote_players::{

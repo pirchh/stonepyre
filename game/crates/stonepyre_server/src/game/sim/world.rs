@@ -25,18 +25,29 @@ pub const SERVER_MOVE_SPEED: f32 = TILE_SIZE * SERVER_MOVE_TILES_PER_SEC;
 // Continuous movement helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a world-space Vec2(x, z) to the tile it sits in.
+/// Convert a continuous world position [x, z] to the tile it sits in.
+///
+/// Coordinate convention (must match the client's `world3d_to_tile`):
+///   pos[0] = world X  →  tile.x = round(pos[0] / TILE_SIZE)
+///   pos[1] = world Z  →  tile.y = round(-pos[1] / TILE_SIZE)
+///
+/// World Z is **negative** when moving North (W key); tile Y is **positive**
+/// in that same direction.  The negation here keeps server tile coords aligned
+/// with the client.
 pub fn pos_to_tile(pos: [f32; 2]) -> TilePos {
     let half = TILE_SIZE * 0.5;
     TilePos {
         x: ((pos[0] + half) / TILE_SIZE).floor() as i32,
-        y: ((pos[1] + half) / TILE_SIZE).floor() as i32,
+        y: ((-pos[1] + half) / TILE_SIZE).floor() as i32,
     }
 }
 
-/// Convert tile centre to world pos [x, z].
+/// Convert tile centre to continuous world position [x, z].
+///
+/// Inverse of `pos_to_tile`: tile.y maps to negative world Z so that the sign
+/// convention matches the client (`tile_to_world3d` also negates tile Y).
 pub fn tile_to_pos(tile: TilePos) -> [f32; 2] {
-    [tile.x as f32 * TILE_SIZE, tile.y as f32 * TILE_SIZE]
+    [tile.x as f32 * TILE_SIZE, -(tile.y as f32 * TILE_SIZE)]
 }
 
 /// Try to move from `pos` by `delta`, sliding along walls.
@@ -82,8 +93,10 @@ impl WorldState {
         // v0 keeps these in memory; later this can come from loaded world/object data.
         blocked.extend(harvest.blocking_tiles());
 
-        // Match the current client demo NPC blocker until world data becomes shared/loaded.
-        blocked.insert(TilePos::new(-2, 1));
+        // Static world objects — must stay in sync with spawn_world() in the client.
+        blocked.insert(TilePos::new(-2, 1));   // demo NPC
+        blocked.insert(TilePos::new(-4, 1));   // bank booth
+        blocked.insert(TilePos::new(-5, 1));   // bank booth
 
         Self {
             players: HashMap::new(),
