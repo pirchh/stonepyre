@@ -1,0 +1,23 @@
+# ============================================================
+# AssetForge — local .gitignore
+# ============================================================
+
+# Third-party model repos — clone these separately per README
+Hunyuan3D-2/
+TripoSR/
+
+# Python virtual environment
+.venv/
+
+# Pipeline working directories — generated, not source
+temp/
+input/
+output/
+staging/
+
+# Model weight caches (can be large)
+*.ckpt
+*.safetensors
+*.onnx
+*.pt
+*.pth

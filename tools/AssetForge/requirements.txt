@@ -1,0 +1,40 @@
+# StonepyreAssetForge — Python dependencies
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# PyTorch (CUDA 12.x for RTX 5060 Ti / sm_120 architecture):
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+#
+# TripoSR (image-to-3D model):
+#   git clone https://github.com/VAST-AI-Research/TripoSR
+#   cd TripoSR && pip install -e .
+#
+# Blender: install separately from https://www.blender.org/download/
+#   Set BLENDER_PATH env var if not in a standard location.
+
+# --- Core image processing ---
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# --- Background removal ---
+rembg>=2.0.50
+
+# --- 3D mesh processing ---
+trimesh>=4.0.0
+# Optional but improves decimation quality:
+# pymeshlab>=2023.12
+
+# --- AI/ML (PyTorch must be installed separately with the correct CUDA wheel) ---
+# torch>=2.2.0  -- install via the CUDA wheel URL above, not from PyPI
+# torchvision>=0.17.0
+# huggingface_hub>=0.20.0
+
+# --- TripoSR dependencies (installed via the TripoSR repo) ---
+# einops>=0.7.0
+# omegaconf>=2.3.0
+# transformers>=4.35.0
+
+# --- Utilities ---
+requests>=2.31.0
+tqdm>=4.66.0
