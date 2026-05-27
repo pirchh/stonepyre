@@ -17,10 +17,7 @@ mod xp_feedback;
 
 pub use action_visuals::play_server_authoritative_action_visuals;
 pub use ground_items::sync_ground_item_visuals_from_server;
-pub use harvest_nodes::{
-    sync_harvest_node_visuals_from_server,
-    update_world_object_depths,
-};
+pub use harvest_nodes::sync_harvest_node_visuals_from_server;
 pub use bag_sync::sync_bag_slots_from_server;
 pub use bank_sync::{send_bank_item_actions_to_server, sync_bank_from_server};
 pub use inventory_actions::{send_bag_item_actions_to_server, send_inventory_item_actions_to_server};

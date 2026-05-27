@@ -80,11 +80,6 @@ fn main() {
                     .before(stonepyre_engine::plugins::animation::animate_humanoid),
                 boot::game_net::sync_remote_players_from_snapshots,
                 boot::game_net::animate_remote_players_from_snapshots,
-                boot::game_net::update_world_object_depths
-                    .after(stonepyre_engine::plugins::movement::wasd_movement)
-                    .after(boot::game_net::animate_remote_players_from_snapshots)
-                    .after(boot::game_net::sync_harvest_node_visuals_from_server)
-                    .after(boot::game_net::sync_ground_item_visuals_from_server),
                 boot::game_net::update_game_net_overlay,
                 boot::game_net::update_proximity_prompt,
                 send_debug_grant_actions,
