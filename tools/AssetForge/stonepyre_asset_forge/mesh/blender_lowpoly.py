@@ -43,10 +43,10 @@ TREE_PALETTES = {
         "variation": 0.03,
     },
     "willow": {
-        "trunk":  [(0.38, 0.30, 0.18), (0.30, 0.23, 0.13), (0.42, 0.33, 0.20)],
-        "canopy": [(0.28, 0.50, 0.16), (0.22, 0.42, 0.13), (0.32, 0.55, 0.18)],
-        "trunk_ratio": 0.18,
-        "variation": 0.05,
+        "trunk":  [(0.20, 0.12, 0.06), (0.16, 0.10, 0.05), (0.24, 0.15, 0.07)],
+        "canopy": [(0.06, 0.15, 0.03), (0.05, 0.12, 0.02), (0.08, 0.18, 0.04), (0.05, 0.14, 0.02)],
+        "trunk_ratio": 0.52,
+        "variation": 0.03,
     },
     "dead": {
         "trunk":  [(0.38, 0.34, 0.29), (0.30, 0.27, 0.23), (0.44, 0.40, 0.34)],
@@ -107,6 +107,8 @@ def main():
     max_root_radius = args.get("max_root_radius")  # float in Blender metres, or None
     if max_root_radius is not None:
         max_root_radius = float(max_root_radius)
+    smooth_iterations = int(args.get("smooth_iterations", 1))
+    smooth_factor = float(args.get("smooth_factor", 0.5))
 
     if not input_path or not output_path:
         print("ERROR: 'input' and 'output' are required in the args JSON.")
@@ -197,13 +199,13 @@ def main():
         print("[Blender] Neutral material assigned after remesh.")
 
     # -----------------------------------------------------------------------
-    # 3d. Geometry smooth — gentle pass to round out voxel faceting
+    # 3d. Geometry smooth — rounds out voxel faceting; more iterations = rounder
     # -----------------------------------------------------------------------
     smooth_mod = obj.modifiers.new(name="Smooth", type="SMOOTH")
-    smooth_mod.factor = 0.5
-    smooth_mod.iterations = 1
+    smooth_mod.factor = smooth_factor
+    smooth_mod.iterations = smooth_iterations
     bpy.ops.object.modifier_apply(modifier=smooth_mod.name)
-    print("[Blender] Geometry smooth applied (1 iteration, factor 0.5)")
+    print(f"[Blender] Geometry smooth applied ({smooth_iterations} iterations, factor {smooth_factor})")
 
     # -----------------------------------------------------------------------
     # 4. Decimate toward target triangle count
@@ -264,7 +266,22 @@ def main():
     bpy.ops.mesh.fill_holes(sides=0)
     bpy.ops.mesh.normals_make_consistent(inside=False)
     bpy.ops.object.mode_set(mode="OBJECT")
-    print("[Blender] Holes filled (2 passes) and patch normals fixed.")
+
+    # BMesh hole-fill pass — catches complex boundary loops the operator misses,
+    # then recalculates all normals so no patched face is inside-out.
+    import bmesh as _bmesh_holes
+    bm_h = _bmesh_holes.new()
+    bm_h.from_mesh(obj.data)
+    boundary_edges = [e for e in bm_h.edges if e.is_boundary]
+    if boundary_edges:
+        _bmesh_holes.ops.holes_fill(bm_h, edges=boundary_edges, sides=0)
+        _bmesh_holes.ops.recalc_face_normals(bm_h, faces=bm_h.faces)
+        print(f"[Blender] BMesh hole-fill: closed {len(boundary_edges)} boundary edges.")
+    bm_h.to_mesh(obj.data)
+    bm_h.free()
+    obj.data.update()
+
+    print("[Blender] Holes filled (2 operator passes + BMesh pass) and normals fixed.")
 
     # -----------------------------------------------------------------------
     # 6. Symmetrize AFTER decimate so decimation can't re-introduce asymmetry
@@ -403,6 +420,78 @@ def main():
                   f"{max_root_radius}m radius (bottom {root_z_threshold:.2f}m).")
 
     # -----------------------------------------------------------------------
+    # 9c-pre2. Shard removal — delete small disconnected mesh islands.
+    #   AI reconstructions sometimes produce thin floating shards.
+    #   We keep only islands that contain at least 2 % of total faces
+    #   (or 10 faces, whichever is larger).
+    # -----------------------------------------------------------------------
+    if tree_type:
+        import bmesh as _bmesh
+        bm = _bmesh.new()
+        bm.from_mesh(obj.data)
+
+        # Pre-compute Z bounds — used by both island removal and spike filter
+        _vz = [v.co.z for v in bm.verts]
+        min_z_vc  = min(_vz)
+        height_vc = max(max(_vz) - min_z_vc, 0.001)
+
+        # Walk every face and group into connected islands
+        unvisited = set(bm.faces)
+        islands   = []
+        while unvisited:
+            seed  = next(iter(unvisited))
+            stack = [seed]
+            isle  = set()
+            while stack:
+                f = stack.pop()
+                if f in isle:
+                    continue
+                isle.add(f)
+                unvisited.discard(f)
+                for edge in f.edges:
+                    for nbr in edge.link_faces:
+                        if nbr not in isle:
+                            stack.append(nbr)
+            islands.append(isle)
+
+        total_faces  = len(bm.faces)
+        min_keep     = max(10, int(total_faces * 0.02))
+        shard_faces  = [f for isle in islands if len(isle) < min_keep for f in isle]
+
+        if shard_faces:
+            _bmesh.ops.delete(bm, geom=shard_faces, context='FACES')
+            print(f"[Blender] Shard removal: deleted {len(shard_faces)} faces "
+                  f"across {sum(1 for isle in islands if len(isle) < min_keep)} island(s).")
+
+        # Aspect-ratio filter — catches thin spike faces that are connected to the
+        # main mesh (so island size can't detect them).
+        # Ratio = longest_edge² / (2 × area). A perfect equilateral triangle ≈ 1.15;
+        # a very thin spike can be 20–100+. Threshold of 18 is safe for tree geometry.
+        import math as _math_ar
+        def _aspect_ratio(f):
+            area = f.calc_area()
+            if area < 1e-12:
+                return float('inf')
+            longest = max(e.calc_length() for e in f.edges)
+            return (longest * longest) / (2.0 * area)
+
+        # Spike removal — single pass, then a single hole-fill to patch any
+        # legitimate trunk/canopy faces that were also caught by the filter.
+        # No iteration — avoids the cascade that previously ate trunk geometry.
+        spike_faces = [f for f in bm.faces if _aspect_ratio(f) > 7.0]
+        if spike_faces:
+            _bmesh.ops.delete(bm, geom=spike_faces, context='FACES')
+            post_boundary = [e for e in bm.edges if e.is_boundary]
+            if post_boundary:
+                _bmesh.ops.holes_fill(bm, edges=post_boundary, sides=0)
+            _bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            print(f"[Blender] Spike removal: deleted {len(spike_faces)} face(s), re-filled holes.")
+
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+    # -----------------------------------------------------------------------
     # 9c. Vertex colour painting (tree types only)
     # -----------------------------------------------------------------------
     if tree_type:
@@ -412,10 +501,18 @@ def main():
         trunk_ratio   = palette["trunk_ratio"]
         variation     = palette["variation"]
 
+        import math as _math
+
         mesh = obj.data
         min_z_vc  = min(v.co.z for v in mesh.vertices)
         max_z_vc  = max(v.co.z for v in mesh.vertices)
         height_vc = max(max_z_vc - min_z_vc, 0.001)
+
+        # Estimate trunk radius: trunk is a narrow column at the centre.
+        # Hanging pieces (e.g. willow tendrils) extend far in XY even at low Z,
+        # so we use XY distance to distinguish them from the true trunk.
+        max_xy_vc     = max(_math.sqrt(v.co.x**2 + v.co.y**2) for v in mesh.vertices)
+        trunk_radius  = max(max_xy_vc * 0.20, 0.05)  # ~20 % of mesh half-width — tight centre column only
 
         # Create (or replace) the colour attribute
         if "Col" in mesh.color_attributes:
@@ -425,13 +522,37 @@ def main():
 
         for poly in mesh.polygons:
             for loop_idx in poly.loop_indices:
-                v_idx  = mesh.loops[loop_idx].vertex_index
-                z_norm = (mesh.vertices[v_idx].co.z - min_z_vc) / height_vc
-                base   = random.choice(trunk_colors if z_norm < trunk_ratio else canopy_colors)
-                var    = random.uniform(-variation, variation)
-                r = max(0.0, min(1.0, base[0] + var))
-                g = max(0.0, min(1.0, base[1] + var))
-                b = max(0.0, min(1.0, base[2] + var))
+                v_idx   = mesh.loops[loop_idx].vertex_index
+                vco     = mesh.vertices[v_idx].co
+                z_norm  = (vco.z - min_z_vc) / height_vc
+                xy_dist = _math.sqrt(vco.x**2 + vco.y**2)
+
+                # Very base of the tree (bottom 8 %) is always trunk — catches
+                # root bumps that spread slightly beyond trunk_radius.
+                # Above that, require BOTH low Z AND close to the centre axis
+                # so hanging/drooping canopy pieces stay green.
+                is_trunk = z_norm < 0.08 or (z_norm < trunk_ratio and xy_dist < trunk_radius)
+                base     = random.choice(trunk_colors if is_trunk else canopy_colors)
+                var      = random.uniform(-variation, variation)
+
+                if not is_trunk:
+                    # Position-based pseudo-noise for canopy texture variation.
+                    # Layered sin waves create dappled-light colour bands that
+                    # read as texture without needing a UV map.
+                    freq  = 4.5
+                    noise = (
+                        _math.sin(vco.x * freq       ) * _math.cos(vco.y * freq * 1.3) +
+                        _math.sin(vco.z * freq * 0.9 ) * _math.cos(vco.x * freq * 0.7)
+                    ) * 0.25  # -0.25 … +0.25
+                    noise_amp = 0.045
+                    r = max(0.0, min(1.0, base[0] + var + noise * noise_amp * 0.7))
+                    g = max(0.0, min(1.0, base[1] + var + noise * noise_amp * 1.3))
+                    b = max(0.0, min(1.0, base[2] + var + noise * noise_amp * 0.5))
+                else:
+                    r = max(0.0, min(1.0, base[0] + var))
+                    g = max(0.0, min(1.0, base[1] + var))
+                    b = max(0.0, min(1.0, base[2] + var))
+
                 color_attr.data[loop_idx].color = (r, g, b, 1.0)
 
         # Principled BSDF — fully matte, zero specular, exports cleanly to GLB

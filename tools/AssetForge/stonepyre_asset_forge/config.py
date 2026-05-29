@@ -27,6 +27,16 @@ class StyleConfig:
     stump_height_ratio: float = 0.18        # stump height as fraction of normalize_height
     max_footprint: Optional[float] = None   # clamp XY to this width in Blender metres (e.g. 1.2 = 1 tile @ 53.3 scale)
     max_root_radius: Optional[float] = None # pull base verts inside this XY radius (e.g. 0.6 = 1 tile radius @ 53.3 scale)
+    smooth_iterations: int = 1              # geometry smooth passes after remesh (more = rounder canopy)
+    smooth_factor: float = 0.5             # smooth strength per pass (0.0–1.0)
+    # Tree-specific (used by blender_tree.py, ignored for non-tree styles)
+    trunk_height_ratio: float = 0.35       # fraction of AI mesh height to keep as trunk
+    canopy_shape: str = "sphere"           # sphere | conical
+    canopy_radius: float = 1.2            # canopy sphere radius in Blender metres
+    canopy_z_ratio: float = 0.60          # canopy centre Z as fraction of normalize_height
+    canopy_height_scale: float = 0.85     # Z scale of canopy (1.0 = sphere, <1 flat, >1 tall)
+    canopy_lumpiness: float = 0.35        # displace strength — bumpiness of canopy surface
+    canopy_noise_scale: float = 0.45      # noise texture scale — smaller = bigger lumps
 
 
 @dataclass
@@ -76,6 +86,15 @@ def get_style(style_name: str, styles_path: Path = _DEFAULT_STYLES_PATH) -> Styl
         stump_height_ratio=data.get("stump_height_ratio", 0.18),
         max_footprint=data.get("max_footprint", None),
         max_root_radius=data.get("max_root_radius", None),
+        smooth_iterations=data.get("smooth_iterations", 1),
+        smooth_factor=data.get("smooth_factor", 0.5),
+        trunk_height_ratio=data.get("trunk_height_ratio", 0.35),
+        canopy_shape=data.get("canopy_shape", "sphere"),
+        canopy_radius=data.get("canopy_radius", 1.2),
+        canopy_z_ratio=data.get("canopy_z_ratio", 0.60),
+        canopy_height_scale=data.get("canopy_height_scale", 0.85),
+        canopy_lumpiness=data.get("canopy_lumpiness", 0.35),
+        canopy_noise_scale=data.get("canopy_noise_scale", 0.45),
     )
 
 
