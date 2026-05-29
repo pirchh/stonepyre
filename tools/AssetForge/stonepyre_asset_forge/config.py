@@ -104,7 +104,12 @@ def get_style(style_name: str, styles_path: Path = _DEFAULT_STYLES_PATH) -> Styl
     )
 
 
-def resolve_output_path(input_path: Path, output_arg: Optional[str], fmt: str) -> Path:
+def resolve_output_path(
+    input_path: Path,
+    output_arg: Optional[str],
+    fmt: str,
+    tree_type: Optional[str] = None,
+) -> Path:
     if output_arg:
         p = Path(output_arg)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +117,8 @@ def resolve_output_path(input_path: Path, output_arg: Optional[str], fmt: str) -
     stem = input_path.stem
     out_dir = Path("output")
     out_dir.mkdir(exist_ok=True)
-    return out_dir / f"{stem}_lowpoly.{fmt}"
+    suffix = "tree" if tree_type else "lowpoly"
+    return out_dir / f"{stem}_{suffix}.{fmt}"
 
 
 def find_blender() -> Optional[str]:
