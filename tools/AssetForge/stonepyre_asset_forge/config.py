@@ -29,6 +29,9 @@ class StyleConfig:
     max_root_radius: Optional[float] = None # pull base verts inside this XY radius (e.g. 0.6 = 1 tile radius @ 53.3 scale)
     smooth_iterations: int = 1              # geometry smooth passes after remesh (more = rounder canopy)
     smooth_factor: float = 0.5             # smooth strength per pass (0.0–1.0)
+    spike_ar_threshold: float = 7.0        # aspect-ratio cutoff for shard removal (lower = more aggressive)
+    trunk_base_ratio: float = 0.08         # bottom X fraction of tree always painted trunk colour
+    trunk_radius_frac: float = 0.20        # trunk column radius as fraction of mesh max XY extent
     # Tree-specific (used by blender_tree.py, ignored for non-tree styles)
     trunk_height_ratio: float = 0.35       # fraction of AI mesh height to keep as trunk
     canopy_shape: str = "sphere"           # sphere | conical
@@ -88,6 +91,9 @@ def get_style(style_name: str, styles_path: Path = _DEFAULT_STYLES_PATH) -> Styl
         max_root_radius=data.get("max_root_radius", None),
         smooth_iterations=data.get("smooth_iterations", 1),
         smooth_factor=data.get("smooth_factor", 0.5),
+        spike_ar_threshold=data.get("spike_ar_threshold", 7.0),
+        trunk_base_ratio=data.get("trunk_base_ratio", 0.08),
+        trunk_radius_frac=data.get("trunk_radius_frac", 0.20),
         trunk_height_ratio=data.get("trunk_height_ratio", 0.35),
         canopy_shape=data.get("canopy_shape", "sphere"),
         canopy_radius=data.get("canopy_radius", 1.2),

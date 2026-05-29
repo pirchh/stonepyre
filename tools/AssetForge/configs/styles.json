@@ -52,13 +52,16 @@
     "normalize_height": 4.2,
     "depth_scale": 1.2,
     "remesh": true,
-    "remesh_voxel_size": 0.020,
+    "remesh_voxel_size": 0.025,
     "smooth_iterations": 8,
     "smooth_factor": 0.4,
     "tree_type": "oak",
     "generate_stump": true,
     "stump_height_ratio": 0.18,
-    "max_root_radius": 0.6
+    "max_root_radius": 0.6,
+    "spike_ar_threshold": 100.0,
+    "trunk_base_ratio": 0.18,
+    "trunk_radius_frac": 0.30
   },
   "osrs_tree_willow": {
     "target_tris": 20000,
@@ -76,7 +79,10 @@
     "tree_type": "willow",
     "generate_stump": true,
     "stump_height_ratio": 0.15,
-    "max_root_radius": 0.6
+    "max_root_radius": 0.6,
+    "spike_ar_threshold": 7.0,
+    "trunk_base_ratio": 0.08,
+    "trunk_radius_frac": 0.20
   },
   "osrs_tree_pine": {
     "target_tris": 12000,

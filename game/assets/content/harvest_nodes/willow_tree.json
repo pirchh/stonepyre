@@ -11,6 +11,6 @@
   "charges": 5,
   "respawn_seconds": 30.0,
   "loot_table": "woodcutting_willow_tree",
-  "available_sprite": "world/harvest_objects/woodcutting/oak_tree.glb",
-  "depleted_sprite": "world/harvest_objects/woodcutting/oak_stump.glb"
+  "available_sprite": "world/harvest_objects/woodcutting/willow_tree.glb",
+  "depleted_sprite": "world/harvest_objects/woodcutting/willow_stump.glb"
 }

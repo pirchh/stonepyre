@@ -97,6 +97,9 @@ def _run_blender_postprocess(
         "max_root_radius": getattr(style, "max_root_radius", None),
         "smooth_iterations": getattr(style, "smooth_iterations", 1),
         "smooth_factor": getattr(style, "smooth_factor", 0.5),
+        "spike_ar_threshold": getattr(style, "spike_ar_threshold", 7.0),
+        "trunk_base_ratio": getattr(style, "trunk_base_ratio", 0.08),
+        "trunk_radius_frac": getattr(style, "trunk_radius_frac", 0.20),
     })
 
     if not blender_script.exists():

@@ -33,7 +33,7 @@ TREE_PALETTES = {
     "oak": {
         "trunk":  [(0.29, 0.18, 0.10), (0.38, 0.24, 0.13), (0.32, 0.21, 0.11)],
         "canopy": [(0.17, 0.33, 0.10), (0.22, 0.44, 0.13), (0.28, 0.52, 0.16), (0.15, 0.30, 0.09)],
-        "trunk_ratio": 0.34,
+        "trunk_ratio": 0.46,
         "variation": 0.04,
     },
     "pine": {
@@ -109,6 +109,9 @@ def main():
         max_root_radius = float(max_root_radius)
     smooth_iterations = int(args.get("smooth_iterations", 1))
     smooth_factor = float(args.get("smooth_factor", 0.5))
+    spike_ar_threshold = float(args.get("spike_ar_threshold", 7.0))
+    trunk_base_ratio = float(args.get("trunk_base_ratio", 0.08))
+    trunk_radius_frac = float(args.get("trunk_radius_frac", 0.20))
 
     if not input_path or not output_path:
         print("ERROR: 'input' and 'output' are required in the args JSON.")
@@ -478,14 +481,20 @@ def main():
         # Spike removal — single pass, then a single hole-fill to patch any
         # legitimate trunk/canopy faces that were also caught by the filter.
         # No iteration — avoids the cascade that previously ate trunk geometry.
-        spike_faces = [f for f in bm.faces if _aspect_ratio(f) > 7.0]
+        spike_faces = [f for f in bm.faces if _aspect_ratio(f) > spike_ar_threshold]
         if spike_faces:
             _bmesh.ops.delete(bm, geom=spike_faces, context='FACES')
-            post_boundary = [e for e in bm.edges if e.is_boundary]
-            if post_boundary:
-                _bmesh.ops.holes_fill(bm, edges=post_boundary, sides=0)
+            print(f"[Blender] Spike removal: deleted {len(spike_faces)} face(s).")
+
+        # Always fill boundary edges at this stage — the root-radius clamp
+        # (which runs before this block) can create new open edges that the
+        # earlier hole-fill passes never saw.  This runs whether or not any
+        # spikes were deleted.
+        final_boundary = [e for e in bm.edges if e.is_boundary]
+        if final_boundary:
+            _bmesh.ops.holes_fill(bm, edges=final_boundary, sides=0)
             _bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-            print(f"[Blender] Spike removal: deleted {len(spike_faces)} face(s), re-filled holes.")
+            print(f"[Blender] Post-clamp hole-fill: closed {len(final_boundary)} boundary edges.")
 
         bm.to_mesh(obj.data)
         bm.free()
@@ -512,7 +521,7 @@ def main():
         # Hanging pieces (e.g. willow tendrils) extend far in XY even at low Z,
         # so we use XY distance to distinguish them from the true trunk.
         max_xy_vc     = max(_math.sqrt(v.co.x**2 + v.co.y**2) for v in mesh.vertices)
-        trunk_radius  = max(max_xy_vc * 0.20, 0.05)  # ~20 % of mesh half-width — tight centre column only
+        trunk_radius  = max(max_xy_vc * trunk_radius_frac, 0.05)
 
         # Create (or replace) the colour attribute
         if "Col" in mesh.color_attributes:
@@ -527,11 +536,11 @@ def main():
                 z_norm  = (vco.z - min_z_vc) / height_vc
                 xy_dist = _math.sqrt(vco.x**2 + vco.y**2)
 
-                # Very base of the tree (bottom 8 %) is always trunk — catches
-                # root bumps that spread slightly beyond trunk_radius.
+                # Very base of the tree (bottom trunk_base_ratio %) is always
+                # trunk — catches root bumps that spread beyond trunk_radius.
                 # Above that, require BOTH low Z AND close to the centre axis
                 # so hanging/drooping canopy pieces stay green.
-                is_trunk = z_norm < 0.08 or (z_norm < trunk_ratio and xy_dist < trunk_radius)
+                is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
                 base     = random.choice(trunk_colors if is_trunk else canopy_colors)
                 var      = random.uniform(-variation, variation)
 
