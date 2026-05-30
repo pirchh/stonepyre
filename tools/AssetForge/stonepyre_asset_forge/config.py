@@ -27,6 +27,19 @@ class StyleConfig:
     stump_height_ratio: float = 0.18        # stump height as fraction of normalize_height
     max_footprint: Optional[float] = None   # clamp XY to this width in Blender metres (e.g. 1.2 = 1 tile @ 53.3 scale)
     max_root_radius: Optional[float] = None # pull base verts inside this XY radius (e.g. 0.6 = 1 tile radius @ 53.3 scale)
+    smooth_iterations: int = 1              # geometry smooth passes after remesh (more = rounder canopy)
+    smooth_factor: float = 0.5             # smooth strength per pass (0.0–1.0)
+    spike_ar_threshold: float = 7.0        # aspect-ratio cutoff for shard removal (lower = more aggressive)
+    trunk_base_ratio: float = 0.08         # bottom X fraction of tree always painted trunk colour
+    trunk_radius_frac: float = 0.20        # trunk column radius as fraction of mesh max XY extent
+    # Tree-specific (used by blender_tree.py, ignored for non-tree styles)
+    trunk_height_ratio: float = 0.35       # fraction of AI mesh height to keep as trunk
+    canopy_shape: str = "sphere"           # sphere | conical
+    canopy_radius: float = 1.2            # canopy sphere radius in Blender metres
+    canopy_z_ratio: float = 0.60          # canopy centre Z as fraction of normalize_height
+    canopy_height_scale: float = 0.85     # Z scale of canopy (1.0 = sphere, <1 flat, >1 tall)
+    canopy_lumpiness: float = 0.35        # displace strength — bumpiness of canopy surface
+    canopy_noise_scale: float = 0.45      # noise texture scale — smaller = bigger lumps
 
 
 @dataclass
@@ -76,10 +89,27 @@ def get_style(style_name: str, styles_path: Path = _DEFAULT_STYLES_PATH) -> Styl
         stump_height_ratio=data.get("stump_height_ratio", 0.18),
         max_footprint=data.get("max_footprint", None),
         max_root_radius=data.get("max_root_radius", None),
+        smooth_iterations=data.get("smooth_iterations", 1),
+        smooth_factor=data.get("smooth_factor", 0.5),
+        spike_ar_threshold=data.get("spike_ar_threshold", 7.0),
+        trunk_base_ratio=data.get("trunk_base_ratio", 0.08),
+        trunk_radius_frac=data.get("trunk_radius_frac", 0.20),
+        trunk_height_ratio=data.get("trunk_height_ratio", 0.35),
+        canopy_shape=data.get("canopy_shape", "sphere"),
+        canopy_radius=data.get("canopy_radius", 1.2),
+        canopy_z_ratio=data.get("canopy_z_ratio", 0.60),
+        canopy_height_scale=data.get("canopy_height_scale", 0.85),
+        canopy_lumpiness=data.get("canopy_lumpiness", 0.35),
+        canopy_noise_scale=data.get("canopy_noise_scale", 0.45),
     )
 
 
-def resolve_output_path(input_path: Path, output_arg: Optional[str], fmt: str) -> Path:
+def resolve_output_path(
+    input_path: Path,
+    output_arg: Optional[str],
+    fmt: str,
+    tree_type: Optional[str] = None,
+) -> Path:
     if output_arg:
         p = Path(output_arg)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -87,7 +117,8 @@ def resolve_output_path(input_path: Path, output_arg: Optional[str], fmt: str) -
     stem = input_path.stem
     out_dir = Path("output")
     out_dir.mkdir(exist_ok=True)
-    return out_dir / f"{stem}_lowpoly.{fmt}"
+    suffix = "tree" if tree_type else "lowpoly"
+    return out_dir / f"{stem}_{suffix}.{fmt}"
 
 
 def find_blender() -> Optional[str]:

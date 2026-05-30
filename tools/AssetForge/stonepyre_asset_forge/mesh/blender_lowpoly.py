@@ -33,7 +33,7 @@ TREE_PALETTES = {
     "oak": {
         "trunk":  [(0.29, 0.18, 0.10), (0.38, 0.24, 0.13), (0.32, 0.21, 0.11)],
         "canopy": [(0.17, 0.33, 0.10), (0.22, 0.44, 0.13), (0.28, 0.52, 0.16), (0.15, 0.30, 0.09)],
-        "trunk_ratio": 0.34,
+        "trunk_ratio": 0.46,
         "variation": 0.04,
     },
     "pine": {
@@ -43,10 +43,10 @@ TREE_PALETTES = {
         "variation": 0.03,
     },
     "willow": {
-        "trunk":  [(0.38, 0.30, 0.18), (0.30, 0.23, 0.13), (0.42, 0.33, 0.20)],
-        "canopy": [(0.28, 0.50, 0.16), (0.22, 0.42, 0.13), (0.32, 0.55, 0.18)],
-        "trunk_ratio": 0.18,
-        "variation": 0.05,
+        "trunk":  [(0.20, 0.12, 0.06), (0.16, 0.10, 0.05), (0.24, 0.15, 0.07)],
+        "canopy": [(0.06, 0.15, 0.03), (0.05, 0.12, 0.02), (0.08, 0.18, 0.04), (0.05, 0.14, 0.02)],
+        "trunk_ratio": 0.52,
+        "variation": 0.03,
     },
     "dead": {
         "trunk":  [(0.38, 0.34, 0.29), (0.30, 0.27, 0.23), (0.44, 0.40, 0.34)],
@@ -65,6 +65,216 @@ TREE_PALETTES = {
         "canopy": [(0.06, 0.20, 0.06), (0.08, 0.25, 0.08), (0.05, 0.18, 0.05)],
         "trunk_ratio": 0.25,
         "variation": 0.03,
+    },
+    # -----------------------------------------------------------------------
+    # Extended production tree palette library
+    # -----------------------------------------------------------------------
+    "hickory": {
+        "trunk":  [(0.30, 0.20, 0.11), (0.25, 0.17, 0.09), (0.36, 0.24, 0.13)],
+        "canopy": [(0.18, 0.34, 0.10), (0.22, 0.42, 0.12), (0.15, 0.29, 0.08)],
+        "trunk_ratio": 0.40,
+        "variation": 0.04,
+    },
+    "cherry": {
+        # Canopy blends light green with pink-tinted tones for a blossom hint
+        "trunk":  [(0.18, 0.08, 0.06), (0.22, 0.10, 0.07), (0.15, 0.07, 0.05)],
+        "canopy": [(0.22, 0.34, 0.12), (0.28, 0.22, 0.16), (0.20, 0.28, 0.13), (0.32, 0.20, 0.17)],
+        "trunk_ratio": 0.38,
+        "variation": 0.05,
+    },
+    "beech": {
+        "trunk":  [(0.40, 0.40, 0.36), (0.44, 0.44, 0.40), (0.36, 0.36, 0.32)],
+        "canopy": [(0.24, 0.44, 0.13), (0.30, 0.54, 0.17), (0.20, 0.38, 0.11)],
+        "trunk_ratio": 0.36,
+        "variation": 0.04,
+    },
+    "maple": {
+        "trunk":  [(0.28, 0.18, 0.10), (0.22, 0.14, 0.08), (0.34, 0.22, 0.12)],
+        "canopy": [(0.20, 0.38, 0.11), (0.16, 0.32, 0.09), (0.24, 0.44, 0.13)],
+        "trunk_ratio": 0.38,
+        "variation": 0.04,
+    },
+    "ash": {
+        "trunk":  [(0.28, 0.25, 0.20), (0.22, 0.20, 0.16), (0.34, 0.30, 0.24)],
+        "canopy": [(0.12, 0.28, 0.10), (0.10, 0.24, 0.08), (0.14, 0.32, 0.12)],
+        "trunk_ratio": 0.40,
+        "variation": 0.03,
+    },
+    "birch": {
+        # High-variation pale trunk to simulate the dark marks on white bark
+        "trunk":  [(0.60, 0.60, 0.57), (0.66, 0.66, 0.63), (0.18, 0.18, 0.16)],
+        "canopy": [(0.26, 0.50, 0.14), (0.32, 0.60, 0.18), (0.22, 0.44, 0.12)],
+        "trunk_ratio": 0.44,
+        "variation": 0.06,
+    },
+    "cedar": {
+        "trunk":  [(0.28, 0.14, 0.08), (0.22, 0.11, 0.06), (0.34, 0.17, 0.10)],
+        "canopy": [(0.06, 0.16, 0.08), (0.08, 0.20, 0.10), (0.05, 0.14, 0.07)],
+        "trunk_ratio": 0.32,
+        "variation": 0.03,
+    },
+    "spruce": {
+        "trunk":  [(0.22, 0.14, 0.08), (0.18, 0.11, 0.06), (0.26, 0.16, 0.09)],
+        "canopy": [(0.04, 0.12, 0.06), (0.03, 0.10, 0.05), (0.05, 0.14, 0.07)],
+        "trunk_ratio": 0.22,
+        "variation": 0.02,
+    },
+    "fir": {
+        "trunk":  [(0.24, 0.16, 0.09), (0.20, 0.13, 0.07), (0.28, 0.19, 0.11)],
+        "canopy": [(0.06, 0.16, 0.07), (0.05, 0.13, 0.06), (0.07, 0.18, 0.08)],
+        "trunk_ratio": 0.18,
+        "variation": 0.02,
+    },
+    "elm": {
+        "trunk":  [(0.26, 0.22, 0.16), (0.22, 0.18, 0.13), (0.30, 0.26, 0.19)],
+        "canopy": [(0.14, 0.30, 0.09), (0.18, 0.38, 0.11), (0.11, 0.26, 0.07)],
+        "trunk_ratio": 0.40,
+        "variation": 0.03,
+    },
+    "poplar": {
+        "trunk":  [(0.44, 0.42, 0.36), (0.50, 0.48, 0.42), (0.38, 0.36, 0.30)],
+        "canopy": [(0.26, 0.50, 0.15), (0.22, 0.44, 0.13), (0.30, 0.56, 0.17)],
+        "trunk_ratio": 0.55,
+        "variation": 0.04,
+    },
+    "sycamore": {
+        "trunk":  [(0.44, 0.40, 0.30), (0.50, 0.46, 0.34), (0.38, 0.34, 0.26)],
+        "canopy": [(0.20, 0.38, 0.11), (0.16, 0.32, 0.09), (0.24, 0.44, 0.13)],
+        "trunk_ratio": 0.36,
+        "variation": 0.05,
+    },
+    "walnut": {
+        "trunk":  [(0.14, 0.08, 0.04), (0.10, 0.06, 0.03), (0.18, 0.10, 0.05)],
+        "canopy": [(0.10, 0.22, 0.07), (0.08, 0.18, 0.06), (0.12, 0.26, 0.08)],
+        "trunk_ratio": 0.40,
+        "variation": 0.03,
+    },
+    "chestnut": {
+        "trunk":  [(0.28, 0.16, 0.08), (0.24, 0.13, 0.07), (0.32, 0.19, 0.10)],
+        "canopy": [(0.18, 0.36, 0.10), (0.22, 0.44, 0.13), (0.15, 0.30, 0.08)],
+        "trunk_ratio": 0.38,
+        "variation": 0.04,
+    },
+    "alder": {
+        "trunk":  [(0.18, 0.14, 0.10), (0.14, 0.11, 0.08), (0.22, 0.17, 0.12)],
+        "canopy": [(0.10, 0.22, 0.08), (0.08, 0.18, 0.07), (0.12, 0.26, 0.09)],
+        "trunk_ratio": 0.38,
+        "variation": 0.03,
+    },
+    "rowan": {
+        "trunk":  [(0.32, 0.28, 0.22), (0.28, 0.24, 0.19), (0.36, 0.32, 0.25)],
+        "canopy": [(0.18, 0.36, 0.10), (0.22, 0.44, 0.13), (0.15, 0.30, 0.08)],
+        "trunk_ratio": 0.38,
+        "variation": 0.04,
+    },
+    "hawthorn": {
+        "trunk":  [(0.22, 0.18, 0.14), (0.18, 0.15, 0.11), (0.26, 0.21, 0.17)],
+        "canopy": [(0.16, 0.32, 0.10), (0.20, 0.40, 0.12), (0.13, 0.27, 0.08)],
+        "trunk_ratio": 0.35,
+        "variation": 0.04,
+    },
+    "cypress": {
+        "trunk":  [(0.22, 0.16, 0.10), (0.18, 0.13, 0.08), (0.26, 0.19, 0.12)],
+        "canopy": [(0.06, 0.16, 0.08), (0.05, 0.13, 0.07), (0.07, 0.19, 0.09)],
+        "trunk_ratio": 0.28,
+        "variation": 0.02,
+    },
+    "mahogany": {
+        "trunk":  [(0.22, 0.08, 0.04), (0.18, 0.06, 0.03), (0.26, 0.10, 0.05)],
+        "canopy": [(0.12, 0.26, 0.08), (0.10, 0.22, 0.07), (0.14, 0.30, 0.09)],
+        "trunk_ratio": 0.40,
+        "variation": 0.03,
+    },
+    "teak": {
+        "trunk":  [(0.36, 0.24, 0.12), (0.30, 0.20, 0.10), (0.42, 0.28, 0.14)],
+        "canopy": [(0.12, 0.26, 0.08), (0.10, 0.22, 0.07), (0.14, 0.30, 0.09)],
+        "trunk_ratio": 0.38,
+        "variation": 0.03,
+    },
+    "ebony": {
+        "trunk":  [(0.08, 0.06, 0.05), (0.06, 0.05, 0.04), (0.10, 0.08, 0.06)],
+        "canopy": [(0.06, 0.14, 0.04), (0.05, 0.11, 0.03), (0.07, 0.17, 0.05)],
+        "trunk_ratio": 0.40,
+        "variation": 0.02,
+    },
+    "ironwood": {
+        "trunk":  [(0.28, 0.30, 0.32), (0.24, 0.26, 0.28), (0.32, 0.34, 0.36)],
+        "canopy": [(0.08, 0.18, 0.10), (0.06, 0.14, 0.08), (0.10, 0.22, 0.12)],
+        "trunk_ratio": 0.42,
+        "variation": 0.03,
+    },
+    "elder": {
+        "trunk":  [(0.36, 0.32, 0.26), (0.32, 0.28, 0.22), (0.40, 0.36, 0.30)],
+        "canopy": [(0.26, 0.46, 0.12), (0.22, 0.40, 0.10), (0.30, 0.52, 0.14)],
+        "trunk_ratio": 0.36,
+        "variation": 0.04,
+    },
+    "redwood": {
+        "trunk":  [(0.30, 0.10, 0.05), (0.24, 0.08, 0.04), (0.36, 0.12, 0.06)],
+        "canopy": [(0.08, 0.18, 0.06), (0.06, 0.14, 0.05), (0.10, 0.22, 0.07)],
+        "trunk_ratio": 0.50,
+        "variation": 0.03,
+    },
+    "sequoia": {
+        "trunk":  [(0.26, 0.09, 0.05), (0.22, 0.07, 0.04), (0.30, 0.11, 0.06)],
+        "canopy": [(0.08, 0.18, 0.06), (0.06, 0.14, 0.05), (0.10, 0.22, 0.07)],
+        "trunk_ratio": 0.55,
+        "variation": 0.02,
+    },
+    "aspen": {
+        "trunk":  [(0.60, 0.62, 0.54), (0.55, 0.57, 0.49), (0.65, 0.67, 0.59)],
+        "canopy": [(0.30, 0.56, 0.16), (0.26, 0.50, 0.14), (0.34, 0.62, 0.18)],
+        "trunk_ratio": 0.44,
+        "variation": 0.05,
+    },
+    "juniper": {
+        "trunk":  [(0.20, 0.14, 0.09), (0.16, 0.11, 0.07), (0.24, 0.17, 0.11)],
+        "canopy": [(0.06, 0.14, 0.07), (0.05, 0.11, 0.06), (0.07, 0.17, 0.08)],
+        "trunk_ratio": 0.28,
+        "variation": 0.03,
+    },
+    "mangrove": {
+        "trunk":  [(0.20, 0.15, 0.09), (0.16, 0.12, 0.07), (0.24, 0.18, 0.11)],
+        "canopy": [(0.10, 0.22, 0.08), (0.08, 0.18, 0.07), (0.12, 0.26, 0.09)],
+        "trunk_ratio": 0.35,
+        "variation": 0.03,
+    },
+    "baobab": {
+        "trunk":  [(0.50, 0.42, 0.30), (0.44, 0.36, 0.26), (0.56, 0.48, 0.34)],
+        "canopy": [(0.18, 0.36, 0.10), (0.14, 0.30, 0.08), (0.22, 0.42, 0.12)],
+        "trunk_ratio": 0.28,
+        "variation": 0.04,
+    },
+    "palm": {
+        "trunk":  [(0.42, 0.32, 0.18), (0.36, 0.28, 0.16), (0.48, 0.36, 0.20)],
+        "canopy": [(0.20, 0.44, 0.08), (0.16, 0.38, 0.06), (0.24, 0.50, 0.10)],
+        "trunk_ratio": 0.72,
+        "variation": 0.04,
+    },
+    # Fantasy trees
+    "bloodwood": {
+        "trunk":  [(0.22, 0.05, 0.03), (0.18, 0.04, 0.02), (0.26, 0.06, 0.04)],
+        "canopy": [(0.20, 0.08, 0.05), (0.24, 0.06, 0.04), (0.16, 0.10, 0.06)],
+        "trunk_ratio": 0.38,
+        "variation": 0.03,
+    },
+    "silverleaf": {
+        "trunk":  [(0.50, 0.52, 0.55), (0.44, 0.46, 0.50), (0.56, 0.58, 0.62)],
+        "canopy": [(0.36, 0.52, 0.30), (0.42, 0.58, 0.36), (0.30, 0.46, 0.26)],
+        "trunk_ratio": 0.38,
+        "variation": 0.05,
+    },
+    "moonwillow": {
+        "trunk":  [(0.46, 0.48, 0.52), (0.42, 0.44, 0.48), (0.50, 0.52, 0.56)],
+        "canopy": [(0.12, 0.28, 0.22), (0.10, 0.24, 0.18), (0.14, 0.32, 0.26)],
+        "trunk_ratio": 0.35,
+        "variation": 0.04,
+    },
+    "dragonwood": {
+        "trunk":  [(0.06, 0.05, 0.04), (0.04, 0.04, 0.03), (0.08, 0.07, 0.05)],
+        "canopy": [(0.05, 0.10, 0.03), (0.04, 0.08, 0.03), (0.06, 0.12, 0.04)],
+        "trunk_ratio": 0.40,
+        "variation": 0.02,
     },
 }
 
@@ -107,6 +317,11 @@ def main():
     max_root_radius = args.get("max_root_radius")  # float in Blender metres, or None
     if max_root_radius is not None:
         max_root_radius = float(max_root_radius)
+    smooth_iterations = int(args.get("smooth_iterations", 1))
+    smooth_factor = float(args.get("smooth_factor", 0.5))
+    spike_ar_threshold = float(args.get("spike_ar_threshold", 7.0))
+    trunk_base_ratio = float(args.get("trunk_base_ratio", 0.08))
+    trunk_radius_frac = float(args.get("trunk_radius_frac", 0.20))
 
     if not input_path or not output_path:
         print("ERROR: 'input' and 'output' are required in the args JSON.")
@@ -197,13 +412,13 @@ def main():
         print("[Blender] Neutral material assigned after remesh.")
 
     # -----------------------------------------------------------------------
-    # 3d. Geometry smooth — gentle pass to round out voxel faceting
+    # 3d. Geometry smooth — rounds out voxel faceting; more iterations = rounder
     # -----------------------------------------------------------------------
     smooth_mod = obj.modifiers.new(name="Smooth", type="SMOOTH")
-    smooth_mod.factor = 0.5
-    smooth_mod.iterations = 1
+    smooth_mod.factor = smooth_factor
+    smooth_mod.iterations = smooth_iterations
     bpy.ops.object.modifier_apply(modifier=smooth_mod.name)
-    print("[Blender] Geometry smooth applied (1 iteration, factor 0.5)")
+    print(f"[Blender] Geometry smooth applied ({smooth_iterations} iterations, factor {smooth_factor})")
 
     # -----------------------------------------------------------------------
     # 4. Decimate toward target triangle count
@@ -264,7 +479,22 @@ def main():
     bpy.ops.mesh.fill_holes(sides=0)
     bpy.ops.mesh.normals_make_consistent(inside=False)
     bpy.ops.object.mode_set(mode="OBJECT")
-    print("[Blender] Holes filled (2 passes) and patch normals fixed.")
+
+    # BMesh hole-fill pass — catches complex boundary loops the operator misses,
+    # then recalculates all normals so no patched face is inside-out.
+    import bmesh as _bmesh_holes
+    bm_h = _bmesh_holes.new()
+    bm_h.from_mesh(obj.data)
+    boundary_edges = [e for e in bm_h.edges if e.is_boundary]
+    if boundary_edges:
+        _bmesh_holes.ops.holes_fill(bm_h, edges=boundary_edges, sides=0)
+        _bmesh_holes.ops.recalc_face_normals(bm_h, faces=bm_h.faces)
+        print(f"[Blender] BMesh hole-fill: closed {len(boundary_edges)} boundary edges.")
+    bm_h.to_mesh(obj.data)
+    bm_h.free()
+    obj.data.update()
+
+    print("[Blender] Holes filled (2 operator passes + BMesh pass) and normals fixed.")
 
     # -----------------------------------------------------------------------
     # 6. Symmetrize AFTER decimate so decimation can't re-introduce asymmetry
@@ -403,6 +633,84 @@ def main():
                   f"{max_root_radius}m radius (bottom {root_z_threshold:.2f}m).")
 
     # -----------------------------------------------------------------------
+    # 9c-pre2. Shard removal — delete small disconnected mesh islands.
+    #   AI reconstructions sometimes produce thin floating shards.
+    #   We keep only islands that contain at least 2 % of total faces
+    #   (or 10 faces, whichever is larger).
+    # -----------------------------------------------------------------------
+    if tree_type:
+        import bmesh as _bmesh
+        bm = _bmesh.new()
+        bm.from_mesh(obj.data)
+
+        # Pre-compute Z bounds — used by both island removal and spike filter
+        _vz = [v.co.z for v in bm.verts]
+        min_z_vc  = min(_vz)
+        height_vc = max(max(_vz) - min_z_vc, 0.001)
+
+        # Walk every face and group into connected islands
+        unvisited = set(bm.faces)
+        islands   = []
+        while unvisited:
+            seed  = next(iter(unvisited))
+            stack = [seed]
+            isle  = set()
+            while stack:
+                f = stack.pop()
+                if f in isle:
+                    continue
+                isle.add(f)
+                unvisited.discard(f)
+                for edge in f.edges:
+                    for nbr in edge.link_faces:
+                        if nbr not in isle:
+                            stack.append(nbr)
+            islands.append(isle)
+
+        total_faces  = len(bm.faces)
+        min_keep     = max(10, int(total_faces * 0.02))
+        shard_faces  = [f for isle in islands if len(isle) < min_keep for f in isle]
+
+        if shard_faces:
+            _bmesh.ops.delete(bm, geom=shard_faces, context='FACES')
+            print(f"[Blender] Shard removal: deleted {len(shard_faces)} faces "
+                  f"across {sum(1 for isle in islands if len(isle) < min_keep)} island(s).")
+
+        # Aspect-ratio filter — catches thin spike faces that are connected to the
+        # main mesh (so island size can't detect them).
+        # Ratio = longest_edge² / (2 × area). A perfect equilateral triangle ≈ 1.15;
+        # a very thin spike can be 20–100+. Threshold of 18 is safe for tree geometry.
+        import math as _math_ar
+        def _aspect_ratio(f):
+            area = f.calc_area()
+            if area < 1e-12:
+                return float('inf')
+            longest = max(e.calc_length() for e in f.edges)
+            return (longest * longest) / (2.0 * area)
+
+        # Spike removal — single pass, then a single hole-fill to patch any
+        # legitimate trunk/canopy faces that were also caught by the filter.
+        # No iteration — avoids the cascade that previously ate trunk geometry.
+        spike_faces = [f for f in bm.faces if _aspect_ratio(f) > spike_ar_threshold]
+        if spike_faces:
+            _bmesh.ops.delete(bm, geom=spike_faces, context='FACES')
+            print(f"[Blender] Spike removal: deleted {len(spike_faces)} face(s).")
+
+        # Always fill boundary edges at this stage — the root-radius clamp
+        # (which runs before this block) can create new open edges that the
+        # earlier hole-fill passes never saw.  This runs whether or not any
+        # spikes were deleted.
+        final_boundary = [e for e in bm.edges if e.is_boundary]
+        if final_boundary:
+            _bmesh.ops.holes_fill(bm, edges=final_boundary, sides=0)
+            _bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            print(f"[Blender] Post-clamp hole-fill: closed {len(final_boundary)} boundary edges.")
+
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+    # -----------------------------------------------------------------------
     # 9c. Vertex colour painting (tree types only)
     # -----------------------------------------------------------------------
     if tree_type:
@@ -412,10 +720,18 @@ def main():
         trunk_ratio   = palette["trunk_ratio"]
         variation     = palette["variation"]
 
+        import math as _math
+
         mesh = obj.data
         min_z_vc  = min(v.co.z for v in mesh.vertices)
         max_z_vc  = max(v.co.z for v in mesh.vertices)
         height_vc = max(max_z_vc - min_z_vc, 0.001)
+
+        # Estimate trunk radius: trunk is a narrow column at the centre.
+        # Hanging pieces (e.g. willow tendrils) extend far in XY even at low Z,
+        # so we use XY distance to distinguish them from the true trunk.
+        max_xy_vc     = max(_math.sqrt(v.co.x**2 + v.co.y**2) for v in mesh.vertices)
+        trunk_radius  = max(max_xy_vc * trunk_radius_frac, 0.05)
 
         # Create (or replace) the colour attribute
         if "Col" in mesh.color_attributes:
@@ -425,13 +741,37 @@ def main():
 
         for poly in mesh.polygons:
             for loop_idx in poly.loop_indices:
-                v_idx  = mesh.loops[loop_idx].vertex_index
-                z_norm = (mesh.vertices[v_idx].co.z - min_z_vc) / height_vc
-                base   = random.choice(trunk_colors if z_norm < trunk_ratio else canopy_colors)
-                var    = random.uniform(-variation, variation)
-                r = max(0.0, min(1.0, base[0] + var))
-                g = max(0.0, min(1.0, base[1] + var))
-                b = max(0.0, min(1.0, base[2] + var))
+                v_idx   = mesh.loops[loop_idx].vertex_index
+                vco     = mesh.vertices[v_idx].co
+                z_norm  = (vco.z - min_z_vc) / height_vc
+                xy_dist = _math.sqrt(vco.x**2 + vco.y**2)
+
+                # Very base of the tree (bottom trunk_base_ratio %) is always
+                # trunk — catches root bumps that spread beyond trunk_radius.
+                # Above that, require BOTH low Z AND close to the centre axis
+                # so hanging/drooping canopy pieces stay green.
+                is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
+                base     = random.choice(trunk_colors if is_trunk else canopy_colors)
+                var      = random.uniform(-variation, variation)
+
+                if not is_trunk:
+                    # Position-based pseudo-noise for canopy texture variation.
+                    # Layered sin waves create dappled-light colour bands that
+                    # read as texture without needing a UV map.
+                    freq  = 4.5
+                    noise = (
+                        _math.sin(vco.x * freq       ) * _math.cos(vco.y * freq * 1.3) +
+                        _math.sin(vco.z * freq * 0.9 ) * _math.cos(vco.x * freq * 0.7)
+                    ) * 0.25  # -0.25 … +0.25
+                    noise_amp = 0.045
+                    r = max(0.0, min(1.0, base[0] + var + noise * noise_amp * 0.7))
+                    g = max(0.0, min(1.0, base[1] + var + noise * noise_amp * 1.3))
+                    b = max(0.0, min(1.0, base[2] + var + noise * noise_amp * 0.5))
+                else:
+                    r = max(0.0, min(1.0, base[0] + var))
+                    g = max(0.0, min(1.0, base[1] + var))
+                    b = max(0.0, min(1.0, base[2] + var))
+
                 color_attr.data[loop_idx].color = (r, g, b, 1.0)
 
         # Principled BSDF — fully matte, zero specular, exports cleanly to GLB
@@ -572,9 +912,14 @@ def main():
             stump_obj.data.materials.append(s_mat)
             print(f"[Blender] Stump vertex colours applied ({tree_type} trunk palette).")
 
-        # Export stump as a separate file alongside the main asset
+        # Export stump as a separate file alongside the main asset.
+        # If the main output ends with _tree (e.g. oak_tree.glb) produce
+        # oak_stump.glb; otherwise fall back to appending _stump.
         base_out_s, ext_out_s = os.path.splitext(output_path)
-        stump_path = base_out_s + "_stump" + ext_out_s
+        if base_out_s.endswith("_tree"):
+            stump_path = base_out_s[:-5] + "_stump" + ext_out_s
+        else:
+            stump_path = base_out_s + "_stump" + ext_out_s
 
         bpy.ops.object.select_all(action="DESELECT")
         stump_obj.select_set(True)

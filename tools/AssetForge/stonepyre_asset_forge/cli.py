@@ -60,7 +60,16 @@ Tree notes:
     p.add_argument("--flat-shading", action="store_true", help="Force flat shading (overrides style default).")
     p.add_argument("--seed", type=int, default=None, help="Random seed for the image-to-3D model.")
     p.add_argument("--tree-type", default=None,
-                   choices=["oak", "pine", "willow", "dead", "magic", "yew"],
+                   choices=[
+                       "oak", "willow", "yew", "pine", "magic", "dead",
+                       "hickory", "cherry", "beech", "maple", "ash", "birch",
+                       "cedar", "spruce", "fir", "elm", "poplar", "sycamore",
+                       "walnut", "chestnut", "alder", "rowan", "hawthorn",
+                       "cypress", "mahogany", "teak", "ebony", "ironwood",
+                       "elder", "redwood", "sequoia", "aspen", "juniper",
+                       "mangrove", "baobab", "palm", "bloodwood", "silverleaf",
+                       "moonwillow", "dragonwood",
+                   ],
                    help="Enable tree vertex colour painting and set palette. Overrides style default.")
     p.add_argument("--generate-stump", action="store_true",
                    help="Also export a stump-only version of the tree asset (<name>_stump.<ext>).")
@@ -96,7 +105,7 @@ def run(argv: Optional[list[str]] = None) -> int:
     if args.stump_height_ratio is not None:
         style.stump_height_ratio = args.stump_height_ratio
 
-    output_path = resolve_output_path(input_path, args.output, args.format)
+    output_path = resolve_output_path(input_path, args.output, args.format, tree_type=style.tree_type)
     temp_dir = Path("temp") / input_path.stem
 
     cfg = RunConfig(

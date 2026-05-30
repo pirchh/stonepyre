@@ -71,11 +71,13 @@ def _run_blender_postprocess(
     flat_shading: bool,
     logger: logging.Logger,
 ) -> Path:
-    """Invoke the Blender low-poly script via subprocess."""
-    blender_script = Path(__file__).parent.parent / "mesh" / "blender_lowpoly.py"
-    if not blender_script.exists():
-        raise FileNotFoundError(f"Blender script not found: {blender_script}")
+    """Invoke the appropriate Blender post-process script via subprocess.
 
+    Tree assets (tree_type set) are routed to blender_tree.py which uses
+    procedural canopy generation for clean OSRS-style results.
+    All other assets use blender_lowpoly.py.
+    """
+    blender_script = Path(__file__).parent.parent / "mesh" / "blender_lowpoly.py"
     args_json = json.dumps({
         "input": str(raw_mesh_path),
         "output": str(output_path),
@@ -93,7 +95,15 @@ def _run_blender_postprocess(
         "stump_height_ratio": getattr(style, "stump_height_ratio", 0.18),
         "max_footprint": getattr(style, "max_footprint", None),
         "max_root_radius": getattr(style, "max_root_radius", None),
+        "smooth_iterations": getattr(style, "smooth_iterations", 1),
+        "smooth_factor": getattr(style, "smooth_factor", 0.5),
+        "spike_ar_threshold": getattr(style, "spike_ar_threshold", 7.0),
+        "trunk_base_ratio": getattr(style, "trunk_base_ratio", 0.08),
+        "trunk_radius_frac": getattr(style, "trunk_radius_frac", 0.20),
     })
+
+    if not blender_script.exists():
+        raise FileNotFoundError(f"Blender script not found: {blender_script}")
 
     cmd = [
         blender_exe,
