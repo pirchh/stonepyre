@@ -101,11 +101,13 @@ TREE_PALETTES = {
         "variation": 0.03,
     },
     "birch": {
-        # High-variation pale trunk to simulate the dark marks on white bark
-        "trunk":  [(0.60, 0.60, 0.57), (0.66, 0.66, 0.63), (0.18, 0.18, 0.16)],
+        # Consistently pale silver-white trunk with subtle face-to-face variation.
+        # Avoid mixing very dark + very light entries — that causes speckle artefacts
+        # with random face assignment; birch should read as uniform pale bark.
+        "trunk":  [(0.38, 0.38, 0.35), (0.46, 0.46, 0.43), (0.30, 0.30, 0.28)],
         "canopy": [(0.26, 0.50, 0.14), (0.32, 0.60, 0.18), (0.22, 0.44, 0.12)],
         "trunk_ratio": 0.44,
-        "variation": 0.06,
+        "variation": 0.04,
     },
     "cedar": {
         "trunk":  [(0.28, 0.14, 0.08), (0.22, 0.11, 0.06), (0.34, 0.17, 0.10)],
@@ -271,10 +273,15 @@ TREE_PALETTES = {
         "variation": 0.04,
     },
     "dragonwood": {
-        "trunk":  [(0.06, 0.05, 0.04), (0.04, 0.04, 0.03), (0.08, 0.07, 0.05)],
-        "canopy": [(0.05, 0.10, 0.03), (0.04, 0.08, 0.03), (0.06, 0.12, 0.04)],
-        "trunk_ratio": 0.40,
-        "variation": 0.02,
+        # Near-black charcoal trunk, orange/amber/gold fire canopy.
+        # spike_color="trunk": thin elongated faces AND outer protruding pieces
+        # both get painted charcoal so branch sticks read as dark.
+        "trunk":  [(0.06, 0.04, 0.02), (0.04, 0.02, 0.01), (0.10, 0.06, 0.03)],
+        "canopy": [(0.40, 0.14, 0.02), (0.52, 0.26, 0.03), (0.28, 0.08, 0.01), (0.58, 0.35, 0.05)],
+        "trunk_ratio": 0.46,
+        "variation": 0.06,
+        "spike_color": "trunk",   # paint elongated faces as charcoal branch
+        "spike_ar_paint": 2.8,    # aspect-ratio threshold for thin elongated faces
     },
 }
 
@@ -733,6 +740,41 @@ def main():
         max_xy_vc     = max(_math.sqrt(v.co.x**2 + v.co.y**2) for v in mesh.vertices)
         trunk_radius  = max(max_xy_vc * trunk_radius_frac, 0.05)
 
+        # Optional: pre-compute which faces are "spikes" (thin elongated branches)
+        # so their vertex colours can be overridden to trunk/branch colour.
+        spike_color_mode  = palette.get("spike_color")
+        spike_ar_paint    = float(palette.get("spike_ar_paint", 5.0))
+        outer_frac_paint  = palette.get("outer_frac_paint")  # float or None
+        face_is_spike     = {}
+        if spike_color_mode == "trunk":
+            def _face_aspect(poly_):
+                verts_ = [mesh.vertices[mesh.loops[li].vertex_index].co
+                          for li in poly_.loop_indices]
+                if len(verts_) < 3:
+                    return 0.0
+                a = (verts_[1] - verts_[0]).length
+                b = (verts_[2] - verts_[1]).length
+                c = (verts_[0] - verts_[2]).length
+                longest = max(a, b, c)
+                cross   = (verts_[1] - verts_[0]).cross(verts_[2] - verts_[0])
+                area    = cross.length * 0.5
+                return (longest * longest) / (2.0 * area) if area > 1e-10 else float('inf')
+
+            outer_radius = (max_xy_vc * float(outer_frac_paint)) if outer_frac_paint else None
+
+            for poly_ in mesh.polygons:
+                is_high_ar = _face_aspect(poly_) > spike_ar_paint
+                is_outer   = False
+                if outer_radius is not None:
+                    n_verts = len(poly_.loop_indices)
+                    cx = sum(mesh.vertices[mesh.loops[li].vertex_index].co.x
+                             for li in poly_.loop_indices) / n_verts
+                    cy = sum(mesh.vertices[mesh.loops[li].vertex_index].co.y
+                             for li in poly_.loop_indices) / n_verts
+                    xy_dist_c = _math.sqrt(cx*cx + cy*cy)
+                    is_outer  = xy_dist_c > outer_radius
+                face_is_spike[poly_.index] = is_high_ar or is_outer
+
         # Create (or replace) the colour attribute
         if "Col" in mesh.color_attributes:
             mesh.color_attributes.remove(mesh.color_attributes["Col"])
@@ -746,12 +788,17 @@ def main():
                 z_norm  = (vco.z - min_z_vc) / height_vc
                 xy_dist = _math.sqrt(vco.x**2 + vco.y**2)
 
-                # Very base of the tree (bottom trunk_base_ratio %) is always
-                # trunk — catches root bumps that spread beyond trunk_radius.
-                # Above that, require BOTH low Z AND close to the centre axis
-                # so hanging/drooping canopy pieces stay green.
-                is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
-                base     = random.choice(trunk_colors if is_trunk else canopy_colors)
+                # Spike faces (thin elongated branches in canopy) → trunk colour
+                if face_is_spike.get(poly.index, False):
+                    is_trunk = True
+                    base = random.choice(trunk_colors)
+                else:
+                    # Very base of the tree (bottom trunk_base_ratio %) is always
+                    # trunk — catches root bumps that spread beyond trunk_radius.
+                    # Above that, require BOTH low Z AND close to the centre axis
+                    # so hanging/drooping canopy pieces stay green.
+                    is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
+                    base     = random.choice(trunk_colors if is_trunk else canopy_colors)
                 var      = random.uniform(-variation, variation)
 
                 if not is_trunk:

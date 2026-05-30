@@ -196,7 +196,8 @@
     "simplify_materials": true, "normalize_scale": true, "center_origin": true,
     "normalize_height": 4.8, "depth_scale": 1.1, "remesh": true,
     "remesh_voxel_size": 0.025, "smooth_iterations": 8, "smooth_factor": 0.4,
-    "tree_type": "birch", "generate_stump": true, "stump_height_ratio": 0.16, "max_root_radius": 0.5
+    "tree_type": "birch", "generate_stump": true, "stump_height_ratio": 0.16, "max_root_radius": 0.5,
+    "spike_ar_threshold": 100.0, "trunk_base_ratio": 0.15, "trunk_radius_frac": 0.28
   },
   "osrs_tree_cedar": {
     "target_tris": 12000, "flat_shading": true, "texture_size": 128,
@@ -395,11 +396,12 @@
     "spike_ar_threshold": 7.0, "trunk_base_ratio": 0.08, "trunk_radius_frac": 0.20
   },
   "osrs_tree_dragonwood": {
-    "target_tris": 20000, "flat_shading": true, "texture_size": 128,
+    "target_tris": 30000, "flat_shading": true, "texture_size": 128,
     "simplify_materials": true, "normalize_scale": true, "center_origin": true,
     "normalize_height": 5.5, "depth_scale": 1.2, "remesh": true,
-    "remesh_voxel_size": 0.022, "smooth_iterations": 9, "smooth_factor": 0.4,
-    "tree_type": "dragonwood", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.7
+    "remesh_voxel_size": 0.018, "smooth_iterations": 12, "smooth_factor": 0.4,
+    "tree_type": "dragonwood", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.7,
+    "spike_ar_threshold": 100.0
   },
   "raw": {
     "target_tris": 0,
