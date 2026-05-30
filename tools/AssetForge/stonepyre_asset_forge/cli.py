@@ -200,14 +200,16 @@ def _run_pipeline(cfg: RunConfig, temp_dir: Path, logger) -> None:
         logger=logger,
     )
 
-    # Step 6b — Copy stump if Blender generated one
-    stump_processed = processed_path.with_name(
-        processed_path.stem + "_stump" + processed_path.suffix
-    )
+    # Step 6b — Copy stump if Blender generated one.
+    # Blender names it <stem>_stump.glb, replacing _tree if present.
+    def _stump_name(p: Path) -> Path:
+        s = p.stem
+        base = s[:-5] if s.endswith("_tree") else s
+        return p.with_name(base + "_stump" + p.suffix)
+
+    stump_processed = _stump_name(processed_path)
     if stump_processed.exists():
         import shutil
-        stump_output = cfg.output_path.with_name(
-            cfg.output_path.stem + "_stump" + cfg.output_path.suffix
-        )
+        stump_output = _stump_name(cfg.output_path)
         shutil.copy2(stump_processed, stump_output)
         logger.info(f"Stump exported  →  {stump_output}")
