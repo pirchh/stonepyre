@@ -168,8 +168,9 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 4,
             respawn_seconds: 20.0,
             loot_table: "woodcutting_oak_tree".to_string(),
-            available_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/available.png".to_string(),
-            depleted_sprite: "world/skills/woodcutting/harvest_nodes/oak_tree/depleted.png".to_string(),
+            blocks_movement: true,
+            available_model: "world/harvest_objects/woodcutting/oak/oak_tree.glb".to_string(),
+            depleted_model: "world/harvest_objects/woodcutting/oak/oak_stump.glb".to_string(),
         },
     );
 
@@ -188,8 +189,9 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 5,
             respawn_seconds: 30.0,
             loot_table: "woodcutting_willow_tree".to_string(),
-            available_sprite: "world/skills/woodcutting/harvest_nodes/willow_tree/available.png".to_string(),
-            depleted_sprite: "world/skills/woodcutting/harvest_nodes/willow_tree/depleted.png".to_string(),
+            blocks_movement: true,
+            available_model: "world/harvest_objects/woodcutting/willow/willow_tree.glb".to_string(),
+            depleted_model: "world/harvest_objects/woodcutting/willow/willow_stump.glb".to_string(),
         },
     );
 

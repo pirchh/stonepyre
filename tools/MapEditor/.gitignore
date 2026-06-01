@@ -1,0 +1,6 @@
+node_modules/
+dist/
+out/
+.vite/
+Maps/
+assets/map_assets/*/catalog.json

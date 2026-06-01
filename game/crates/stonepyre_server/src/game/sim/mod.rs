@@ -694,8 +694,8 @@ fn node_event_from_snapshot(kind: HarvestNodeEventKind, node: HarvestNodeSnapsho
         charges_remaining: node.charges_remaining,
         max_charges: node.max_charges,
         depleted_until_tick: node.depleted_until_tick,
-        available_sprite: node.available_sprite,
-        depleted_sprite: node.depleted_sprite,
+        available_model: node.available_model,
+        depleted_model: node.depleted_model,
     }
 }
 

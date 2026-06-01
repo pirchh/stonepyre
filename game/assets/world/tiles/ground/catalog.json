@@ -1,0 +1,29 @@
+{
+  "category": "ground",
+  "assets": [
+    {
+      "id": 1,
+      "name": "grass dark",
+      "file": "grass_dark.png",
+      "walkable": true,
+      "color": "#4caf50",
+      "category": "ground"
+    },
+    {
+      "id": 2,
+      "name": "grass light",
+      "file": "grass_light.png",
+      "walkable": true,
+      "color": "#795548",
+      "category": "ground"
+    },
+    {
+      "id": 3,
+      "name": "grass medium",
+      "file": "grass_medium.png",
+      "walkable": true,
+      "color": "#e6c27a",
+      "category": "ground"
+    }
+  ]
+}

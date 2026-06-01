@@ -44,8 +44,8 @@ pub struct HarvestNodeDef {
     pub charges: u32,
     pub respawn_secs: u32,
     pub loot_table: &'static str,
-    pub available_sprite: &'static str,
-    pub depleted_sprite: &'static str,
+    pub available_model: &'static str,
+    pub depleted_model: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -143,8 +143,8 @@ impl HarvestCatalog {
                     charges: def.charges.max(0) as u32,
                     respawn_secs: def.respawn_seconds.round().max(0.0) as u32,
                     loot_table: leak_str(def.loot_table),
-                    available_sprite: leak_str(def.available_sprite),
-                    depleted_sprite: leak_str(def.depleted_sprite),
+                    available_model: leak_str(def.available_model),
+                    depleted_model: leak_str(def.depleted_model),
                 },
             );
         }
@@ -316,8 +316,8 @@ impl HarvestCatalog {
             max_charges: def.charges,
             depleted: node.charges_remaining == 0 || node.depleted_until_tick.is_some(),
             depleted_until_tick: node.depleted_until_tick,
-            available_sprite: def.available_sprite.to_string(),
-            depleted_sprite: def.depleted_sprite.to_string(),
+            available_model: def.available_model.to_string(),
+            depleted_model: def.depleted_model.to_string(),
         })
     }
 
@@ -349,8 +349,8 @@ impl HarvestCatalog {
                 max_charges: def.charges,
                 depleted: false,
                 depleted_until_tick: None,
-                available_sprite: def.available_sprite.to_string(),
-                depleted_sprite: def.depleted_sprite.to_string(),
+                available_model: def.available_model.to_string(),
+                depleted_model: def.depleted_model.to_string(),
             });
         }
 
@@ -479,12 +479,12 @@ fn validate_harvest_node_def(
         );
     }
 
-    if def.available_sprite.trim().is_empty() {
-        warn!("harvest content node_def_id={} has an empty available_sprite", map_key);
+    if def.available_model.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty available_model", map_key);
     }
 
-    if def.depleted_sprite.trim().is_empty() {
-        warn!("harvest content node_def_id={} has an empty depleted_sprite", map_key);
+    if def.depleted_model.trim().is_empty() {
+        warn!("harvest content node_def_id={} has an empty depleted_model", map_key);
     }
 }
 
