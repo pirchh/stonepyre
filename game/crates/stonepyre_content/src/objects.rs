@@ -28,6 +28,10 @@ impl HarvestDefs {
 ///
 /// This intentionally stays content-only. The server converts this into its
 /// runtime catalog and keeps live state like charges/depletion separately.
+///
+/// Loaded from `game/assets/world/harvest_objects/{skill}/{node}/manifest.json`.
+/// `available_model` / `depleted_model` are computed from
+/// `models.available` / `models.depleted` + the folder path during loading.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HarvestNodeDef {
     pub id: String,
@@ -36,34 +40,93 @@ pub struct HarvestNodeDef {
     /// Stable skill id, for example "woodcutting", "mining", "fishing".
     pub skill_id: String,
 
-    /// UI-friendly skill name. Keeping this in content lets future skills be
-    /// data-authored before the UI has a full skill registry.
+    /// UI-friendly skill name.
     pub skill_display_name: String,
 
     /// What interaction verb drives this node.
-    /// Examples: "ChopDown", "Mine", "Fish", "Gather".
+    /// Examples: "ChopDown", "Mine", "Fish", "Harvest".
     pub verb: String,
 
     /// Animation clip id string.
-    /// Examples: "woodcutting", "mining", "fishing".
     pub clip: String,
 
     pub required_level: u32,
     pub xp_on_success: u32,
     pub base_success_chance: f32,
-    /// How many successful yields until depleted. Kept as i32 for compatibility
-    /// with the existing engine-side HarvestNode component.
+
+    /// How many successful yields until depleted.
     pub charges: i32,
 
-    /// Respawn timer in seconds. Kept as f32 for compatibility with Bevy timers.
+    /// Respawn timer in seconds.
     pub respawn_seconds: f32,
 
     /// Loot table id resolved through `HarvestDefs::loot_tables`.
     pub loot_table: String,
 
-    /// Game asset paths relative to `game/assets`.
-    pub available_sprite: String,
-    pub depleted_sprite: String,
+    /// Whether this node blocks player movement.
+    #[serde(default = "default_true")]
+    pub blocks_movement: bool,
+
+    /// GLB paths relative to `game/assets/` — computed at load time.
+    pub available_model: String,
+    pub depleted_model: String,
+}
+
+fn default_true() -> bool { true }
+
+/// On-disk format inside each `harvest_objects/{skill}/{node}/manifest.json`.
+/// Loaded and converted to `HarvestNodeDef` by the content file loader.
+#[derive(Clone, Debug, Deserialize)]
+pub struct HarvestNodeManifest {
+    pub id: String,
+    pub display_name: String,
+    pub skill_id: String,
+    pub skill_display_name: String,
+    pub verb: String,
+    pub clip: String,
+    pub required_level: u32,
+    pub xp_on_success: u32,
+    pub base_success_chance: f32,
+    pub charges: i32,
+    pub respawn_seconds: f32,
+    pub loot_table: String,
+    #[serde(default = "default_true")]
+    pub blocks_movement: bool,
+    pub models: HarvestNodeModels,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct HarvestNodeModels {
+    pub available: String,
+    pub depleted: String,
+}
+
+impl HarvestNodeManifest {
+    /// Convert to `HarvestNodeDef`, constructing full game-asset-relative paths
+    /// from the skill name and node folder name.
+    ///
+    /// `skill`  — e.g. `"woodcutting"`
+    /// `folder` — e.g. `"oak"`
+    pub fn into_def(self, skill: &str, folder: &str) -> HarvestNodeDef {
+        let prefix = format!("world/harvest_objects/{}/{}", skill, folder);
+        HarvestNodeDef {
+            id: self.id,
+            display_name: self.display_name,
+            skill_id: self.skill_id,
+            skill_display_name: self.skill_display_name,
+            verb: self.verb,
+            clip: self.clip,
+            required_level: self.required_level,
+            xp_on_success: self.xp_on_success,
+            base_success_chance: self.base_success_chance,
+            charges: self.charges,
+            respawn_seconds: self.respawn_seconds,
+            loot_table: self.loot_table,
+            blocks_movement: self.blocks_movement,
+            available_model: format!("{}/{}", prefix, self.models.available),
+            depleted_model:  format!("{}/{}", prefix, self.models.depleted),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

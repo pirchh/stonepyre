@@ -1,0 +1,19 @@
+{
+  "id": "oak_tree",
+  "display_name": "Oak Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 1,
+  "xp_on_success": 10,
+  "base_success_chance": 0.62,
+  "charges": 4,
+  "respawn_seconds": 20.0,
+  "loot_table": "woodcutting_oak_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "oak_tree.glb",
+    "depleted": "oak_stump.glb"
+  }
+}

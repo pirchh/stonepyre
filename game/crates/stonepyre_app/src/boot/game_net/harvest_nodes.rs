@@ -120,12 +120,10 @@ fn spawn_harvest_node_3d(
 }
 
 /// Returns the GLB asset path that should be loaded for this node's current state.
-/// `available_sprite` / `depleted_sprite` are repurposed as GLB paths —
-/// the field names are a legacy of the old 2D pipeline.
 fn scene_path_for_node(node: &HarvestNodeSnapshot) -> &str {
     if node.depleted {
-        node.depleted_sprite.as_str()
+        node.depleted_model.as_str()
     } else {
-        node.available_sprite.as_str()
+        node.available_model.as_str()
     }
 }

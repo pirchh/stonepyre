@@ -94,13 +94,15 @@
     "normalize_height": 4.8,
     "depth_scale": 1.2,
     "remesh": true,
-    "remesh_voxel_size": 0.020,
-    "smooth_iterations": 8,
-    "smooth_factor": 0.4,
+    "remesh_voxel_size": 0.015,
+    "smooth_iterations": 10,
+    "smooth_factor": 0.5,
     "tree_type": "pine",
     "generate_stump": true,
     "stump_height_ratio": 0.14,
-    "max_root_radius": 0.6
+    "max_root_radius": 1.2,
+    "trunk_base_ratio": 0.06,
+    "trunk_radius_frac": 0.15
   },
   "osrs_tree_yew": {
     "target_tris": 12000,
@@ -112,13 +114,15 @@
     "normalize_height": 4.8,
     "depth_scale": 1.2,
     "remesh": true,
-    "remesh_voxel_size": 0.020,
-    "smooth_iterations": 8,
-    "smooth_factor": 0.4,
+    "remesh_voxel_size": 0.015,
+    "smooth_iterations": 10,
+    "smooth_factor": 0.5,
     "tree_type": "yew",
     "generate_stump": true,
     "stump_height_ratio": 0.16,
-    "max_root_radius": 0.65
+    "max_root_radius": 0.65,
+    "trunk_base_ratio": 0.20,
+    "trunk_radius_frac": 0.38
   },
   "osrs_tree_magic": {
     "target_tris": 15000,
@@ -157,18 +161,20 @@
     "max_root_radius": 0.6
   },
   "osrs_tree_hickory": {
-    "target_tris": 12000, "flat_shading": true, "texture_size": 128,
+    "target_tris": 35000, "flat_shading": true, "texture_size": 128,
     "simplify_materials": true, "normalize_scale": true, "center_origin": true,
     "normalize_height": 4.2, "depth_scale": 1.2, "remesh": true,
-    "remesh_voxel_size": 0.025, "smooth_iterations": 8, "smooth_factor": 0.4,
-    "tree_type": "hickory", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.6
+    "remesh_voxel_size": 0.010, "smooth_iterations": 12, "smooth_factor": 0.5,
+    "tree_type": "hickory", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.6,
+    "trunk_base_ratio": 0.20, "trunk_radius_frac": 0.22
   },
   "osrs_tree_cherry": {
-    "target_tris": 12000, "flat_shading": true, "texture_size": 128,
+    "target_tris": 35000, "flat_shading": true, "texture_size": 128,
     "simplify_materials": true, "normalize_scale": true, "center_origin": true,
     "normalize_height": 3.8, "depth_scale": 1.2, "remesh": true,
-    "remesh_voxel_size": 0.025, "smooth_iterations": 8, "smooth_factor": 0.4,
-    "tree_type": "cherry", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.6
+    "remesh_voxel_size": 0.010, "smooth_iterations": 12, "smooth_factor": 0.5,
+    "tree_type": "cherry", "generate_stump": true, "stump_height_ratio": 0.18, "max_root_radius": 0.6,
+    "trunk_base_ratio": 0.20, "trunk_radius_frac": 0.25
   },
   "osrs_tree_beech": {
     "target_tris": 12000, "flat_shading": true, "texture_size": 128,

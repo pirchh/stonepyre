@@ -269,10 +269,10 @@ pub struct HarvestNodeSnapshot {
     /// The current client may still use color placeholders, but this lets the
     /// server snapshot carry the tree/stump presentation data before art is
     /// fully wired in.
-    pub available_sprite: String,
+    pub available_model: String,
 
     /// Content-authored world sprite path for the depleted state.
-    pub depleted_sprite: String,
+    pub depleted_model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,10 +302,10 @@ pub struct HarvestNodeEvent {
     pub depleted_until_tick: Option<u64>,
 
     /// Content-authored world sprite path for the available/harvestable state.
-    pub available_sprite: String,
+    pub available_model: String,
 
     /// Content-authored world sprite path for the depleted state.
-    pub depleted_sprite: String,
+    pub depleted_model: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -63,7 +63,7 @@ TREE_PALETTES = {
     "yew": {
         "trunk":  [(0.28, 0.20, 0.12), (0.22, 0.16, 0.09), (0.34, 0.24, 0.14)],
         "canopy": [(0.06, 0.20, 0.06), (0.08, 0.25, 0.08), (0.05, 0.18, 0.05)],
-        "trunk_ratio": 0.25,
+        "trunk_ratio": 0.55,
         "variation": 0.03,
     },
     # -----------------------------------------------------------------------
@@ -71,14 +71,13 @@ TREE_PALETTES = {
     # -----------------------------------------------------------------------
     "hickory": {
         "trunk":  [(0.30, 0.20, 0.11), (0.25, 0.17, 0.09), (0.36, 0.24, 0.13)],
-        "canopy": [(0.18, 0.34, 0.10), (0.22, 0.42, 0.12), (0.15, 0.29, 0.08)],
-        "trunk_ratio": 0.40,
+        "canopy": [(0.38, 0.48, 0.06), (0.44, 0.54, 0.08), (0.32, 0.42, 0.05), (0.50, 0.58, 0.10)],
+        "trunk_ratio": 0.60,
         "variation": 0.04,
     },
     "cherry": {
-        # Canopy blends light green with pink-tinted tones for a blossom hint
         "trunk":  [(0.18, 0.08, 0.06), (0.22, 0.10, 0.07), (0.15, 0.07, 0.05)],
-        "canopy": [(0.22, 0.34, 0.12), (0.28, 0.22, 0.16), (0.20, 0.28, 0.13), (0.32, 0.20, 0.17)],
+        "canopy": [(0.85, 0.45, 0.60), (0.90, 0.55, 0.68), (0.78, 0.38, 0.52), (0.92, 0.62, 0.72)],
         "trunk_ratio": 0.38,
         "variation": 0.05,
     },
@@ -383,6 +382,60 @@ def main():
     obj = bpy.context.active_object
 
     # -----------------------------------------------------------------------
+    # 3a-color. Bake TripoSR image texture → vertex colors BEFORE remesh
+    #   so we can transfer the original image-derived colors back onto the
+    #   clean remeshed topology and use them to classify trunk vs canopy.
+    # -----------------------------------------------------------------------
+    color_ref_obj = None
+    if tree_type and remesh:
+        mesh_pre = obj.data
+        # Find image texture in any material slot
+        _src_img = None
+        for _mat in mesh_pre.materials:
+            if _mat and _mat.use_nodes:
+                for _node in _mat.node_tree.nodes:
+                    if _node.type == 'TEX_IMAGE' and _node.image:
+                        _src_img = _node.image
+                        break
+            if _src_img:
+                break
+
+        if _src_img and mesh_pre.uv_layers.active:
+            _img_w = _src_img.size[0]
+            _img_h = _src_img.size[1]
+            _pixels = list(_src_img.pixels)  # flat RGBA
+
+            if "OrigCol" in mesh_pre.color_attributes:
+                mesh_pre.color_attributes.remove(mesh_pre.color_attributes["OrigCol"])
+            _oc = mesh_pre.color_attributes.new(name="OrigCol", type='BYTE_COLOR', domain='CORNER')
+            _uv_data = mesh_pre.uv_layers.active.data
+
+            for _poly in mesh_pre.polygons:
+                for _li in _poly.loop_indices:
+                    _uv = _uv_data[_li].uv
+                    _px = int((_uv.x % 1.0) * (_img_w - 1))
+                    _py = int((_uv.y % 1.0) * (_img_h - 1))
+                    _i  = (_py * _img_w + _px) * 4
+                    _oc.data[_li].color = (_pixels[_i], _pixels[_i+1], _pixels[_i+2], 1.0)
+
+            # Duplicate the pre-remesh mesh as a hidden color reference
+            bpy.ops.object.select_all(action="DESELECT")
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.duplicate()
+            color_ref_obj = bpy.context.active_object
+            color_ref_obj.name = "__color_ref__"
+            color_ref_obj.hide_render = True
+            color_ref_obj.hide_viewport = True
+            # Switch back to main object
+            bpy.ops.object.select_all(action="DESELECT")
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            print(f"[Blender] OrigCol baked from TripoSR texture ({_img_w}×{_img_h}), color ref duplicated.")
+        else:
+            print("[Blender] No TripoSR texture found — skipping color-guided painting.")
+
+    # -----------------------------------------------------------------------
     # 3b. Depth inflation — scale Y axis to fatten flat single-image meshes
     # -----------------------------------------------------------------------
     if depth_scale != 1.0:
@@ -401,6 +454,54 @@ def main():
         remesh_mod.use_smooth_shade = True
         bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
         print(f"[Blender] Voxel remesh applied (voxel size {remesh_voxel_size})")
+
+    # -----------------------------------------------------------------------
+    # 3c-post-color. Transfer original image colors onto remeshed topology
+    #   Uses a BVH tree nearest-point lookup — reliable regardless of how
+    #   different the remeshed topology is from the original.
+    # -----------------------------------------------------------------------
+    if color_ref_obj and remesh:
+        import mathutils
+        ref_mesh = color_ref_obj.data
+        ref_vcol = ref_mesh.color_attributes.get("OrigCol")
+
+        if ref_vcol:
+            # Build a BVH tree from the reference mesh
+            bvh = mathutils.bvhtree.BVHTree.FromObject(
+                color_ref_obj, bpy.context.evaluated_depsgraph_get()
+            )
+
+            # Build a map: ref face index → list of (loop_idx, color)
+            ref_face_colors = {}
+            for poly in ref_mesh.polygons:
+                colors = []
+                for li in poly.loop_indices:
+                    c = ref_vcol.data[li].color
+                    colors.append((c[0], c[1], c[2]))
+                ref_face_colors[poly.index] = colors
+
+            # Create OrigCol on the remeshed object
+            new_mesh = obj.data
+            if "OrigCol" in new_mesh.color_attributes:
+                new_mesh.color_attributes.remove(new_mesh.color_attributes["OrigCol"])
+            new_vcol = new_mesh.color_attributes.new(name="OrigCol", type='BYTE_COLOR', domain='CORNER')
+
+            for poly in new_mesh.polygons:
+                # Use face center to find nearest ref face
+                center = poly.center
+                _loc, _norm, face_idx, _dist = bvh.find_nearest(center)
+                if face_idx is not None and face_idx in ref_face_colors:
+                    ref_colors = ref_face_colors[face_idx]
+                    avg_r = sum(c[0] for c in ref_colors) / len(ref_colors)
+                    avg_g = sum(c[1] for c in ref_colors) / len(ref_colors)
+                    avg_b = sum(c[2] for c in ref_colors) / len(ref_colors)
+                    for li in poly.loop_indices:
+                        new_vcol.data[li].color = (avg_r, avg_g, avg_b, 1.0)
+
+            print("[Blender] OrigCol transferred via BVH nearest-face lookup.")
+
+        bpy.data.objects.remove(color_ref_obj, do_unlink=True)
+        color_ref_obj = None
 
     # -----------------------------------------------------------------------
     # 3c-post. Reassign a neutral material (voxel remesh wipes vertex colours/UVs)
@@ -502,6 +603,7 @@ def main():
     obj.data.update()
 
     print("[Blender] Holes filled (2 operator passes + BMesh pass) and normals fixed.")
+
 
     # -----------------------------------------------------------------------
     # 6. Symmetrize AFTER decimate so decimation can't re-introduce asymmetry
@@ -781,6 +883,9 @@ def main():
         color_attr = mesh.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
         mesh.color_attributes.active_color_index = 0
 
+        # Check if we have image-derived colors to guide classification
+        orig_vcol = mesh.color_attributes.get("OrigCol")
+
         for poly in mesh.polygons:
             for loop_idx in poly.loop_indices:
                 v_idx   = mesh.loops[loop_idx].vertex_index
@@ -793,12 +898,29 @@ def main():
                     is_trunk = True
                     base = random.choice(trunk_colors)
                 else:
-                    # Very base of the tree (bottom trunk_base_ratio %) is always
-                    # trunk — catches root bumps that spread beyond trunk_radius.
-                    # Above that, require BOTH low Z AND close to the centre axis
-                    # so hanging/drooping canopy pieces stay green.
+                    # Geometric classification (Z height + XY distance)
                     is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
-                    base     = random.choice(trunk_colors if is_trunk else canopy_colors)
+
+                    # Override with image-derived color if available:
+                    # brownish pixels (high R, low G relative to R) → trunk
+                    # greenish/pinkish pixels → canopy
+                    if orig_vcol:
+                        import colorsys as _cs
+                        oc = orig_vcol.data[loop_idx].color
+                        _r, _g, _b = oc[0], oc[1], oc[2]
+                        _h, _s, _v = _cs.rgb_to_hsv(_r, _g, _b)
+                        # Green leaves: green hue (80–160° = 0.22–0.44 HSV) with some saturation
+                        # Pink canopy (cherry): pink hue (0.85–1.0 or 0.0–0.05) with saturation
+                        _is_green = 0.18 < _h < 0.46 and _s > 0.15
+                        _is_pink  = (_h > 0.82 or _h < 0.06) and _s > 0.20 and _r > 0.40
+                        _is_clearly_canopy = _is_green or _is_pink
+                        _is_trunk_color = not _is_clearly_canopy and _v > 0.08  # not black, not green, not pink
+                        if _is_trunk_color:
+                            is_trunk = True
+                        elif _is_clearly_canopy and z_norm > trunk_base_ratio * 0.5:
+                            is_trunk = False
+
+                    base = random.choice(trunk_colors if is_trunk else canopy_colors)
                 var      = random.uniform(-variation, variation)
 
                 if not is_trunk:
