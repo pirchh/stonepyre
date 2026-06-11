@@ -1,0 +1,19 @@
+{
+  "id": "chestnut_tree",
+  "display_name": "Chestnut Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 16,
+  "xp_on_success": 44,
+  "base_success_chance": 0.57,
+  "charges": 4,
+  "respawn_seconds": 26.0,
+  "loot_table": "woodcutting_chestnut_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "chestnut_tree.glb",
+    "depleted": "chestnut_stump.glb"
+  }
+}

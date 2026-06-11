@@ -1,0 +1,19 @@
+{
+  "id": "mahogany_tree",
+  "display_name": "Mahogany Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 42,
+  "xp_on_success": 130,
+  "base_success_chance": 0.49,
+  "charges": 5,
+  "respawn_seconds": 46.0,
+  "loot_table": "woodcutting_mahogany_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "mahogany_tree.glb",
+    "depleted": "mahogany_stump.glb"
+  }
+}

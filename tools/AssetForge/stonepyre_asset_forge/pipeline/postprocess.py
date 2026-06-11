@@ -100,6 +100,9 @@ def _run_blender_postprocess(
         "spike_ar_threshold": getattr(style, "spike_ar_threshold", 7.0),
         "trunk_base_ratio": getattr(style, "trunk_base_ratio", 0.08),
         "trunk_radius_frac": getattr(style, "trunk_radius_frac", 0.20),
+        "trunk_column_radius": getattr(style, "trunk_column_radius", None),
+        "use_orig_col_paint": getattr(style, "use_orig_col_paint", True),
+        "symmetrize_colors": getattr(style, "symmetrize_colors", False),
     })
 
     if not blender_script.exists():

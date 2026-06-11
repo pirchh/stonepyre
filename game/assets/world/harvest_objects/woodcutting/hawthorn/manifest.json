@@ -1,0 +1,19 @@
+{
+  "id": "hawthorn_tree",
+  "display_name": "Hawthorn Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 15,
+  "xp_on_success": 42,
+  "base_success_chance": 0.57,
+  "charges": 4,
+  "respawn_seconds": 22.0,
+  "loot_table": "woodcutting_hawthorn_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "hawthorn_tree.glb",
+    "depleted": "hawthorn_stump.glb"
+  }
+}
