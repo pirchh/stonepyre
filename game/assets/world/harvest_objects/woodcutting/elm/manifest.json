@@ -1,0 +1,19 @@
+{
+  "id": "elm_tree",
+  "display_name": "Elm Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 30,
+  "xp_on_success": 90,
+  "base_success_chance": 0.52,
+  "charges": 5,
+  "respawn_seconds": 35.0,
+  "loot_table": "woodcutting_elm_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "elm_tree.glb",
+    "depleted": "elm_stump.glb"
+  }
+}

@@ -32,6 +32,9 @@ class StyleConfig:
     spike_ar_threshold: float = 7.0        # aspect-ratio cutoff for shard removal (lower = more aggressive)
     trunk_base_ratio: float = 0.08         # bottom X fraction of tree always painted trunk colour
     trunk_radius_frac: float = 0.20        # trunk column radius as fraction of mesh max XY extent
+    trunk_column_radius: Optional[float] = None  # absolute trunk column radius in Blender metres (overrides trunk_radius_frac)
+    use_orig_col_paint: bool = True        # use image-derived colours to guide trunk/canopy classification
+    symmetrize_colors: bool = False        # mirror +X face colours onto -X counterparts
     # Tree-specific (used by blender_tree.py, ignored for non-tree styles)
     trunk_height_ratio: float = 0.35       # fraction of AI mesh height to keep as trunk
     canopy_shape: str = "sphere"           # sphere | conical
@@ -94,6 +97,9 @@ def get_style(style_name: str, styles_path: Path = _DEFAULT_STYLES_PATH) -> Styl
         spike_ar_threshold=data.get("spike_ar_threshold", 7.0),
         trunk_base_ratio=data.get("trunk_base_ratio", 0.08),
         trunk_radius_frac=data.get("trunk_radius_frac", 0.20),
+        trunk_column_radius=data.get("trunk_column_radius", None),
+        use_orig_col_paint=data.get("use_orig_col_paint", True),
+        symmetrize_colors=data.get("symmetrize_colors", False),
         trunk_height_ratio=data.get("trunk_height_ratio", 0.35),
         canopy_shape=data.get("canopy_shape", "sphere"),
         canopy_radius=data.get("canopy_radius", 1.2),

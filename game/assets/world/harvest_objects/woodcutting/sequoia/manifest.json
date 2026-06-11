@@ -1,0 +1,19 @@
+{
+  "id": "sequoia_tree",
+  "display_name": "Sequoia Tree",
+  "skill_id": "woodcutting",
+  "skill_display_name": "Woodcutting",
+  "verb": "ChopDown",
+  "clip": "woodcutting",
+  "required_level": 72,
+  "xp_on_success": 228,
+  "base_success_chance": 0.39,
+  "charges": 7,
+  "respawn_seconds": 75.0,
+  "loot_table": "woodcutting_sequoia_tree",
+  "blocks_movement": true,
+  "models": {
+    "available": "sequoia_tree.glb",
+    "depleted": "sequoia_stump.glb"
+  }
+}

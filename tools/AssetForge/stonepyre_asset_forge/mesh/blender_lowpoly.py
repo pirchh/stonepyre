@@ -38,7 +38,7 @@ TREE_PALETTES = {
     },
     "pine": {
         "trunk":  [(0.32, 0.19, 0.09), (0.25, 0.15, 0.07), (0.38, 0.22, 0.10)],
-        "canopy": [(0.09, 0.22, 0.07), (0.11, 0.28, 0.09), (0.07, 0.18, 0.06)],
+        "canopy": [(0.04, 0.12, 0.06), (0.05, 0.15, 0.08), (0.03, 0.10, 0.05), (0.06, 0.14, 0.07)],
         "trunk_ratio": 0.22,
         "variation": 0.03,
     },
@@ -82,21 +82,21 @@ TREE_PALETTES = {
         "variation": 0.05,
     },
     "beech": {
-        "trunk":  [(0.40, 0.40, 0.36), (0.44, 0.44, 0.40), (0.36, 0.36, 0.32)],
-        "canopy": [(0.24, 0.44, 0.13), (0.30, 0.54, 0.17), (0.20, 0.38, 0.11)],
+        "trunk":  [(0.32, 0.22, 0.14), (0.26, 0.18, 0.11), (0.38, 0.26, 0.16)],
+        "canopy": [(0.24, 0.44, 0.13), (0.30, 0.54, 0.17), (0.20, 0.38, 0.11), (0.26, 0.48, 0.14)],
         "trunk_ratio": 0.36,
         "variation": 0.04,
     },
     "maple": {
         "trunk":  [(0.28, 0.18, 0.10), (0.22, 0.14, 0.08), (0.34, 0.22, 0.12)],
-        "canopy": [(0.20, 0.38, 0.11), (0.16, 0.32, 0.09), (0.24, 0.44, 0.13)],
-        "trunk_ratio": 0.38,
+        "canopy": [(0.55, 0.08, 0.08), (0.65, 0.10, 0.10), (0.48, 0.06, 0.06), (0.60, 0.12, 0.14)],
+        "trunk_ratio": 0.35,
         "variation": 0.04,
     },
     "ash": {
-        "trunk":  [(0.28, 0.25, 0.20), (0.22, 0.20, 0.16), (0.34, 0.30, 0.24)],
-        "canopy": [(0.12, 0.28, 0.10), (0.10, 0.24, 0.08), (0.14, 0.32, 0.12)],
-        "trunk_ratio": 0.40,
+        "trunk":  [(0.32, 0.28, 0.22), (0.26, 0.23, 0.18), (0.38, 0.33, 0.26)],
+        "canopy": [(0.18, 0.26, 0.14), (0.15, 0.22, 0.12), (0.20, 0.28, 0.15), (0.16, 0.24, 0.13)],
+        "trunk_ratio": 0.35,
         "variation": 0.03,
     },
     "birch": {
@@ -110,19 +110,19 @@ TREE_PALETTES = {
     },
     "cedar": {
         "trunk":  [(0.28, 0.14, 0.08), (0.22, 0.11, 0.06), (0.34, 0.17, 0.10)],
-        "canopy": [(0.06, 0.16, 0.08), (0.08, 0.20, 0.10), (0.05, 0.14, 0.07)],
-        "trunk_ratio": 0.32,
+        "canopy": [(0.12, 0.28, 0.08), (0.15, 0.34, 0.10), (0.10, 0.24, 0.07), (0.14, 0.30, 0.09)],
+        "trunk_ratio": 0.28,
         "variation": 0.03,
     },
     "spruce": {
-        "trunk":  [(0.22, 0.14, 0.08), (0.18, 0.11, 0.06), (0.26, 0.16, 0.09)],
-        "canopy": [(0.04, 0.12, 0.06), (0.03, 0.10, 0.05), (0.05, 0.14, 0.07)],
-        "trunk_ratio": 0.22,
+        "trunk":  [(0.18, 0.12, 0.08), (0.14, 0.10, 0.06), (0.22, 0.14, 0.09)],
+        "canopy": [(0.05, 0.14, 0.10), (0.06, 0.16, 0.12), (0.04, 0.12, 0.09), (0.07, 0.18, 0.13)],
+        "trunk_ratio": 0.20,
         "variation": 0.02,
     },
     "fir": {
-        "trunk":  [(0.24, 0.16, 0.09), (0.20, 0.13, 0.07), (0.28, 0.19, 0.11)],
-        "canopy": [(0.06, 0.16, 0.07), (0.05, 0.13, 0.06), (0.07, 0.18, 0.08)],
+        "trunk":  [(0.28, 0.16, 0.08), (0.22, 0.12, 0.06), (0.34, 0.20, 0.10)],
+        "canopy": [(0.04, 0.12, 0.05), (0.05, 0.14, 0.06), (0.03, 0.10, 0.04), (0.05, 0.13, 0.05)],
         "trunk_ratio": 0.18,
         "variation": 0.02,
     },
@@ -133,45 +133,45 @@ TREE_PALETTES = {
         "variation": 0.03,
     },
     "poplar": {
-        "trunk":  [(0.44, 0.42, 0.36), (0.50, 0.48, 0.42), (0.38, 0.36, 0.30)],
-        "canopy": [(0.26, 0.50, 0.15), (0.22, 0.44, 0.13), (0.30, 0.56, 0.17)],
+        "trunk":  [(0.32, 0.20, 0.10), (0.26, 0.16, 0.08), (0.38, 0.24, 0.12)],
+        "canopy": [(0.35, 0.62, 0.10), (0.40, 0.70, 0.12), (0.30, 0.55, 0.08), (0.38, 0.66, 0.11)],
         "trunk_ratio": 0.55,
         "variation": 0.04,
     },
     "sycamore": {
-        "trunk":  [(0.44, 0.40, 0.30), (0.50, 0.46, 0.34), (0.38, 0.34, 0.26)],
-        "canopy": [(0.20, 0.38, 0.11), (0.16, 0.32, 0.09), (0.24, 0.44, 0.13)],
+        "trunk":  [(0.30, 0.20, 0.12), (0.24, 0.16, 0.09), (0.36, 0.24, 0.14)],
+        "canopy": [(0.16, 0.36, 0.08), (0.20, 0.42, 0.10), (0.13, 0.30, 0.07), (0.18, 0.38, 0.09)],
         "trunk_ratio": 0.36,
         "variation": 0.05,
     },
     "walnut": {
-        "trunk":  [(0.14, 0.08, 0.04), (0.10, 0.06, 0.03), (0.18, 0.10, 0.05)],
-        "canopy": [(0.10, 0.22, 0.07), (0.08, 0.18, 0.06), (0.12, 0.26, 0.08)],
-        "trunk_ratio": 0.40,
+        "trunk":  [(0.10, 0.06, 0.03), (0.08, 0.05, 0.02), (0.13, 0.08, 0.04)],
+        "canopy": [(0.06, 0.14, 0.03), (0.08, 0.18, 0.04), (0.05, 0.11, 0.02), (0.07, 0.16, 0.03)],
+        "trunk_ratio": 0.38,
         "variation": 0.03,
     },
     "chestnut": {
-        "trunk":  [(0.28, 0.16, 0.08), (0.24, 0.13, 0.07), (0.32, 0.19, 0.10)],
-        "canopy": [(0.18, 0.36, 0.10), (0.22, 0.44, 0.13), (0.15, 0.30, 0.08)],
+        "trunk":  [(0.24, 0.14, 0.07), (0.20, 0.11, 0.05), (0.28, 0.17, 0.09)],
+        "canopy": [(0.12, 0.24, 0.06), (0.15, 0.28, 0.07), (0.10, 0.20, 0.05), (0.13, 0.26, 0.06)],
         "trunk_ratio": 0.38,
         "variation": 0.04,
     },
     "alder": {
-        "trunk":  [(0.18, 0.14, 0.10), (0.14, 0.11, 0.08), (0.22, 0.17, 0.12)],
-        "canopy": [(0.10, 0.22, 0.08), (0.08, 0.18, 0.07), (0.12, 0.26, 0.09)],
-        "trunk_ratio": 0.38,
+        "trunk":  [(0.22, 0.18, 0.14), (0.18, 0.15, 0.11), (0.26, 0.21, 0.17)],
+        "canopy": [(0.08, 0.20, 0.06), (0.10, 0.24, 0.07), (0.07, 0.17, 0.05), (0.09, 0.22, 0.06)],
+        "trunk_ratio": 0.35,
         "variation": 0.03,
     },
     "rowan": {
-        "trunk":  [(0.32, 0.28, 0.22), (0.28, 0.24, 0.19), (0.36, 0.32, 0.25)],
-        "canopy": [(0.18, 0.36, 0.10), (0.22, 0.44, 0.13), (0.15, 0.30, 0.08)],
-        "trunk_ratio": 0.38,
-        "variation": 0.04,
+        "trunk":  [(0.26, 0.18, 0.10), (0.22, 0.15, 0.08), (0.30, 0.21, 0.12)],
+        "canopy": [(0.10, 0.22, 0.05), (0.12, 0.26, 0.06), (0.09, 0.20, 0.05), (0.11, 0.24, 0.06), (0.13, 0.28, 0.07), (0.10, 0.23, 0.05), (0.12, 0.25, 0.06), (0.09, 0.21, 0.05), (0.11, 0.23, 0.06), (0.13, 0.27, 0.07), (0.48, 0.04, 0.04)],
+        "trunk_ratio": 0.32,
+        "variation": 0.03,
     },
     "hawthorn": {
-        "trunk":  [(0.22, 0.18, 0.14), (0.18, 0.15, 0.11), (0.26, 0.21, 0.17)],
-        "canopy": [(0.16, 0.32, 0.10), (0.20, 0.40, 0.12), (0.13, 0.27, 0.08)],
-        "trunk_ratio": 0.35,
+        "trunk":  [(0.18, 0.14, 0.10), (0.14, 0.11, 0.08), (0.22, 0.17, 0.12)],
+        "canopy": [(0.08, 0.20, 0.05), (0.10, 0.24, 0.06), (0.07, 0.17, 0.04), (0.09, 0.22, 0.05)],
+        "trunk_ratio": 0.32,
         "variation": 0.04,
     },
     "cypress": {
@@ -181,69 +181,70 @@ TREE_PALETTES = {
         "variation": 0.02,
     },
     "mahogany": {
-        "trunk":  [(0.22, 0.08, 0.04), (0.18, 0.06, 0.03), (0.26, 0.10, 0.05)],
-        "canopy": [(0.12, 0.26, 0.08), (0.10, 0.22, 0.07), (0.14, 0.30, 0.09)],
+        "trunk":  [(0.48, 0.22, 0.06), (0.42, 0.18, 0.05), (0.54, 0.26, 0.08)],
+        "canopy": [(0.10, 0.22, 0.06), (0.12, 0.26, 0.07), (0.08, 0.18, 0.05), (0.11, 0.24, 0.06)],
         "trunk_ratio": 0.40,
         "variation": 0.03,
     },
     "teak": {
-        "trunk":  [(0.36, 0.24, 0.12), (0.30, 0.20, 0.10), (0.42, 0.28, 0.14)],
-        "canopy": [(0.12, 0.26, 0.08), (0.10, 0.22, 0.07), (0.14, 0.30, 0.09)],
+        "trunk":  [(0.62, 0.50, 0.32), (0.56, 0.44, 0.28), (0.68, 0.56, 0.36)],
+        "canopy": [(0.14, 0.30, 0.07), (0.17, 0.36, 0.09), (0.12, 0.26, 0.06), (0.15, 0.32, 0.08)],
         "trunk_ratio": 0.38,
         "variation": 0.03,
     },
     "ebony": {
-        "trunk":  [(0.08, 0.06, 0.05), (0.06, 0.05, 0.04), (0.10, 0.08, 0.06)],
-        "canopy": [(0.06, 0.14, 0.04), (0.05, 0.11, 0.03), (0.07, 0.17, 0.05)],
+        "trunk":  [(0.04, 0.03, 0.02), (0.03, 0.02, 0.01), (0.05, 0.04, 0.03)],
+        "canopy": [(0.04, 0.12, 0.03), (0.05, 0.14, 0.04), (0.03, 0.10, 0.02), (0.04, 0.13, 0.03)],
         "trunk_ratio": 0.40,
         "variation": 0.02,
     },
     "ironwood": {
-        "trunk":  [(0.28, 0.30, 0.32), (0.24, 0.26, 0.28), (0.32, 0.34, 0.36)],
-        "canopy": [(0.08, 0.18, 0.10), (0.06, 0.14, 0.08), (0.10, 0.22, 0.12)],
+        "trunk":  [(0.22, 0.24, 0.28), (0.18, 0.20, 0.24), (0.26, 0.28, 0.32)],
+        "canopy": [(0.30, 0.18, 0.08), (0.35, 0.22, 0.10), (0.26, 0.15, 0.07), (0.32, 0.20, 0.09)],
         "trunk_ratio": 0.42,
         "variation": 0.03,
     },
     "elder": {
-        "trunk":  [(0.36, 0.32, 0.26), (0.32, 0.28, 0.22), (0.40, 0.36, 0.30)],
-        "canopy": [(0.26, 0.46, 0.12), (0.22, 0.40, 0.10), (0.30, 0.52, 0.14)],
+        "trunk":  [(0.30, 0.28, 0.20), (0.26, 0.24, 0.17), (0.34, 0.32, 0.23)],
+        "canopy": [(0.14, 0.30, 0.07), (0.16, 0.34, 0.08), (0.12, 0.27, 0.06), (0.15, 0.32, 0.07), (0.13, 0.29, 0.07), (0.16, 0.33, 0.08), (0.14, 0.31, 0.07), (0.15, 0.30, 0.07), (0.13, 0.28, 0.06), (0.15, 0.31, 0.07), (0.14, 0.30, 0.07), (0.06, 0.02, 0.06)],
         "trunk_ratio": 0.36,
         "variation": 0.04,
     },
     "redwood": {
-        "trunk":  [(0.30, 0.10, 0.05), (0.24, 0.08, 0.04), (0.36, 0.12, 0.06)],
-        "canopy": [(0.08, 0.18, 0.06), (0.06, 0.14, 0.05), (0.10, 0.22, 0.07)],
-        "trunk_ratio": 0.50,
+        "trunk":  [(0.42, 0.16, 0.06), (0.36, 0.12, 0.05), (0.48, 0.20, 0.08)],
+        "canopy": [(0.05, 0.14, 0.05), (0.06, 0.16, 0.06), (0.04, 0.12, 0.04), (0.05, 0.15, 0.05)],
+        "trunk_ratio": 0.70,
         "variation": 0.03,
     },
     "sequoia": {
         "trunk":  [(0.26, 0.09, 0.05), (0.22, 0.07, 0.04), (0.30, 0.11, 0.06)],
         "canopy": [(0.08, 0.18, 0.06), (0.06, 0.14, 0.05), (0.10, 0.22, 0.07)],
-        "trunk_ratio": 0.55,
+        "trunk_ratio": 0.82,
         "variation": 0.02,
     },
     "aspen": {
-        "trunk":  [(0.60, 0.62, 0.54), (0.55, 0.57, 0.49), (0.65, 0.67, 0.59)],
-        "canopy": [(0.30, 0.56, 0.16), (0.26, 0.50, 0.14), (0.34, 0.62, 0.18)],
-        "trunk_ratio": 0.44,
-        "variation": 0.05,
+        "trunk":  [(0.68, 0.64, 0.54), (0.60, 0.56, 0.46), (0.74, 0.70, 0.60),
+                   (0.14, 0.11, 0.08), (0.10, 0.08, 0.06), (0.18, 0.14, 0.10)],
+        "canopy": [(0.38, 0.62, 0.18), (0.32, 0.55, 0.14), (0.44, 0.68, 0.22), (0.36, 0.60, 0.16)],
+        "trunk_ratio": 0.68,
+        "variation": 0.04,
     },
     "juniper": {
         "trunk":  [(0.20, 0.14, 0.09), (0.16, 0.11, 0.07), (0.24, 0.17, 0.11)],
         "canopy": [(0.06, 0.14, 0.07), (0.05, 0.11, 0.06), (0.07, 0.17, 0.08)],
-        "trunk_ratio": 0.28,
+        "trunk_ratio": 0.68,
         "variation": 0.03,
     },
     "mangrove": {
-        "trunk":  [(0.20, 0.15, 0.09), (0.16, 0.12, 0.07), (0.24, 0.18, 0.11)],
-        "canopy": [(0.10, 0.22, 0.08), (0.08, 0.18, 0.07), (0.12, 0.26, 0.09)],
-        "trunk_ratio": 0.35,
+        "trunk":  [(0.22, 0.16, 0.09), (0.18, 0.13, 0.07), (0.26, 0.19, 0.11)],
+        "canopy": [(0.20, 0.42, 0.10), (0.16, 0.36, 0.08), (0.24, 0.48, 0.12), (0.18, 0.40, 0.09)],
+        "trunk_ratio": 0.52,
         "variation": 0.03,
     },
     "baobab": {
-        "trunk":  [(0.50, 0.42, 0.30), (0.44, 0.36, 0.26), (0.56, 0.48, 0.34)],
-        "canopy": [(0.18, 0.36, 0.10), (0.14, 0.30, 0.08), (0.22, 0.42, 0.12)],
-        "trunk_ratio": 0.28,
+        "trunk":  [(0.46, 0.40, 0.30), (0.38, 0.33, 0.24), (0.52, 0.46, 0.35), (0.32, 0.28, 0.20)],
+        "canopy": [(0.22, 0.44, 0.10), (0.18, 0.38, 0.08), (0.26, 0.50, 0.12), (0.20, 0.42, 0.09)],
+        "trunk_ratio": 0.68,
         "variation": 0.04,
     },
     "palm": {
@@ -255,20 +256,20 @@ TREE_PALETTES = {
     # Fantasy trees
     "bloodwood": {
         "trunk":  [(0.22, 0.05, 0.03), (0.18, 0.04, 0.02), (0.26, 0.06, 0.04)],
-        "canopy": [(0.20, 0.08, 0.05), (0.24, 0.06, 0.04), (0.16, 0.10, 0.06)],
-        "trunk_ratio": 0.38,
+        "canopy": [(0.14, 0.13, 0.13), (0.10, 0.09, 0.09), (0.18, 0.17, 0.17), (0.08, 0.08, 0.08)],
+        "trunk_ratio": 0.82,
         "variation": 0.03,
     },
     "silverleaf": {
-        "trunk":  [(0.50, 0.52, 0.55), (0.44, 0.46, 0.50), (0.56, 0.58, 0.62)],
-        "canopy": [(0.36, 0.52, 0.30), (0.42, 0.58, 0.36), (0.30, 0.46, 0.26)],
-        "trunk_ratio": 0.38,
-        "variation": 0.05,
+        "trunk":  [(0.20, 0.11, 0.06), (0.16, 0.09, 0.04), (0.24, 0.13, 0.08)],
+        "canopy": [(0.72, 0.75, 0.78), (0.68, 0.70, 0.74), (0.76, 0.79, 0.83), (0.74, 0.77, 0.80)],
+        "trunk_ratio": 0.52,
+        "variation": 0.04,
     },
     "moonwillow": {
         "trunk":  [(0.46, 0.48, 0.52), (0.42, 0.44, 0.48), (0.50, 0.52, 0.56)],
-        "canopy": [(0.12, 0.28, 0.22), (0.10, 0.24, 0.18), (0.14, 0.32, 0.26)],
-        "trunk_ratio": 0.35,
+        "canopy": [(0.08, 0.18, 0.68), (0.06, 0.14, 0.60), (0.10, 0.22, 0.72), (0.07, 0.16, 0.64)],
+        "trunk_ratio": 0.58,
         "variation": 0.04,
     },
     "dragonwood": {
@@ -311,6 +312,7 @@ def main():
     center_origin = bool(args.get("center_origin", True))
     normalize_height = args.get("normalize_height")  # float or None
     depth_scale = float(args.get("depth_scale", 1.5))  # fatten flat reconstructions
+    rotate_x_deg = float(args.get("rotate_x", 0.0))    # pre-rotation around X to fix sideways meshes
     remesh = bool(args.get("remesh", True))
     remesh_voxel_size = float(args.get("remesh_voxel_size", 0.05))
     symmetrize = bool(args.get("symmetrize", False))
@@ -328,6 +330,8 @@ def main():
     spike_ar_threshold = float(args.get("spike_ar_threshold", 7.0))
     trunk_base_ratio = float(args.get("trunk_base_ratio", 0.08))
     trunk_radius_frac = float(args.get("trunk_radius_frac", 0.20))
+    root_z_frac = float(args.get("root_z_frac", 0.25))
+    use_orig_col_paint = bool(args.get("use_orig_col_paint", True))
 
     if not input_path or not output_path:
         print("ERROR: 'input' and 'output' are required in the args JSON.")
@@ -434,6 +438,15 @@ def main():
             print(f"[Blender] OrigCol baked from TripoSR texture ({_img_w}×{_img_h}), color ref duplicated.")
         else:
             print("[Blender] No TripoSR texture found — skipping color-guided painting.")
+
+    # -----------------------------------------------------------------------
+    # 3a. Pre-rotation — fix meshes Hunyuan3D output sideways (Y-up instead of Z-up)
+    # -----------------------------------------------------------------------
+    if rotate_x_deg != 0.0:
+        import math as _math_rot
+        obj.rotation_euler[0] = _math_rot.radians(rotate_x_deg)
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        print(f"[Blender] Pre-rotation applied: X axis {rotate_x_deg}°")
 
     # -----------------------------------------------------------------------
     # 3b. Depth inflation — scale Y axis to fatten flat single-image meshes
@@ -727,7 +740,7 @@ def main():
     # -----------------------------------------------------------------------
     if max_root_radius and normalize_height:
         import math
-        root_z_threshold = float(normalize_height) * 0.25  # bottom 25% of tree
+        root_z_threshold = float(normalize_height) * root_z_frac
         clamped = 0
         for vert in obj.data.vertices:
             if vert.co.z < root_z_threshold:
@@ -840,7 +853,13 @@ def main():
         # Hanging pieces (e.g. willow tendrils) extend far in XY even at low Z,
         # so we use XY distance to distinguish them from the true trunk.
         max_xy_vc     = max(_math.sqrt(v.co.x**2 + v.co.y**2) for v in mesh.vertices)
-        trunk_radius  = max(max_xy_vc * trunk_radius_frac, 0.05)
+        # trunk_column_radius (absolute Blender units) overrides the fraction-based
+        # trunk_radius when set — decouples trunk width from canopy-dominated max_xy.
+        _abs_col_r = args.get("trunk_column_radius")
+        if _abs_col_r is not None:
+            trunk_radius = float(_abs_col_r)
+        else:
+            trunk_radius = max(max_xy_vc * trunk_radius_frac, 0.05)
 
         # Optional: pre-compute which faces are "spikes" (thin elongated branches)
         # so their vertex colours can be overridden to trunk/branch colour.
@@ -898,29 +917,57 @@ def main():
                     is_trunk = True
                     base = random.choice(trunk_colors)
                 else:
-                    # Geometric classification (Z height + XY distance)
-                    is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
+                    # Geometric classification (Z height + XY distance).
+                    # When trunk_column_radius is set (absolute units), skip the
+                    # flat base zone entirely — classify purely by radius so the
+                    # trunk colour stays locked to the trunk cylinder and doesn't
+                    # spread outward into drooping canopy branches at low heights.
+                    if _abs_col_r is not None:
+                        # Tapered cone: trunk_column_radius at the ground, narrowing
+                        # linearly to trunk_radius_frac-based tight radius at the
+                        # effective ceiling height.
+                        # trunk_base_ratio from the style JSON can raise the ceiling
+                        # above the palette default — whichever is higher wins.
+                        _eff_ratio = max(trunk_ratio, trunk_base_ratio)
+                        if z_norm >= _eff_ratio:
+                            is_trunk = False
+                        else:
+                            _narrow_r  = max(max_xy_vc * trunk_radius_frac, 0.05)
+                            _taper_t   = 1.0 - (z_norm / _eff_ratio)
+                            _current_r = _narrow_r + (trunk_radius - _narrow_r) * _taper_t
+                            is_trunk   = xy_dist < _current_r
+                    else:
+                        is_trunk = z_norm < trunk_base_ratio or (z_norm < trunk_ratio and xy_dist < trunk_radius)
 
                     # Override with image-derived color if available:
                     # brownish pixels (high R, low G relative to R) → trunk
                     # greenish/pinkish pixels → canopy
-                    if orig_vcol:
+                    # use_orig_col_paint=False disables this for trees where the
+                    # single-photo reference causes asymmetric colour artifacts.
+                    if orig_vcol and use_orig_col_paint:
                         import colorsys as _cs
                         oc = orig_vcol.data[loop_idx].color
                         _r, _g, _b = oc[0], oc[1], oc[2]
                         _h, _s, _v = _cs.rgb_to_hsv(_r, _g, _b)
                         # Green leaves: green hue (80–160° = 0.22–0.44 HSV) with some saturation
                         # Pink canopy (cherry): pink hue (0.85–1.0 or 0.0–0.05) with saturation
-                        _is_green = 0.18 < _h < 0.46 and _s > 0.15
+                        _is_green = 0.18 < _h < 0.46 and _s > 0.30
                         _is_pink  = (_h > 0.82 or _h < 0.06) and _s > 0.20 and _r > 0.40
                         _is_clearly_canopy = _is_green or _is_pink
                         _is_trunk_color = not _is_clearly_canopy and _v > 0.08  # not black, not green, not pink
-                        if _is_trunk_color:
+                        if _is_trunk_color and xy_dist < trunk_radius * 1.5:
                             is_trunk = True
-                        elif _is_clearly_canopy and z_norm > trunk_base_ratio * 0.5:
+                        elif _is_clearly_canopy and z_norm > trunk_base_ratio and xy_dist > trunk_radius:
                             is_trunk = False
 
+                    # Seed by quantised vertex position so mirrored faces pick
+                    # the same palette entry — eliminates left/right asymmetry
+                    # from random.choice() without needing a BVH mirror pass.
+                    _pos_seed = int(abs(vco.x) * 200 + abs(vco.y) * 200 + vco.z * 200) % (2**16)
+                    random.seed(_pos_seed)
                     base = random.choice(trunk_colors if is_trunk else canopy_colors)
+                _var_seed = int(abs(vco.x) * 317 + abs(vco.y) * 431 + vco.z * 571) % (2**16)
+                random.seed(_var_seed)
                 var      = random.uniform(-variation, variation)
 
                 if not is_trunk:
@@ -942,6 +989,76 @@ def main():
                     b = max(0.0, min(1.0, base[2] + var))
 
                 color_attr.data[loop_idx].color = (r, g, b, 1.0)
+
+        # -----------------------------------------------------------------------
+        # Fallback pass — fix any near-black loops left by BMesh hole-fill faces
+        # (those faces have OrigCol=(0,0,0,1) so HSV check fails, leaving them dark)
+        # For each dark loop, copy color from the nearest non-dark loop on an
+        # adjacent face, or fall back to the dominant trunk/canopy color.
+        # -----------------------------------------------------------------------
+        DARK_THRESHOLD = 0.05
+        fallback_color = random.choice(trunk_colors)  # safe default
+        _mesh = obj.data
+        fixed = 0
+        for poly in _mesh.polygons:
+            for loop_idx in poly.loop_indices:
+                c = color_attr.data[loop_idx].color
+                if c[0] < DARK_THRESHOLD and c[1] < DARK_THRESHOLD and c[2] < DARK_THRESHOLD:
+                    replacement = None
+                    vert_indices = set(_mesh.loops[li2].vertex_index
+                                       for li2 in poly.loop_indices)
+                    for poly2 in _mesh.polygons:
+                        if poly2.index == poly.index:
+                            continue
+                        shared = vert_indices.intersection(
+                            _mesh.loops[li].vertex_index for li in poly2.loop_indices)
+                        if shared:
+                            for li2 in poly2.loop_indices:
+                                nc = color_attr.data[li2].color
+                                if nc[0] > DARK_THRESHOLD or nc[1] > DARK_THRESHOLD or nc[2] > DARK_THRESHOLD:
+                                    replacement = (nc[0], nc[1], nc[2], 1.0)
+                                    break
+                        if replacement:
+                            break
+                    color_attr.data[loop_idx].color = replacement if replacement else (*fallback_color, 1.0)
+                    fixed += 1
+        if fixed:
+            print(f"[Blender] Fallback color pass: fixed {fixed} near-black loops.")
+
+        # -----------------------------------------------------------------------
+        # Color symmetrize pass — mirror +X face colors onto their -X counterparts
+        # so both sides of the tree look identical. Useful when use_orig_col_paint
+        # is False and single-photo BVH artifacts are gone but mesh asymmetry or
+        # random palette variation still causes side-to-side differences.
+        # -----------------------------------------------------------------------
+        if bool(args.get("symmetrize_colors", False)):
+            import mathutils as _mu
+            _smesh = obj.data
+
+            # Snapshot average color per face BEFORE any mirroring
+            _face_avg = {}
+            for _p in _smesh.polygons:
+                _cs2 = [color_attr.data[li].color[:3] for li in _p.loop_indices]
+                _face_avg[_p.index] = (
+                    sum(c[0] for c in _cs2) / len(_cs2),
+                    sum(c[1] for c in _cs2) / len(_cs2),
+                    sum(c[2] for c in _cs2) / len(_cs2),
+                )
+
+            bvh_sym = _mu.bvhtree.BVHTree.FromObject(
+                obj, bpy.context.evaluated_depsgraph_get()
+            )
+            _sym_count = 0
+            for _p in _smesh.polygons:
+                if _p.center.x >= 0:
+                    _mpt = _mu.Vector((-_p.center.x, _p.center.y, _p.center.z))
+                    _loc2, _n2, _midx, _d2 = bvh_sym.find_nearest(_mpt)
+                    if _midx is not None and _midx != _p.index:
+                        _col = _face_avg[_p.index]
+                        for _li in _smesh.polygons[_midx].loop_indices:
+                            color_attr.data[_li].color = (*_col, 1.0)
+                        _sym_count += 1
+            print(f"[Blender] Color symmetrize: mirrored {_sym_count} face pairs.")
 
         # Principled BSDF — fully matte, zero specular, exports cleanly to GLB
         mat = bpy.data.materials.new(name="TreeMat")
