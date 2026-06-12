@@ -1,0 +1,11 @@
+{
+  "id": "woodcutting_ebony_tree",
+  "entries": [
+    {
+      "item_id": "log_ebony",
+      "min": 1,
+      "max": 1,
+      "weight": 100
+    }
+  ]
+}

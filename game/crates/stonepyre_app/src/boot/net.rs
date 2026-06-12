@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -160,7 +160,7 @@ struct CharacterDto {
     character_id: Uuid,
     name: String,
     cash: f64,
-    created_at: NaiveDateTime,
+    created_at: DateTime<Utc>,
 
     // ✅ Optional: future-proof. When server adds it, we’ll start receiving it.
     #[serde(default)]
