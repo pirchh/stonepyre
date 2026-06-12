@@ -1,0 +1,11 @@
+{
+  "id": "woodcutting_walnut_tree",
+  "entries": [
+    {
+      "item_id": "log_walnut",
+      "min": 1,
+      "max": 1,
+      "weight": 100
+    }
+  ]
+}

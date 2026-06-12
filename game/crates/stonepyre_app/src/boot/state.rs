@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
@@ -31,7 +31,7 @@ pub struct Character {
     pub character_id: Uuid,
     pub name: String,
     pub cash: f64,
-    pub created_at: NaiveDateTime,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Resource)]

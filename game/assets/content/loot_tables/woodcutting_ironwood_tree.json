@@ -1,0 +1,11 @@
+{
+  "id": "woodcutting_ironwood_tree",
+  "entries": [
+    {
+      "item_id": "log_ironwood",
+      "min": 1,
+      "max": 1,
+      "weight": 100
+    }
+  ]
+}
