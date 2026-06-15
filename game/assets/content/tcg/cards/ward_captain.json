@@ -1,0 +1,26 @@
+{
+  "id": "ward_captain",
+  "name": "Ward Captain",
+  "color": "white",
+  "type": "champion",
+  "cost": 5,
+  "attack": 2,
+  "health": 5,
+  "durability": null,
+  "keywords": ["guard"],
+  "rules_text": "Guard. Champion Power (2): Give a friendly unit Shielded this turn.",
+  "tribes": ["champion", "knight"],
+  "art_id": "ward_captain",
+  "art_background_id": "silver_citadel",
+  "frame_id": "white_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "ward_captain_power",
+    "cost": 2,
+    "targeting": "friendly_unit",
+    "effect": { "kind": "give_shielded" },
+    "description": "Give a friendly unit Shielded this turn."
+  },
+  "allowed_deck_colors": ["white"]
+}

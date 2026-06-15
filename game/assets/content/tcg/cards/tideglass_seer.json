@@ -1,0 +1,26 @@
+{
+  "id": "tideglass_seer",
+  "name": "Tideglass Seer",
+  "color": "blue",
+  "type": "champion",
+  "cost": 5,
+  "attack": 1,
+  "health": 6,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Champion Power (2): Look at the top card of your deck. You may put it on the bottom.",
+  "tribes": ["champion", "mystic"],
+  "art_id": "tideglass_seer",
+  "art_background_id": "tide_mirror_coast",
+  "frame_id": "blue_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "tideglass_seer_power",
+    "cost": 2,
+    "targeting": "no_target",
+    "effect": { "kind": "filter_top_card", "depth": 1 },
+    "description": "Look at the top card of your deck. You may put it on the bottom."
+  },
+  "allowed_deck_colors": ["blue"]
+}

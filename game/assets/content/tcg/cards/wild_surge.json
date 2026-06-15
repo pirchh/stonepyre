@@ -1,0 +1,24 @@
+{
+  "id": "wild_surge",
+  "name": "Wild Surge",
+  "color": "green",
+  "type": "spell",
+  "cost": 3,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Give a friendly unit +2/+2.",
+  "tribes": [],
+  "art_id": "wild_surge",
+  "art_background_id": "ancient_grove",
+  "frame_id": "green_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "friendly_unit",
+    "effect": { "kind": "buff_unit", "attack_delta": 2, "health_delta": 2 }
+  },
+  "allowed_deck_colors": null
+}

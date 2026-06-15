@@ -1,0 +1,20 @@
+{
+  "id": "plague_imp",
+  "name": "Plague Imp",
+  "color": "black",
+  "type": "unit",
+  "cost": 2,
+  "attack": 2,
+  "health": 1,
+  "durability": null,
+  "keywords": ["poison"],
+  "rules_text": "Poison. Whenever this unit deals damage to a unit, that unit gains Poison.",
+  "tribes": ["imp"],
+  "art_id": "plague_imp",
+  "art_background_id": "rotfen_shrine",
+  "frame_id": "black_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

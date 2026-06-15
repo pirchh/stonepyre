@@ -1,0 +1,20 @@
+{
+  "id": "cursed_thrall",
+  "name": "Cursed Thrall",
+  "color": "purple",
+  "type": "unit",
+  "cost": 3,
+  "attack": 2,
+  "health": 3,
+  "durability": null,
+  "keywords": ["curse"],
+  "rules_text": "Curse. When played, apply Curse to target enemy unit. Cursed units deal 1 less damage.",
+  "tribes": ["thrall"],
+  "art_id": "cursed_thrall",
+  "art_background_id": "veil_between",
+  "frame_id": "purple_unit_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

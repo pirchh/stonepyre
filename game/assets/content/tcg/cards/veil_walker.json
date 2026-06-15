@@ -1,0 +1,29 @@
+{
+  "id": "veil_walker",
+  "name": "Veil Walker",
+  "color": "purple",
+  "type": "champion",
+  "cost": 5,
+  "attack": 2,
+  "health": 4,
+  "durability": null,
+  "keywords": ["phantom"],
+  "rules_text": "Phantom. Champion Power (2): Summon a 1/1 Phantom token.",
+  "tribes": ["champion", "spirit"],
+  "art_id": "veil_walker",
+  "art_background_id": "veil_between",
+  "frame_id": "purple_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "veil_walker_power",
+    "cost": 2,
+    "targeting": "no_target",
+    "effect": {
+      "kind": "summon_token",
+      "token": { "name": "Phantom", "attack": 1, "health": 1, "keywords": ["phantom"] }
+    },
+    "description": "Summon a 1/1 Phantom token."
+  },
+  "allowed_deck_colors": ["purple"]
+}

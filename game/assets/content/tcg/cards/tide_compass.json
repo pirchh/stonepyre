@@ -1,0 +1,20 @@
+{
+  "id": "tide_compass",
+  "name": "Tide Compass",
+  "color": "blue",
+  "type": "relic",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": 2,
+  "keywords": [],
+  "rules_text": "At the start of your turn, look at the top 2 cards of your deck. Lose 1 Durability.",
+  "tribes": [],
+  "art_id": "tide_compass",
+  "art_background_id": "tide_mirror_coast",
+  "frame_id": "blue_relic_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

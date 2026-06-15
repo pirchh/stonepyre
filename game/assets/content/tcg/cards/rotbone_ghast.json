@@ -1,0 +1,20 @@
+{
+  "id": "rotbone_ghast",
+  "name": "Rotbone Ghast",
+  "color": "black",
+  "type": "unit",
+  "cost": 3,
+  "attack": 3,
+  "health": 2,
+  "durability": null,
+  "keywords": ["drain", "last_breath"],
+  "rules_text": "Drain, Last Breath. Whenever this unit deals damage, restore that much Health to your hero. Last Breath: Draw a card.",
+  "tribes": ["undead"],
+  "art_id": "rotbone_ghast",
+  "art_background_id": "rotfen_shrine",
+  "frame_id": "black_unit_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

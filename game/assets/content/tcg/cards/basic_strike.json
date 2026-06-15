@@ -1,0 +1,24 @@
+{
+  "id": "basic_strike",
+  "name": "Basic Strike",
+  "color": "neutral",
+  "type": "spell",
+  "cost": 1,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Deal 1 damage to any unit.",
+  "tribes": [],
+  "art_id": "basic_strike",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "any_unit",
+    "effect": { "kind": "deal_damage", "amount": 1 }
+  },
+  "allowed_deck_colors": null
+}

@@ -1,0 +1,26 @@
+{
+  "id": "hollow_thane",
+  "name": "Hollow Thane",
+  "color": "black",
+  "type": "champion",
+  "cost": 5,
+  "attack": 3,
+  "health": 3,
+  "durability": null,
+  "keywords": ["drain"],
+  "rules_text": "Drain. Champion Power (2): Deal 1 damage to any unit and restore 1 Health to your hero.",
+  "tribes": ["champion", "undead"],
+  "art_id": "hollow_thane",
+  "art_background_id": "rotfen_shrine",
+  "frame_id": "black_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "hollow_thane_power",
+    "cost": 2,
+    "targeting": "any_unit",
+    "effect": { "kind": "drain", "damage": 1, "healing": 1 },
+    "description": "Deal 1 damage to any unit and restore 1 Health to your hero."
+  },
+  "allowed_deck_colors": ["black"]
+}

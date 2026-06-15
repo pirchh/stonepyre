@@ -1,0 +1,20 @@
+{
+  "id": "pit_fighter",
+  "name": "Pit Fighter",
+  "color": "neutral",
+  "type": "unit",
+  "cost": 3,
+  "attack": 4,
+  "health": 3,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "When this unit kills another unit in combat, gain +1/+0.",
+  "tribes": ["warrior"],
+  "art_id": "pit_fighter",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

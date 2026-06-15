@@ -1,0 +1,20 @@
+{
+  "id": "veil_mirror",
+  "name": "Veil Mirror",
+  "color": "purple",
+  "type": "relic",
+  "cost": 3,
+  "attack": null,
+  "health": null,
+  "durability": 2,
+  "keywords": [],
+  "rules_text": "Whenever your opponent plays a spell, copy it targeting a random valid target. Lose 1 Durability.",
+  "tribes": [],
+  "art_id": "veil_mirror",
+  "art_background_id": "veil_between",
+  "frame_id": "purple_relic_default",
+  "rarity": "rare",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

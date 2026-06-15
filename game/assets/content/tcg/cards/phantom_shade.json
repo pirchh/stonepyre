@@ -1,0 +1,20 @@
+{
+  "id": "phantom_shade",
+  "name": "Phantom Shade",
+  "color": "purple",
+  "type": "unit",
+  "cost": 2,
+  "attack": 2,
+  "health": 1,
+  "durability": null,
+  "keywords": ["phantom"],
+  "rules_text": "Phantom. This unit vanishes at end of turn if it attacked.",
+  "tribes": ["spirit"],
+  "art_id": "phantom_shade",
+  "art_background_id": "veil_between",
+  "frame_id": "purple_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

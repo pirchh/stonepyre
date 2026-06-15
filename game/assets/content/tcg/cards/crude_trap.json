@@ -1,0 +1,24 @@
+{
+  "id": "crude_trap",
+  "name": "Crude Trap",
+  "color": "neutral",
+  "type": "spell",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Deal 1 damage to all enemy units.",
+  "tribes": [],
+  "art_id": "crude_trap",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_spell_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "all_enemy_units",
+    "effect": { "kind": "deal_damage", "amount": 1 }
+  },
+  "allowed_deck_colors": null
+}

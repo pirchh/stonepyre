@@ -5608,6 +5608,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "stonepyre_tcg"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "stonepyre_ui"
 version = "0.1.0"
 dependencies = [

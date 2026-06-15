@@ -1,0 +1,20 @@
+{
+  "id": "reef_lurker",
+  "name": "Reef Lurker",
+  "color": "blue",
+  "type": "unit",
+  "cost": 2,
+  "attack": 2,
+  "health": 3,
+  "durability": null,
+  "keywords": ["stun"],
+  "rules_text": "When this unit attacks, Stun the defender for 1 turn.",
+  "tribes": ["beast", "aquatic"],
+  "art_id": "reef_lurker",
+  "art_background_id": "tide_mirror_coast",
+  "frame_id": "blue_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

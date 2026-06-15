@@ -1,0 +1,20 @@
+{
+  "id": "stone_idol",
+  "name": "Stone Idol",
+  "color": "neutral",
+  "type": "relic",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": 4,
+  "keywords": [],
+  "rules_text": "Reduce all damage dealt to your hero by 1. At the start of your turn, lose 1 Durability.",
+  "tribes": [],
+  "art_id": "stone_idol",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_relic_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

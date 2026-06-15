@@ -1,0 +1,20 @@
+{
+  "id": "tidewhisper_sage",
+  "name": "Tidewhisper Sage",
+  "color": "blue",
+  "type": "unit",
+  "cost": 3,
+  "attack": 1,
+  "health": 4,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "When played, draw a card.",
+  "tribes": ["mystic"],
+  "art_id": "tidewhisper_sage",
+  "art_background_id": "tide_mirror_coast",
+  "frame_id": "blue_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

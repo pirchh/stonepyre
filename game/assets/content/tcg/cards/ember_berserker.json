@@ -1,0 +1,20 @@
+{
+  "id": "ember_berserker",
+  "name": "Ember Berserker",
+  "color": "red",
+  "type": "unit",
+  "cost": 3,
+  "attack": 4,
+  "health": 2,
+  "durability": null,
+  "keywords": ["charge", "fury"],
+  "rules_text": "Charge, Fury. Whenever this unit attacks, deal 1 damage to your hero.",
+  "tribes": ["warrior"],
+  "art_id": "ember_berserker",
+  "art_background_id": "ember_forge",
+  "frame_id": "red_unit_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

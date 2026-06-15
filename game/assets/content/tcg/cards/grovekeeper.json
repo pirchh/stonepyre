@@ -1,0 +1,26 @@
+{
+  "id": "grovekeeper",
+  "name": "Grovekeeper",
+  "color": "green",
+  "type": "champion",
+  "cost": 5,
+  "attack": 2,
+  "health": 6,
+  "durability": null,
+  "keywords": ["guard"],
+  "rules_text": "Guard. Champion Power (2): Give a friendly unit +1/+1.",
+  "tribes": ["champion", "treefolk"],
+  "art_id": "grovekeeper",
+  "art_background_id": "ancient_grove",
+  "frame_id": "green_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "grovekeeper_power",
+    "cost": 2,
+    "targeting": "friendly_unit",
+    "effect": { "kind": "buff_unit", "attack_delta": 1, "health_delta": 1 },
+    "description": "Give a friendly unit +1/+1."
+  },
+  "allowed_deck_colors": ["green"]
+}

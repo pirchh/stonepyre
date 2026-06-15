@@ -1,0 +1,20 @@
+{
+  "id": "blackroot_ritual",
+  "name": "Blackroot Ritual",
+  "color": "black",
+  "type": "spell",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Destroy a friendly unit. Draw 2 cards.",
+  "tribes": [],
+  "art_id": "blackroot_ritual",
+  "art_background_id": "rotfen_shrine",
+  "frame_id": "black_spell_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

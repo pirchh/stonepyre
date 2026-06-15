@@ -1,0 +1,20 @@
+{
+  "id": "ironroot_banner",
+  "name": "Ironroot Banner",
+  "color": "white",
+  "type": "relic",
+  "cost": 3,
+  "attack": null,
+  "health": null,
+  "durability": 3,
+  "keywords": [],
+  "rules_text": "Your units with Guard have +1 Health. At the end of your turn, lose 1 Durability.",
+  "tribes": [],
+  "art_id": "ironroot_banner",
+  "art_background_id": "silver_citadel",
+  "frame_id": "white_relic_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

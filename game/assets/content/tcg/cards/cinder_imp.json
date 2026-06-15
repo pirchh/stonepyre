@@ -1,0 +1,20 @@
+{
+  "id": "cinder_imp",
+  "name": "Cinder Imp",
+  "color": "red",
+  "type": "unit",
+  "cost": 2,
+  "attack": 3,
+  "health": 1,
+  "durability": null,
+  "keywords": ["charge", "last_breath"],
+  "rules_text": "Charge. Last Breath: Deal 1 damage to a random enemy unit.",
+  "tribes": ["imp"],
+  "art_id": "cinder_imp",
+  "art_background_id": "ember_forge",
+  "frame_id": "red_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

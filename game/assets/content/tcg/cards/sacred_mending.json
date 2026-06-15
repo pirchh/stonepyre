@@ -1,0 +1,24 @@
+{
+  "id": "sacred_mending",
+  "name": "Sacred Mending",
+  "color": "white",
+  "type": "spell",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Restore 4 Health to a friendly unit or your hero.",
+  "tribes": [],
+  "art_id": "sacred_mending",
+  "art_background_id": "silver_citadel",
+  "frame_id": "white_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "friendly_unit",
+    "effect": { "kind": "heal", "amount": 4 }
+  },
+  "allowed_deck_colors": null
+}

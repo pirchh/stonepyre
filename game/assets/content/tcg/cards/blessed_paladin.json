@@ -1,0 +1,20 @@
+{
+  "id": "blessed_paladin",
+  "name": "Blessed Paladin",
+  "color": "white",
+  "type": "unit",
+  "cost": 3,
+  "attack": 2,
+  "health": 4,
+  "durability": null,
+  "keywords": ["guard"],
+  "rules_text": "Guard. When played, restore 2 Health to your hero.",
+  "tribes": ["knight"],
+  "art_id": "blessed_paladin",
+  "art_background_id": "silver_citadel",
+  "frame_id": "white_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

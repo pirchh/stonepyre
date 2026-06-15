@@ -1,0 +1,21 @@
+{
+  "id": "forest_wolf",
+  "name": "Forest Wolf",
+  "color": "neutral",
+  "type": "unit",
+  "cost": 2,
+  "attack": 2,
+  "health": 2,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "A lone wolf prowling the borderlands.",
+  "tribes": ["beast"],
+  "art_id": "forest_wolf",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": null,
+  "allowed_deck_colors": null
+}

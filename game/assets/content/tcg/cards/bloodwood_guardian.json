@@ -1,0 +1,20 @@
+{
+  "id": "bloodwood_guardian",
+  "name": "Bloodwood Guardian",
+  "color": "green",
+  "type": "unit",
+  "cost": 4,
+  "attack": 3,
+  "health": 6,
+  "durability": null,
+  "keywords": ["guard", "thorns"],
+  "rules_text": "Guard, Thorns 1.",
+  "tribes": ["treefolk"],
+  "art_id": "bloodwood_guardian",
+  "art_background_id": "ancient_grove",
+  "frame_id": "green_unit_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

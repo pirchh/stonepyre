@@ -1,0 +1,20 @@
+{
+  "id": "wildboar_charger",
+  "name": "Wildboar Charger",
+  "color": "green",
+  "type": "unit",
+  "cost": 3,
+  "attack": 3,
+  "health": 4,
+  "durability": null,
+  "keywords": ["thorns"],
+  "rules_text": "Thorns 1. Whenever this unit is attacked, the attacker takes 1 damage.",
+  "tribes": ["beast"],
+  "art_id": "wildboar_charger",
+  "art_background_id": "ancient_grove",
+  "frame_id": "green_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

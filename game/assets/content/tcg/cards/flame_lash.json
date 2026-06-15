@@ -1,0 +1,24 @@
+{
+  "id": "flame_lash",
+  "name": "Flame Lash",
+  "color": "red",
+  "type": "spell",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Deal 2 damage to any unit or hero.",
+  "tribes": [],
+  "art_id": "flame_lash",
+  "art_background_id": "ember_forge",
+  "frame_id": "red_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "any_unit",
+    "effect": { "kind": "deal_damage", "amount": 2 }
+  },
+  "allowed_deck_colors": null
+}

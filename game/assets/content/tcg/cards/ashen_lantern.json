@@ -1,0 +1,20 @@
+{
+  "id": "ashen_lantern",
+  "name": "Ashen Lantern",
+  "color": "black",
+  "type": "relic",
+  "cost": 3,
+  "attack": null,
+  "health": null,
+  "durability": 3,
+  "keywords": [],
+  "rules_text": "Whenever a friendly unit dies, deal 1 damage to a random enemy unit. Lose 1 Durability.",
+  "tribes": [],
+  "art_id": "ashen_lantern",
+  "art_background_id": "rotfen_shrine",
+  "frame_id": "black_relic_default",
+  "rarity": "uncommon",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

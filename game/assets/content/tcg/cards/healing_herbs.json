@@ -1,0 +1,24 @@
+{
+  "id": "healing_herbs",
+  "name": "Healing Herbs",
+  "color": "neutral",
+  "type": "spell",
+  "cost": 1,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Restore 2 Health to a friendly unit.",
+  "tribes": [],
+  "art_id": "healing_herbs",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "spell_effect": {
+    "targeting": "friendly_unit",
+    "effect": { "kind": "heal", "amount": 2 }
+  },
+  "allowed_deck_colors": null
+}

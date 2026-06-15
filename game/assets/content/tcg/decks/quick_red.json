@@ -1,0 +1,18 @@
+{
+  "id": "quick_red",
+  "name": "Quick Red (Cinder Caller)",
+  "card_ids": [
+    "cinder_caller",
+    "cinder_imp", "cinder_imp", "cinder_imp",
+    "ember_berserker", "ember_berserker", "ember_berserker",
+    "flame_lash", "flame_lash", "flame_lash",
+    "ember_sigil", "ember_sigil",
+    "stone_golem", "stone_golem", "stone_golem",
+    "pit_fighter", "pit_fighter", "pit_fighter",
+    "basic_strike", "basic_strike", "basic_strike",
+    "stone_idol", "stone_idol",
+    "recruit", "recruit", "recruit",
+    "forest_wolf", "forest_wolf",
+    "crude_trap", "crude_trap"
+  ]
+}

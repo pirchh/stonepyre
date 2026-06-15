@@ -1,0 +1,18 @@
+{
+  "id": "quick_green",
+  "name": "Quick Green (Grovekeeper)",
+  "card_ids": [
+    "grovekeeper",
+    "wildboar_charger", "wildboar_charger", "wildboar_charger",
+    "bloodwood_guardian", "bloodwood_guardian", "bloodwood_guardian",
+    "wild_surge", "wild_surge", "wild_surge",
+    "mossgrown_totem", "mossgrown_totem",
+    "stone_golem", "stone_golem", "stone_golem",
+    "pit_fighter", "pit_fighter", "pit_fighter",
+    "healing_herbs", "healing_herbs", "healing_herbs",
+    "stone_idol", "stone_idol",
+    "recruit", "recruit", "recruit",
+    "forest_wolf", "forest_wolf",
+    "crude_trap", "crude_trap"
+  ]
+}

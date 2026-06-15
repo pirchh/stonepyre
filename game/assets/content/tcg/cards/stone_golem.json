@@ -1,0 +1,20 @@
+{
+  "id": "stone_golem",
+  "name": "Stone Golem",
+  "color": "neutral",
+  "type": "unit",
+  "cost": 4,
+  "attack": 3,
+  "health": 5,
+  "durability": null,
+  "keywords": ["guard"],
+  "rules_text": "Guard.",
+  "tribes": ["construct"],
+  "art_id": "stone_golem",
+  "art_background_id": "stone_ruins",
+  "frame_id": "neutral_unit_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}

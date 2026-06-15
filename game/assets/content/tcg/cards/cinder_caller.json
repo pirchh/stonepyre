@@ -1,0 +1,26 @@
+{
+  "id": "cinder_caller",
+  "name": "Cinder Caller",
+  "color": "red",
+  "type": "champion",
+  "cost": 5,
+  "attack": 3,
+  "health": 4,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "When played, deal 1 damage to all enemy units. Champion Power (2): Deal 1 damage to any unit.",
+  "tribes": ["champion", "ember"],
+  "art_id": "cinder_caller",
+  "art_background_id": "ember_throne",
+  "frame_id": "red_champion_default",
+  "rarity": "champion",
+  "set_id": "core",
+  "champion_power": {
+    "id": "cinder_caller_power",
+    "cost": 2,
+    "targeting": "enemy_unit",
+    "effect": { "kind": "deal_damage", "amount": 1 },
+    "description": "Deal 1 damage to any unit."
+  },
+  "allowed_deck_colors": ["red"]
+}

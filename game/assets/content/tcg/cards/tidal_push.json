@@ -1,0 +1,20 @@
+{
+  "id": "tidal_push",
+  "name": "Tidal Push",
+  "color": "blue",
+  "type": "spell",
+  "cost": 2,
+  "attack": null,
+  "health": null,
+  "durability": null,
+  "keywords": [],
+  "rules_text": "Return target unit to its owner's hand.",
+  "tribes": [],
+  "art_id": "tidal_push",
+  "art_background_id": "tide_mirror_coast",
+  "frame_id": "blue_spell_default",
+  "rarity": "common",
+  "set_id": "core",
+  "champion_power": null,
+  "allowed_deck_colors": null
+}
