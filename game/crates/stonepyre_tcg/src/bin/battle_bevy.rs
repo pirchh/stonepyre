@@ -36,22 +36,22 @@ const MANA_GEM_SIZE: f32 = 36.0;
 // ─── Card geometry — BOARD cards (full size, detailed display) ────────────────
 // Art ≈ 50% of card height for hero presence.
 const BOARD_CARD_W: f32 = 200.0;
-const BOARD_CARD_H: f32 = 280.0;
-const BOARD_ART_H: f32 = 144.0;
+const BOARD_CARD_H: f32 = 254.0;
+const BOARD_ART_H: f32 = 118.0;
 
-// ─── Layout zones — calibrated for 1920×1080 window ──────────────────────────
-// Total vertical: 1080 = 36header + (board flex_grow) + 244hand + 50mana
-// Board flex_grow gets ~750px; content = 92+296+2+296+92 = 778, ~28px tight via FlexEnd
+// ─── Layout zones — fits within ~985px client height (1080p windowed with OS chrome) ──
+// Fixed total: 36 + 82 + 266 + 2 + 266 + 82 + 50 + 200 = 984px
+// Board section uses flex_grow so it expands to fill extra space in fullscreen.
 const HEADER_H: f32 = 36.0;
 const PENDING_BANNER_H: f32 = 44.0;
 const HERO_PORTRAIT_W: f32 = 96.0;
-const HERO_PORTRAIT_H: f32 = 80.0;
-const HERO_HP_BADGE: f32 = 30.0;
-const HERO_ROW_H: f32 = 92.0;         // portrait(80) + badge_overlap(12)
-const ENEMY_BOARD_H: f32 = 296.0;     // board card(280) + 8px padding each side
-const YOUR_BOARD_H: f32 = 296.0;
+const HERO_PORTRAIT_H: f32 = 68.0;
+const HERO_HP_BADGE: f32 = 26.0;
+const HERO_ROW_H: f32 = 82.0;         // portrait(68) + badge_overlap(14)
+const ENEMY_BOARD_H: f32 = 266.0;     // board card(254) + 6px padding each side
+const YOUR_BOARD_H: f32 = 266.0;
 const SIDE_PANEL_W: f32 = 180.0;
-const HAND_ZONE_H: f32 = 244.0;       // compact card(220) + 24px breathing room
+const HAND_ZONE_H: f32 = 200.0;       // compact card(220) peeks slightly — intentional
 const MANA_BAR_H: f32 = 50.0;
 
 // ─── Colors (Hearthstone-inspired) ───────────────────────────────────────────
