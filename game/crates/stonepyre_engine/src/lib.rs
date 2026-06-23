@@ -25,6 +25,8 @@ impl Plugin for StonepyreEnginePlugin {
             .insert_resource(plugins::ui::ContextMenuState::default())
             .insert_resource(plugins::interaction::ServerAuthoritativeInteractions::default())
             .insert_resource(plugins::interaction::WorldInteractionBlocker::default())
+            .insert_resource(plugins::interaction::ServerActionGate::default())
+            .insert_resource(plugins::interaction::HarvestReadyGate::default())
             .insert_resource(stonepyre_world::WorldGrid::new(
                 64,
                 Box::new(stonepyre_world::FlatWorldSource::new(1337, 0)),
@@ -78,6 +80,7 @@ impl Plugin for StonepyreEnginePlugin {
                 (
                     plugins::input::emit_click_messages,
                     plugins::interaction::handle_interact_key,
+                    plugins::interaction::handle_action_key,
                     plugins::ui::context_menu_overlay_system,
                     plugins::ui::handle_context_menu_overlay_clicks,
                     plugins::interaction::handle_clicks_build_candidates,
@@ -87,6 +90,17 @@ impl Plugin for StonepyreEnginePlugin {
                 )
                     .chain(),
             )
+                .in_set(EngineSet::Runtime),
+        );
+
+        // Flush deferred commands from the input/interaction chain (batch 1) so that
+        // RequestedAnim insertions from handle_action_key are visible to
+        // consume_requested_anim in the same frame.
+        app.add_systems(
+            Update,
+            ApplyDeferred
+                .after(plugins::interaction::handle_action_key)
+                .before(plugins::animation::consume_requested_anim)
                 .in_set(EngineSet::Runtime),
         );
 
@@ -104,8 +118,11 @@ impl Plugin for StonepyreEnginePlugin {
                 plugins::interaction::debug_print_resolved_actions,
                 // ---- Movement + Animation ----
                 plugins::movement::wasd_movement,
+                plugins::animation::consume_requested_anim
+                    .after(plugins::animation::link_anim_player_to_player),
                 plugins::animation::animate_humanoid
                     .after(plugins::movement::wasd_movement)
+                    .after(plugins::animation::consume_requested_anim)
                     .after(plugins::animation::link_anim_player_to_player),
                 // ---- Harvest regen + visibility sync (generic) ----
                 plugins::skills::tick_harvest_regen

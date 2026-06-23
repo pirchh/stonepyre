@@ -1,81 +1,74 @@
 use bevy::prelude::*;
 
-use stonepyre_engine::plugins::animation::ForceIdleOnce;
-use stonepyre_engine::plugins::skills::{AnimClip, RequestedAnim, RequestedAnimMode};
+use stonepyre_engine::plugins::animation::RequestedAnimStarted;
+use stonepyre_engine::plugins::interaction::{AutoChopActive, ServerActionGate};
+use stonepyre_engine::plugins::movement::IsWalking;
+use stonepyre_engine::plugins::skills::RequestedAnim;
 use stonepyre_engine::plugins::world::{player_feet_world, Facing, Player};
 use stonepyre_world::{world_to_tile, TilePos};
 
 use super::protocol::{ActionState, InteractionAction, InteractionTarget};
 use super::status::GameNetStatus;
 
-const CHOP_VISUAL_SECS: f32 = 0.75;
-
-/// Client-side presentation for server-owned actions.
+/// Drives the woodcutting animation against the server-authoritative action state.
 ///
-/// Gameplay state is owned by the server. This system only mirrors the latest
-/// authoritative action lifecycle from snapshots into animation. If the server
-/// action is not Active, the skill clip is removed immediately and the animation
-/// system is asked to snap back to idle this frame.
+/// The server owns the continuous-chop loop: once a ChopDown goes Active it stays
+/// Active and emits a grant every swing, ending the action only when the node
+/// depletes, the player moves out of range, or the inventory fills. So the client
+/// is simple:
+///
+/// - While the action is in-flight: hold `ServerActionGate` (blocks duplicate Space
+///   presses) and rotate the player to face the chop target.
+/// - On the in-flight falling edge — i.e. ANY terminal state, since the server only
+///   sends one when the whole session ends — stop the looping animation.
+///
+/// The looping `RequestedAnim` itself is inserted by `handle_action_key` on the Space
+/// press and animates continuously (native Bevy repeat) until removed here or by
+/// `animate_humanoid` the instant the player starts walking.
 pub fn play_server_authoritative_action_visuals(
     mut commands: Commands,
-    mut player_q: Query<(
-        Entity,
-        &Transform,
-        &mut Facing,
-        Option<&RequestedAnim>,
-    ), With<Player>>,
+    mut prev_was_in_flight: Local<bool>,
+    mut server_gate: ResMut<ServerActionGate>,
+    mut player_q: Query<(Entity, &Transform, &mut Facing, &IsWalking), With<Player>>,
     status: Res<GameNetStatus>,
 ) {
-    let Ok((player_ent, player_xform, mut facing, requested_anim)) = player_q.single_mut() else {
+    let Ok((player_ent, player_xform, mut facing, is_walking)) = player_q.single_mut() else {
         return;
     };
 
-    let Some(action) = status.server_action.as_ref() else {
-        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
-        return;
-    };
+    let action_in_flight = status.action_event_in_flight;
 
-    if action.action != InteractionAction::ChopDown || action.state != ActionState::Active {
-        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
-        return;
-    }
-
-    let InteractionTarget::Tile(target) = action.target.clone();
-
-    let server_tile = status
-        .server_tile
-        .unwrap_or_else(|| world_to_tile(player_feet_world(player_xform)));
-    let local_tile = world_to_tile(player_feet_world(player_xform));
-
-    // Safety guard: presentation should never continue if both local and server
-    // positions are out of action range. The server should cancel first, but this
-    // prevents a stale snapshot/frame from leaving the clip playing.
-    if manhattan(server_tile, target) > 1 && manhattan(local_tile, target) > 1 {
-        stop_action_visual_now(&mut commands, player_ent, requested_anim.is_some());
-        return;
-    }
-
-    *facing = facing_toward(server_tile, target, *facing);
-
-    if requested_anim.is_none() {
-        commands.entity(player_ent).insert(RequestedAnim {
-            clip: AnimClip::Woodcutting,
-            mode: RequestedAnimMode::Loop {
-                timer: Timer::from_seconds(CHOP_VISUAL_SECS, TimerMode::Repeating),
-            },
-        });
-    }
-}
-
-fn stop_action_visual_now(commands: &mut Commands, player_ent: Entity, had_requested_anim: bool) {
-    if had_requested_anim {
+    // Falling edge = the server ended the harvest session (deplete / out-of-range /
+    // inventory-full / movement cancel). Stop the looping swing animation.
+    if *prev_was_in_flight && !action_in_flight {
         commands.entity(player_ent).remove::<RequestedAnim>();
-        commands.entity(player_ent).insert(ForceIdleOnce);
+        commands.entity(player_ent).remove::<RequestedAnimStarted>();
+        commands.entity(player_ent).remove::<AutoChopActive>();
     }
-}
 
-fn manhattan(a: TilePos, b: TilePos) -> i32 {
-    (a.x - b.x).abs() + (a.y - b.y).abs()
+    *prev_was_in_flight = action_in_flight;
+    server_gate.0 = action_in_flight;
+
+    // While actively swinging, keep the player turned toward the chop target —
+    // but NOT while walking. The server keeps the action Active for ~1 RTT after
+    // the player starts moving away, and without this guard action_visuals would
+    // override the walk facing, leaving the player moonwalking (moving one way,
+    // facing the tree) until the server's cancel arrives.
+    let is_active = !is_walking.0
+        && status.server_action.as_ref().map_or(false, |a| {
+            a.action == InteractionAction::ChopDown && a.state == ActionState::Active
+        });
+
+    if is_active {
+        let Some(action) = status.server_action.as_ref() else {
+            return;
+        };
+        let InteractionTarget::Tile(target) = action.target.clone();
+        let server_tile = status
+            .server_tile
+            .unwrap_or_else(|| world_to_tile(player_feet_world(player_xform)));
+        *facing = facing_toward(server_tile, target, *facing);
+    }
 }
 
 fn facing_toward(from: TilePos, to: TilePos, current: Facing) -> Facing {

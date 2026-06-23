@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use stonepyre_ui::bag::BagItemActionQueue;
 use stonepyre_ui::bag::BagItemAction;
+use stonepyre_ui::character_tab::CharacterEquipActionQueue;
 use stonepyre_ui::inventory::{InventoryItemAction, InventoryItemActionQueue};
 
 use super::runtime::{
@@ -11,8 +12,10 @@ use super::runtime::{
     send_bag_take_item_to_slot_to_server,
     send_drop_item_to_server,
     send_equip_bag_to_server,
+    send_equip_item_to_server,
     send_swap_inv_slots_to_server,
     send_unequip_bag_to_server,
+    send_unequip_item_to_server,
 };
 use super::status::GameNetRuntime;
 
@@ -48,6 +51,15 @@ pub fn send_inventory_item_actions_to_server(
                     );
                 }
             }
+            InventoryItemAction::Equip => {
+                let sent = send_equip_item_to_server(&game_net, request.slot_idx);
+                if !sent {
+                    warn!(
+                        "equip item action dropped; websocket is not ready slot_idx={} item_id={}",
+                        request.slot_idx, request.item_id
+                    );
+                }
+            }
             InventoryItemAction::MoveToSlot { to_slot } => {
                 let sent = send_swap_inv_slots_to_server(&game_net, request.slot_idx, to_slot);
                 if !sent {
@@ -57,6 +69,19 @@ pub fn send_inventory_item_actions_to_server(
                     );
                 }
             }
+        }
+    }
+}
+
+pub fn send_character_equip_actions_to_server(
+    game_net: Res<GameNetRuntime>,
+    mut queue: ResMut<CharacterEquipActionQueue>,
+) {
+    let slots: Vec<String> = queue.unequip_slots.drain(..).collect();
+    for slot in slots {
+        let sent = send_unequip_item_to_server(&game_net, slot.clone());
+        if !sent {
+            warn!("unequip item action dropped; websocket is not ready slot={}", slot);
         }
     }
 }

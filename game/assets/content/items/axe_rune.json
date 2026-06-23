@@ -1,0 +1,22 @@
+{
+  "id": "axe_rune",
+  "name": "Rune Axe",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "axe",
+    "tier": 7,
+    "harvest_level": 79
+  },
+  "tags": ["tool", "axe"]
+}

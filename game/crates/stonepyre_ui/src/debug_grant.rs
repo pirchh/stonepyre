@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
+use stonepyre_engine::plugins::inventory::ItemDb;
 
 use crate::config::UiBindings;
 
@@ -18,12 +18,14 @@ const PANEL_HEIGHT_EST: f32 = 420.0; // generous estimate for blocker check
 const CATEGORIES: &[&str] = &["All", "Bags", "Woodcutting", "Upgrades"];
 
 fn item_category(tags: &[String]) -> &'static str {
-    if tags.iter().any(|t| t == "bag" || t == "bag_general" || t == "bag_typed") {
+    let has = |t: &str| tags.iter().any(|tag| tag == t);
+    if has("bag") || has("bag_general") || has("bag_typed") {
         "Bags"
-    } else if tags.iter().any(|t| t == "log") {
-        "Woodcutting"
-    } else if tags.iter().any(|t| t == "bag_upgrade") {
+    } else if has("bag_upgrade") {
         "Upgrades"
+    } else if has("log") || has("axe") {
+        // Logs and axes both live under Woodcutting
+        "Woodcutting"
     } else {
         "Other"
     }
@@ -120,6 +122,7 @@ pub fn debug_grant_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     is_admin: Res<IsAdminAccount>,
+    item_db: Res<ItemDb>,
     mut state: ResMut<DebugGrantUiState>,
     mut action_queue: ResMut<DebugGrantActionQueue>,
     mut blocker: ResMut<WorldInteractionBlocker>,
@@ -153,7 +156,7 @@ pub fn debug_grant_panel_sync_system(
 
     if state.root.is_none() || state.needs_rebuild {
         despawn_all(&mut commands, &mut state);
-        spawn_panel(&mut commands, &asset_server, &mut state);
+        spawn_panel(&mut commands, &asset_server, &item_db, &mut state);
         state.needs_rebuild = false;
         return;
     }
@@ -199,8 +202,7 @@ pub fn debug_grant_panel_sync_system(
     for interaction in confirm_q.iter_mut() {
         if *interaction == Interaction::Pressed {
             if let Some(ref item_id) = state.selected_item.clone() {
-                let defs = default_item_defs();
-                let display = defs
+                let display = item_db
                     .get(item_id)
                     .map(|d| d.name.as_str())
                     .unwrap_or(item_id.as_str())
@@ -232,14 +234,13 @@ pub fn debug_grant_panel_sync_system(
 fn spawn_panel(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
+    item_db: &Res<ItemDb>,
     state: &mut ResMut<DebugGrantUiState>,
 ) {
     let font = asset_server.load("fonts/ui.ttf");
 
-    // Build filtered + sorted item list.
-    let defs = default_item_defs();
-    let mut items: Vec<(String, String)> = defs
-        .items
+    // Build filtered + sorted item list from the live ItemDb (includes file-loaded items).
+    let mut items: Vec<(String, String)> = item_db.0.items
         .iter()
         .filter(|(_, def)| {
             state.selected_category == "All"
@@ -278,7 +279,9 @@ fn spawn_panel(
             Node {
                 width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
                 column_gap: Val::Px(4.0),
+                row_gap: Val::Px(4.0),
                 ..default()
             },
         ))
@@ -375,7 +378,7 @@ fn spawn_panel(
 
     // Selected item display
     let sel_text = if let Some(ref id) = state.selected_item {
-        let name = defs.get(id).map(|d| d.name.as_str()).unwrap_or(id.as_str());
+        let name = item_db.get(id).map(|d| d.name.as_str()).unwrap_or(id.as_str());
         format!("Selected: {}", name)
     } else {
         "Selected: —".to_string()

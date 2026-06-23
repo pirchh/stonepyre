@@ -11,6 +11,7 @@
   "charges": 6,
   "respawn_seconds": 64.0,
   "loot_table": "woodcutting_ironwood_tree",
+  "required_tool": "axe",
   "blocks_movement": true,
   "models": {
     "available": "ironwood_tree.glb",

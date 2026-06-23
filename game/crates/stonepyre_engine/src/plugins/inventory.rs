@@ -68,6 +68,7 @@ pub struct Equipment {
     pub ring1: Option<ItemId>,
     pub ring2: Option<ItemId>,
     pub back: Option<ItemId>,
+    pub main_hand: Option<ItemId>,
 }
 
 impl Equipment {
@@ -85,6 +86,7 @@ impl Equipment {
             EquipSlot::Ring1 => self.ring1 = item,
             EquipSlot::Ring2 => self.ring2 = item,
             EquipSlot::Back => self.back = item,
+            EquipSlot::MainHand => self.main_hand = item,
         }
     }
 
@@ -102,6 +104,7 @@ impl Equipment {
             EquipSlot::Ring1 => self.ring1.as_ref(),
             EquipSlot::Ring2 => self.ring2.as_ref(),
             EquipSlot::Back => self.back.as_ref(),
+            EquipSlot::MainHand => self.main_hand.as_ref(),
         }
     }
 }
@@ -179,20 +182,20 @@ impl ToolKind {
 
     pub fn from_id(id: &str) -> Option<Self> {
         Some(match id {
-            "Axe" => ToolKind::Axe,
-            "Pickaxe" => ToolKind::Pickaxe,
-            "Rod" => ToolKind::Rod,
-            "Knife" => ToolKind::Knife,
-            "Hammer" => ToolKind::Hammer,
-            "Chisel" => ToolKind::Chisel,
-            "Needle" => ToolKind::Needle,
-            "Saw" => ToolKind::Saw,
-            "Tongs" => ToolKind::Tongs,
-            "Mortar" => ToolKind::Mortar,
-            "Brush" => ToolKind::Brush,
-            "Sickle" => ToolKind::Sickle,
-            "Pan" => ToolKind::Pan,
-            "Lantern" => ToolKind::Lantern,
+            "Axe" | "axe" => ToolKind::Axe,
+            "Pickaxe" | "pickaxe" => ToolKind::Pickaxe,
+            "Rod" | "rod" | "fishing_rod" => ToolKind::Rod,
+            "Knife" | "knife" => ToolKind::Knife,
+            "Hammer" | "hammer" => ToolKind::Hammer,
+            "Chisel" | "chisel" => ToolKind::Chisel,
+            "Needle" | "needle" => ToolKind::Needle,
+            "Saw" | "saw" => ToolKind::Saw,
+            "Tongs" | "tongs" => ToolKind::Tongs,
+            "Mortar" | "mortar" => ToolKind::Mortar,
+            "Brush" | "brush" => ToolKind::Brush,
+            "Sickle" | "sickle" => ToolKind::Sickle,
+            "Pan" | "pan" => ToolKind::Pan,
+            "Lantern" | "lantern" => ToolKind::Lantern,
             _ => return None,
         })
     }

@@ -40,7 +40,8 @@ fn main() {
             (
                 enable_game_ui_on_enter_world,
                 boot::game_net::spawn_game_net_overlay,
-                boot::game_net::spawn_xp_feedback_layer,
+                boot::game_net::spawn_feedback_layer,
+                boot::game_net::spawn_minimap,
                 boot::game_net::spawn_proximity_prompt,
                 start_world_on_enter,
             ),
@@ -55,9 +56,9 @@ fn main() {
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::send_inventory_item_actions_to_server,
                 boot::game_net::send_bag_item_actions_to_server,
-                boot::game_net::update_xp_feedback_layer
+                boot::game_net::update_feedback_drops
                     .after(boot::game_net::pump_game_net_results),
-                boot::game_net::tick_xp_feedback_toasts,
+                boot::game_net::tick_feedback_drops,
                 boot::game_net::sync_harvest_node_visuals_from_server
                     .after(boot::game_net::pump_game_net_results),
                 boot::game_net::sync_ground_item_visuals_from_server
@@ -95,6 +96,12 @@ fn main() {
                 boot::game_net::send_bank_item_actions_to_server,
                 boot::game_net::process_pending_bank_open
                     .after(boot::game_net::pump_game_net_results),
+                boot::game_net::sync_equipment_from_server
+                    .after(boot::game_net::pump_game_net_results),
+                boot::game_net::send_character_equip_actions_to_server,
+                boot::game_net::update_harvest_ready_gate,
+                boot::game_net::update_minimap
+                    .after(boot::game_net::pump_game_net_results),
             )
                 .run_if(in_state(Screen::InWorld)),
         )
@@ -103,7 +110,8 @@ fn main() {
             (
                 disable_game_ui_on_exit_world,
                 boot::game_net::despawn_game_net_overlay,
-                boot::game_net::despawn_xp_feedback_layer,
+                boot::game_net::despawn_feedback_layer,
+                boot::game_net::despawn_minimap,
                 boot::game_net::despawn_proximity_prompt,
                 boot::game_net::despawn_remote_players,
             ),

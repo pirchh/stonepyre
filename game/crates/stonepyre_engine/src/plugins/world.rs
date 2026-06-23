@@ -137,7 +137,7 @@ impl InteractableKind {
         match self {
             InteractableKind::BankBooth          => "Press E to use Bank",
             InteractableKind::Npc                => "Press E to Talk",
-            InteractableKind::Tree               => "Press E to Chop",
+            InteractableKind::Tree               => "Press Space to Chop",
             InteractableKind::GroundItem { .. }  => "Press E to Take",
         }
     }

@@ -128,11 +128,20 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             game.hub.broadcast(msg);
                         }
                         game::sim::GameSimEvent::HarvestCapacityCheck(check) => {
-                            let loot_preview = {
+                            let (loot_preview, requirements) = {
                                 let sim = game.sim.read().await;
                                 match check.target.clone() {
                                     crate::game::protocol::InteractionTarget::Tile(tile) => {
-                                        sim.world.harvest_loot_preview_at(tile)
+                                        let loot = sim.world.harvest_loot_preview_at(tile);
+                                        let reqs = sim.world.harvest_node_def_at(tile).map(|d| {
+                                            (
+                                                d.required_level,
+                                                d.skill.id(),
+                                                d.skill.display_name(),
+                                                d.skill.required_tool_kind(),
+                                            )
+                                        });
+                                        (loot, reqs)
                                     }
                                 }
                             };
@@ -152,6 +161,56 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
                                 continue;
                             };
+
+                            // Server-authoritative harvest lock: require the skill
+                            // level AND an equipped tool whose tier covers the node.
+                            if let Some((req_level, skill_id, skill_display, tool_kind)) = requirements {
+                                let reject_message = match game::sim::equipment::check_harvest_gate(
+                                    &db,
+                                    check.character_id,
+                                    req_level,
+                                    skill_id,
+                                    skill_display,
+                                    tool_kind,
+                                )
+                                .await
+                                {
+                                    Ok(game::sim::equipment::HarvestGate::Ok) => None,
+                                    Ok(game::sim::equipment::HarvestGate::LevelTooLow {
+                                        required,
+                                        skill_display,
+                                    }) => Some(format!(
+                                        "You need level {required} {skill_display} to harvest this."
+                                    )),
+                                    Ok(game::sim::equipment::HarvestGate::ToolMissing {
+                                        required_tool_name,
+                                    }) => {
+                                        Some(format!("You need a {required_tool_name} or better equipped."))
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "harvest gate check failed character_id={} error={:?}",
+                                            check.character_id, e
+                                        );
+                                        Some("failed to check harvest requirements".to_string())
+                                    }
+                                };
+
+                                if let Some(message) = reject_message {
+                                    if let Some(msg) = {
+                                        let mut sim = game.sim.write().await;
+                                        sim.reject_harvest_capacity_check(
+                                            check.player_id,
+                                            check.target.clone(),
+                                            message.clone(),
+                                        )
+                                    } {
+                                        game.hub.broadcast(msg);
+                                    }
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                    continue;
+                                }
+                            }
 
                             match game::sim::inventory::can_character_inventory_accept_item(
                                 &db,
@@ -326,6 +385,15 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     game.hub.broadcast(crate::game::protocol::ServerMsg::Error {
                                         message: "Inventory full".to_string(),
                                     });
+
+                                    // Stop the server-driven harvest loop — otherwise it
+                                    // would keep rolling and failing every swing.
+                                    if let Some(msg) = {
+                                        let mut sim = game.sim.write().await;
+                                        sim.cancel_player_action(grant.player_id, "Inventory full")
+                                    } {
+                                        game.hub.broadcast(msg);
+                                    }
                                 }
                                 Err(game::sim::inventory::InventoryGrantError::Db(e)) => {
                                     warn!(

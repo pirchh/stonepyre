@@ -11,6 +11,7 @@
   "charges": 6,
   "respawn_seconds": 58.0,
   "loot_table": "woodcutting_ebony_tree",
+  "required_tool": "axe",
   "blocks_movement": true,
   "models": {
     "available": "ebony_tree.glb",

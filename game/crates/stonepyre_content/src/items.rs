@@ -61,6 +61,9 @@ pub enum EquipSlot {
 
     /// Back slot: cape/backpack/etc (mutually exclusive).
     Back,
+
+    /// Weapon/tool hand — axe, pickaxe, fishing rod, sword, etc.
+    MainHand,
 }
 
 /// Optional equipment behavior definition.
@@ -106,6 +109,20 @@ pub struct ContainerDef {
     pub item_type_filter: Option<String>,
 }
 
+/// Defines a tool's harvesting capability (axe, pickaxe, …).
+///
+/// `kind` matches a `HarvestNodeDef.required_tool` / `ToolKind` id (e.g. "axe").
+/// `harvest_level` is the maximum harvest-node `required_level` this tool can
+/// work: a node with `required_level` ≤ the equipped tool's `harvest_level` is
+/// tool-eligible (the player's own skill level is gated separately). `tier` is a
+/// display/ordering ordinal (flint = 0, copper = 1, …).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolDef {
+    pub kind: String,
+    pub tier: u32,
+    pub harvest_level: u32,
+}
+
 /// Core item definition (content-only).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ItemDef {
@@ -128,6 +145,10 @@ pub struct ItemDef {
     /// If this item is a bag that can be equipped into a character bag slot.
     #[serde(default)]
     pub bag: Option<BagDef>,
+
+    /// If this item is a harvesting tool (axe, pickaxe, …), its capability.
+    #[serde(default)]
+    pub tool: Option<ToolDef>,
 
     /// Generic tags for later (tool tags, skill reqs, etc.)
     pub tags: Vec<String>,

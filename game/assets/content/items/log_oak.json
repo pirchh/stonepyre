@@ -1,6 +1,7 @@
 {
   "id": "log_oak",
   "name": "Oak Log",
+  "inventory_icon": "inventory/items/log_oak.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,

@@ -226,6 +226,26 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                                 });
                             }
                         }
+
+                        match crate::game::sim::equipment::load_character_equipment(
+                            &state.db,
+                            requested_character_id,
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => {
+                                let _ = out_tx.send(ServerMsg::EquipmentSnapshot(snapshot));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "game ws equipment snapshot failed account_id={} character_id={} error={:?}",
+                                    ctx.account_id, requested_character_id, e
+                                );
+                                let _ = out_tx.send(ServerMsg::Error {
+                                    message: "failed to load equipment".to_string(),
+                                });
+                            }
+                        }
                     }
                     ClientMsg::MoveDir { dx, dy } => {
                         if let Some(pid) = player_id {
@@ -237,8 +257,13 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             } else {
                                 [0.0, 0.0]
                             };
-                            let mut sim = state.game.sim.write().await;
-                            sim.set_move_dir(pid, dir);
+                            let cancelled = {
+                                let mut sim = state.game.sim.write().await;
+                                sim.set_move_dir(pid, dir)
+                            };
+                            if let Some(event) = cancelled {
+                                let _ = out_tx.send(event);
+                            }
                         }
                     }
                     ClientMsg::MoveTo { tile } => {
@@ -332,6 +357,24 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
                         handle_unequip_bag(&state, cid, bag_slot, &out_tx).await;
+                    }
+                    ClientMsg::EquipItem { inventory_slot_idx } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before equipping items".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_equip_item(&state, cid, inventory_slot_idx, &out_tx).await;
+                    }
+                    ClientMsg::UnequipItem { slot } => {
+                        let Some(cid) = character_id else {
+                            let _ = out_tx.send(ServerMsg::Error {
+                                message: "join the world before unequipping items".to_string(),
+                            });
+                            continue;
+                        };
+                        handle_unequip_item(&state, cid, &slot, &out_tx).await;
                     }
                     ClientMsg::BagPutItem { bag_slot, inventory_slot_idx } => {
                         let Some(cid) = character_id else {
@@ -859,6 +902,54 @@ async fn handle_unequip_bag(
             warn!("unequip bag failed character_id={} bag_slot={} error={}", character_id, bag_slot, message);
             let _ = out_tx.send(ServerMsg::Error { message });
         }
+    }
+}
+
+async fn handle_equip_item(
+    state: &AppState,
+    character_id: Uuid,
+    inventory_slot_idx: usize,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::equipment::equip_item(&state.db, character_id, inventory_slot_idx).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::EquipmentSnapshot(snapshot));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = equip_error_message(e);
+            warn!("equip item failed character_id={} slot_idx={} error={}", character_id, inventory_slot_idx, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+async fn handle_unequip_item(
+    state: &AppState,
+    character_id: Uuid,
+    slot: &str,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    match crate::game::sim::equipment::unequip_item(&state.db, character_id, slot).await {
+        Ok(snapshot) => {
+            let _ = out_tx.send(ServerMsg::EquipmentSnapshot(snapshot));
+            send_inventory_snapshot(state, character_id, out_tx).await;
+        }
+        Err(e) => {
+            let message = equip_error_message(e);
+            warn!("unequip item failed character_id={} slot={} error={}", character_id, slot, message);
+            let _ = out_tx.send(ServerMsg::Error { message });
+        }
+    }
+}
+
+fn equip_error_message(e: crate::game::sim::equipment::EquipError) -> String {
+    use crate::game::sim::equipment::EquipError;
+    match e {
+        EquipError::SlotEmpty { .. } => "that inventory slot is empty".to_string(),
+        EquipError::NotEquippable { .. } => "that item can't be equipped".to_string(),
+        EquipError::InventoryFull => "your inventory is full".to_string(),
+        EquipError::Db(_) => "failed to update equipment".to_string(),
     }
 }
 

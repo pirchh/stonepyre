@@ -1,4 +1,5 @@
 pub mod bank;
+pub mod equipment;
 pub mod harvest;
 pub mod inventory;
 pub mod skills;
@@ -22,7 +23,16 @@ use uuid::Uuid;
 
 const MAX_BFS_ITERS: usize = 50_000;
 const REPATH_COOLDOWN_TICKS: u64 = 3;
-const HARVEST_ROLL_SECS: f32 = 1.25;
+/// Seconds between harvest rolls while a ChopDown action is Active. This is the
+/// server-authoritative swing cadence: a grant is emitted once per interval and
+/// the action stays Active (server-driven loop) until the node depletes, the
+/// player moves out of range, or the inventory fills.
+///
+/// Kept in sync with the client `woodcutting` animation clip length (~2.3s) so
+/// each grant lands at the same point in the swing. If the clip length changes,
+/// update this (or, to fully decouple, send this duration to the client and let
+/// it scale the clip).
+const HARVEST_ROLL_SECS: f32 = 2.3;
 
 #[derive(Clone, Debug)]
 pub enum GameSimEvent {
@@ -91,19 +101,34 @@ impl GameSim {
 
     /// Update the player's movement direction from WASD input.
     /// `dir` should be a normalised Vec2 [dx, dz] or [0, 0] to stop.
-    /// Any non-zero dir cancels harvest walk-to-range (player chose to move manually).
-    pub fn set_move_dir(&mut self, player_id: Uuid, dir: [f32; 2]) {
-        let Some(p) = self.world.players.get_mut(&player_id) else {
-            return;
-        };
+    ///
+    /// Any non-zero dir is manual movement, which cancels both a harvest
+    /// walk-to-range AND an in-progress harvest action (RuneScape-style: moving
+    /// interrupts your action immediately rather than waiting for the next roll's
+    /// range check). Returns the `Cancelled` ActionState to broadcast, if an
+    /// action was interrupted.
+    pub fn set_move_dir(&mut self, player_id: Uuid, dir: [f32; 2]) -> Option<ServerMsg> {
+        let p = self.world.players.get_mut(&player_id)?;
         p.move_dir = dir;
 
-        // Manual movement cancels any pending harvest path.
-        if dir[0] != 0.0 || dir[1] != 0.0 {
-            p.goal = None;
-            p.path.clear();
-            p.move_progress_tiles = 0.0;
+        if dir[0] == 0.0 && dir[1] == 0.0 {
+            return None;
         }
+
+        // Manual movement cancels any pending harvest walk-to-range.
+        p.goal = None;
+        p.path.clear();
+        p.move_progress_tiles = 0.0;
+
+        // ...and interrupts an in-progress harvest action.
+        let action = p.action.take()?;
+        Some(ServerMsg::ActionState {
+            player_id,
+            action: action.action,
+            target: action.target,
+            state: ActionState::Cancelled,
+            message: "movement cancelled action".to_string(),
+        })
     }
 
     pub fn remove_player(&mut self, player_id: Uuid) {
@@ -507,6 +532,14 @@ impl GameSim {
         })
     }
 
+    /// Stop a player's in-progress (server-driven) harvest loop and broadcast a
+    /// terminal Cancelled state. Used when an async grant fails after the swing
+    /// already rolled — e.g. the inventory filled mid-loop. Returns `None` if the
+    /// player has no active action (already stopped).
+    pub fn cancel_player_action(&mut self, player_id: Uuid, message: &str) -> Option<ServerMsg> {
+        self.clear_action(player_id, ActionState::Cancelled, message)
+    }
+
     fn tick_active_harvest_actions(&mut self, events: &mut Vec<GameSimEvent>) {
         let ready_players: Vec<Uuid> = self
             .world
@@ -615,13 +648,14 @@ impl GameSim {
                             )).into());
                         }
                     } else if let Some(p) = self.world.players.get_mut(&player_id) {
-                        // Reset to Queued so the capacity check re-runs before the next roll.
-                        // This matches OSRS behaviour: if inventory fills up mid-session the
-                        // player stops swinging until there is room again.
+                        // Server-driven loop: re-arm the next swing and stay Active.
+                        // The server owns the cadence, so the client keeps the swing
+                        // animation looping with no per-swing network round-trip. The
+                        // loop ends only on depletion (above), out-of-range (here), an
+                        // inventory-full grant failure (cancelled from main.rs), or a
+                        // movement cancel. No Complete is emitted between swings.
                         if let Some(action) = p.action.as_mut() {
-                            action.state = ActionState::Queued;
-                            action.next_harvest_tick = None;
-                            action.pending_harvest_capacity_check = false;
+                            action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
                         }
                     }
                 }

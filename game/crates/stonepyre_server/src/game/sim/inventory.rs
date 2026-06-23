@@ -6,7 +6,7 @@ use crate::game::protocol::{
     InventorySnapshot,
 };
 
-const BASE_INVENTORY_SLOTS: i64 = 20;
+pub(crate) const BASE_INVENTORY_SLOTS: i64 = 20;
 
 /// Server-owned inventory grant produced by the live game simulation.
 ///
@@ -380,7 +380,7 @@ pub async fn load_character_inventory_snapshot(
 ///
 /// Returns the container_id uuid. Safe to call repeatedly — uses INSERT ... ON
 /// CONFLICT so concurrent callers converge on the same row.
-async fn ensure_base_inventory_container(
+pub(crate) async fn ensure_base_inventory_container(
     tx: &mut Transaction<'_, Postgres>,
     character_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
@@ -405,7 +405,7 @@ async fn ensure_base_inventory_container(
     .await
 }
 
-async fn lock_character_inventory(
+pub(crate) async fn lock_character_inventory(
     tx: &mut Transaction<'_, Postgres>,
     character_id: Uuid,
 ) -> Result<(), sqlx::Error> {

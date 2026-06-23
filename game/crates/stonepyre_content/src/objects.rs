@@ -63,6 +63,12 @@ pub struct HarvestNodeDef {
     /// Loot table id resolved through `HarvestDefs::loot_tables`.
     pub loot_table: String,
 
+    /// Tool tag required in the player's MainHand slot to interact.
+    /// Example: "axe" for trees, "pickaxe" for rocks, "fishing_rod" for fish.
+    /// None means no tool is required.
+    #[serde(default)]
+    pub required_tool: Option<String>,
+
     /// Whether this node blocks player movement.
     #[serde(default = "default_true")]
     pub blocks_movement: bool,
@@ -90,6 +96,8 @@ pub struct HarvestNodeManifest {
     pub charges: i32,
     pub respawn_seconds: f32,
     pub loot_table: String,
+    #[serde(default)]
+    pub required_tool: Option<String>,
     #[serde(default = "default_true")]
     pub blocks_movement: bool,
     pub models: HarvestNodeModels,
@@ -122,6 +130,7 @@ impl HarvestNodeManifest {
             charges: self.charges,
             respawn_seconds: self.respawn_seconds,
             loot_table: self.loot_table,
+            required_tool: self.required_tool,
             blocks_movement: self.blocks_movement,
             available_model: format!("{}/{}", prefix, self.models.available),
             depleted_model:  format!("{}/{}", prefix, self.models.depleted),
