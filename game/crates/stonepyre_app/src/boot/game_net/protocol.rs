@@ -8,6 +8,8 @@ pub(super) use stonepyre_protocol::{
     BankSnapshot,
     BankTabSnapshot,
     ClientMsg,
+    EquipmentSlotSnapshot,
+    EquipmentSnapshot,
     GroundItemEvent,
     GroundItemEventKind,
     GroundItemSnapshot,

@@ -15,6 +15,8 @@ use super::protocol::{
     BankItemSnapshot,
     BankSnapshot,
     BankTabSnapshot,
+    EquipmentSlotSnapshot,
+    EquipmentSnapshot,
     GroundItemEvent,
     GroundItemSnapshot,
     GroundItemsSnapshot,
@@ -31,7 +33,6 @@ use super::protocol::{
     SkillDelta,
     SkillSnapshot,
     SkillSnapshotEntry,
-    SkillXpSource,
 };
 
 #[derive(Debug)]
@@ -80,6 +81,7 @@ pub enum GameNetEvent {
     SkillDelta(SkillDelta),
     BagSlotsSnapshot(BagSlotsSnapshot),
     BagSlotChanged(BagSlotChanged),
+    EquipmentSnapshot(EquipmentSnapshot),
     BankSnapshot(BankSnapshot),
     BankTabChanged(BankTabSnapshot),
     /// Server's authoritative path in response to a MoveTo. The reconciler
@@ -115,6 +117,12 @@ pub enum GameNetCommand {
     },
     UnequipBag {
         bag_slot: u8,
+    },
+    EquipItem {
+        inventory_slot_idx: usize,
+    },
+    UnequipItem {
+        slot: String,
     },
     BagPutItem {
         bag_slot: u8,
@@ -164,14 +172,16 @@ pub enum GameNetCommand {
     BankCreateTab { display_name: String },
 }
 
+/// One entry in the right-side feedback drop stack (XP gains, item gains, and
+/// short status messages such as harvest-gate rejections).
 #[derive(Debug, Clone)]
-pub struct SkillXpFeedbackEntry {
-    pub skill_id: String,
-    pub display_name: String,
-    pub xp_delta: i64,
-    pub new_xp: i64,
-    pub new_level: u32,
-    pub source: Option<SkillXpSource>,
+pub enum FeedbackDrop {
+    /// "+{amount} {skill_display} XP"
+    Xp { skill_display: String, amount: i64 },
+    /// "[icon] +{quantity} {item name}" — icon/name resolved from ItemDb.
+    Item { item_id: String, quantity: u32 },
+    /// Plain status text, e.g. "Need a Copper Axe".
+    Message { text: String },
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -196,14 +206,29 @@ pub struct GameNetStatus {
     /// Fractional progress (0.0–1.0) the server has made toward `server_next_tile`.
     pub server_move_progress: f32,
     pub server_action: Option<PlayerActionSnapshot>,
+    /// True while a ChopDown action is live on the server: set on the first
+    /// Queued/MovingToRange/Active event and cleared on the terminal state
+    /// (Complete/Cancelled/Rejected). Because the loop is server-driven, the
+    /// server keeps the action Active across every swing and only sends a
+    /// terminal state when the whole session ends — so the falling edge of this
+    /// flag is the single "stop animating" signal on the client.
+    ///
+    /// Driven by ActionState events only — NOT by 10Hz Snapshots — so it is
+    /// immune to the race where a Snapshot arrives with server_action=None
+    /// before the terminal ActionState is delivered.
+    pub action_event_in_flight: bool,
     pub inventory_slots_total: usize,
     pub inventory_items: Vec<InventoryItemSnapshot>,
     pub inventory_dirty: bool,
     pub bag_slots: Vec<BagSlotSnapshot>,
     pub bag_slots_dirty: bool,
+    /// Worn equipment slots (main-hand, …). Applied to the player's Equipment
+    /// component by sync_equipment_from_server when dirty.
+    pub equipment: Vec<EquipmentSlotSnapshot>,
+    pub equipment_dirty: bool,
     pub skill_entries: Vec<SkillSnapshotEntry>,
     pub skills_dirty: bool,
-    pub xp_feedback_queue: Vec<SkillXpFeedbackEntry>,
+    pub feedback_drops: Vec<FeedbackDrop>,
     /// Bank tabs (physical tabs 1–11). Empty until first UseBank interaction.
     pub bank_tabs: Vec<BankTabSnapshot>,
     pub bank_dirty: bool,
@@ -253,14 +278,17 @@ impl Default for GameNetStatus {
             server_moving: false,
             server_move_progress: 0.0,
             server_action: None,
+            action_event_in_flight: false,
             inventory_slots_total: 20,
             inventory_items: Vec::new(),
             inventory_dirty: false,
             bag_slots: Vec::new(),
             bag_slots_dirty: false,
+            equipment: Vec::new(),
+            equipment_dirty: false,
             skill_entries: Vec::new(),
             skills_dirty: false,
-            xp_feedback_queue: Vec::new(),
+            feedback_drops: Vec::new(),
             bank_tabs: Vec::new(),
             bank_dirty: false,
             bank_open: false,

@@ -3,7 +3,9 @@ use bevy::animation::graph::AnimationNodeIndex;
 use bevy::gltf::Gltf;
 use std::time::Duration;
 
+use crate::plugins::interaction::AutoChopActive;
 use crate::plugins::movement::IsWalking;
+use crate::plugins::skills::{AnimClip, RequestedAnim};
 use crate::plugins::world::{Facing, LogicalPos2d, Player};
 
 // ---------------------------------------------------------------------------
@@ -34,7 +36,13 @@ impl Default for HumanoidAnim3d {
 pub enum AnimClip3d {
     Idle,
     Walk,
+    Woodcutting,
 }
+
+/// Inserted alongside `RequestedAnim` on the first frame the clip starts playing.
+/// Prevents `consume_requested_anim` from restarting the clip every frame.
+#[derive(Component)]
+pub struct RequestedAnimStarted;
 
 /// Cached reference to the child entity that owns `AnimationPlayer`.
 /// Inserted once the scene hierarchy is fully spawned.
@@ -58,6 +66,9 @@ pub struct PlayerAnimGraph {
     pub graph: Handle<AnimationGraph>,
     pub idle: Option<AnimationNodeIndex>,
     pub walk: Option<AnimationNodeIndex>,
+    pub woodcutting: Option<AnimationNodeIndex>,
+    /// Raw handle so callers can look up the woodcutting clip duration.
+    pub woodcutting_clip: Option<Handle<AnimationClip>>,
     /// Duration of the walk clip in seconds — used to maintain a continuous
     /// walk phase so re-entering walk state doesn't restart from frame 0.
     pub walk_duration: f32,
@@ -105,16 +116,31 @@ pub fn setup_player_anim_graph(
         .as_ref()
         .map(|h| graph.add_clip(h.clone(), 1.0, graph.root));
 
+    let woodcutting_clip = gltf.named_animations.get("woodcutting").cloned();
+    let woodcutting_node = woodcutting_clip
+        .as_ref()
+        .map(|h| graph.add_clip(h.clone(), 1.0, graph.root));
+
+    info!(
+        "player.glb animations found: {:?} | idle={} walk={} woodcutting={}",
+        gltf.named_animations.keys().collect::<Vec<_>>(),
+        idle_node.is_some(), walk_node.is_some(), woodcutting_node.is_some(),
+    );
     if idle_node.is_none() {
         warn!("player.glb: no animation named 'idle' found");
     }
     if walk_node.is_none() {
         warn!("player.glb: no animation named 'walk' found");
     }
+    if woodcutting_node.is_none() {
+        warn!("player.glb: no animation named 'woodcutting' found — axe swing will be skipped");
+    }
 
     anim_graph_res.graph = animation_graphs.add(graph);
     anim_graph_res.idle = idle_node;
     anim_graph_res.walk = walk_node;
+    anim_graph_res.woodcutting = woodcutting_node;
+    anim_graph_res.woodcutting_clip = woodcutting_clip;
     anim_graph_res.walk_clip = walk_clip;
 }
 
@@ -180,6 +206,7 @@ pub fn animate_humanoid(
             &mut Transform,
             Option<&ForceIdleOnce>,
             &LogicalPos2d,
+            Option<&RequestedAnim>,
         ),
         With<Player>,
     >,
@@ -191,7 +218,7 @@ pub fn animate_humanoid(
         return;
     };
 
-    let Ok((facing, is_walking, anim_link, mut anim, mut xform, force_idle, logical)) =
+    let Ok((facing, is_walking, anim_link, mut anim, mut xform, force_idle, logical, req_anim)) =
         player_q.single_mut()
     else {
         return;
@@ -219,7 +246,40 @@ pub fn animate_humanoid(
 
     // -------------------------------------------------------------------
     // Choose clip — driven directly by WASD input via IsWalking
+    // Skip if consume_requested_anim owns the animation player right now.
     // -------------------------------------------------------------------
+    if req_anim.is_some() {
+        if is_walking.0 {
+            // Player moved away — immediately cancel woodcutting and auto-chop.
+            if let Ok(ent) = player_entity_q.single() {
+                commands.entity(ent).remove::<RequestedAnim>();
+                commands.entity(ent).remove::<RequestedAnimStarted>();
+                commands.entity(ent).remove::<AutoChopActive>();
+            }
+            // Fall through so the walk animation starts this frame.
+        } else {
+            // Still chopping — update facing toward the target and hold.
+            if anim.last_facing != Some(*facing) {
+                use std::f32::consts::PI;
+                let angle = match *facing {
+                    Facing::South     =>  0.0,
+                    Facing::SouthEast =>  PI / 4.0,
+                    Facing::East      =>  PI / 2.0,
+                    Facing::NorthEast =>  3.0 * PI / 4.0,
+                    Facing::North     =>  PI,
+                    Facing::NorthWest => -3.0 * PI / 4.0,
+                    Facing::West      => -PI / 2.0,
+                    Facing::SouthWest => -PI / 4.0,
+                };
+                anim.target_rotation = Quat::from_rotation_y(angle);
+                anim.last_facing = Some(*facing);
+            }
+            let t = (time.delta_secs() * 15.0).min(1.0);
+            xform.rotation = xform.rotation.slerp(anim.target_rotation, t);
+            return;
+        }
+    }
+
     let target_clip = if is_walking.0 {
         AnimClip3d::Walk
     } else {
@@ -291,6 +351,70 @@ pub fn animate_humanoid(
     // Quat::slerp always takes the short arc, so ±PI wrapping is handled.
     let t = (time.delta_secs() * 15.0).min(1.0);
     xform.rotation = xform.rotation.slerp(anim.target_rotation, t);
+}
+
+/// Drives `RequestedAnim` one-shots (e.g. woodcutting swing).
+///
+/// On the first frame: starts the clip (no repeat — plays once).
+/// Every frame: ticks the timer.
+/// When the timer expires: transitions back to idle and removes `RequestedAnim`.
+///
+/// Must run BEFORE `animate_humanoid` so that when the one-shot finishes,
+/// `animate_humanoid` immediately resumes idle/walk in the same frame.
+pub fn consume_requested_anim(
+    time:           Res<Time>,
+    anim_graph_res: Res<PlayerAnimGraph>,
+    mut player_q:   Query<
+        (Entity, &mut RequestedAnim, &AnimPlayerLink, &mut HumanoidAnim3d, Has<RequestedAnimStarted>),
+        With<Player>,
+    >,
+    mut anim_player_q: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+    mut commands:   Commands,
+) {
+    let Ok((player_ent, mut req, anim_link, mut anim, already_started)) = player_q.single_mut()
+    else {
+        return;
+    };
+    let Ok((mut ap, mut transitions)) = anim_player_q.get_mut(anim_link.0) else { return };
+
+    // First frame: start the clip.
+    if !already_started {
+        let node = match req.clip {
+            AnimClip::Woodcutting => anim_graph_res.woodcutting,
+        };
+
+        let mode_name = if req.mode.is_one_shot() { "OneShot" } else { "Loop" };
+        info!(
+            "consume_requested_anim: starting clip={:?} node_found={} mode={}",
+            req.clip, node.is_some(), mode_name,
+        );
+
+        if let Some(n) = node {
+            let active = transitions.play(&mut ap, n, Duration::ZERO);
+            match &req.mode {
+                crate::plugins::skills::RequestedAnimMode::Loop { .. } => { active.repeat(); }
+                crate::plugins::skills::RequestedAnimMode::OneShot { .. } => { /* plays once */ }
+            }
+            anim.current = Some(AnimClip3d::Woodcutting);
+        }
+        commands.entity(player_ent).insert(RequestedAnimStarted);
+    }
+
+    // Loop mode: Bevy's native .repeat() handles looping.
+    // RequestedAnim is removed externally when the action ends — no timer check needed.
+    if req.mode.is_one_shot() {
+        req.mode.tick(time.delta());
+
+        if req.mode.just_finished() {
+            info!("consume_requested_anim: OneShot timer fired, returning to idle");
+            if let Some(idle) = anim_graph_res.idle {
+                transitions.play(&mut ap, idle, Duration::ZERO).repeat();
+                anim.current = Some(AnimClip3d::Idle);
+            }
+            commands.entity(player_ent).remove::<RequestedAnim>();
+            commands.entity(player_ent).remove::<RequestedAnimStarted>();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

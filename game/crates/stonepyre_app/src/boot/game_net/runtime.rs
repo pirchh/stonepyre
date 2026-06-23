@@ -78,7 +78,7 @@ pub fn spawn_game_ws(
     status.bag_slots_dirty = true;
     status.skill_entries.clear();
     status.skills_dirty = true;
-    status.xp_feedback_queue.clear();
+    status.feedback_drops.clear();
     status.local_tile = None;
     status.drift_tiles = None;
     status.last_move_sent = None;
@@ -167,6 +167,18 @@ pub fn send_unequip_bag_to_server(game_net: &GameNetRuntime, bag_slot: u8) -> bo
     let guard = game_net.command_tx.lock().unwrap();
     let Some(tx) = guard.as_ref() else { return false; };
     tx.send(GameNetCommand::UnequipBag { bag_slot }).is_ok()
+}
+
+pub fn send_equip_item_to_server(game_net: &GameNetRuntime, inventory_slot_idx: usize) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::EquipItem { inventory_slot_idx }).is_ok()
+}
+
+pub fn send_unequip_item_to_server(game_net: &GameNetRuntime, slot: String) -> bool {
+    let guard = game_net.command_tx.lock().unwrap();
+    let Some(tx) = guard.as_ref() else { return false; };
+    tx.send(GameNetCommand::UnequipItem { slot }).is_ok()
 }
 
 pub fn send_bag_put_item_to_server(
@@ -383,6 +395,22 @@ fn run_game_ws(
                     socket
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws unequip bag send failed: {e}"))?;
+                }
+                GameNetCommand::EquipItem { inventory_slot_idx } => {
+                    let msg = ClientMsg::EquipItem { inventory_slot_idx };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws equip item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws equip item send failed: {e}"))?;
+                }
+                GameNetCommand::UnequipItem { slot } => {
+                    let msg = ClientMsg::UnequipItem { slot };
+                    let json = serde_json::to_string(&msg)
+                        .map_err(|e| format!("game ws unequip item serialize failed: {e}"))?;
+                    socket
+                        .send(Message::Text(json))
+                        .map_err(|e| format!("game ws unequip item send failed: {e}"))?;
                 }
                 GameNetCommand::BagPutItem { bag_slot, inventory_slot_idx } => {
                     let msg = ClientMsg::BagPutItem { bag_slot, inventory_slot_idx };
@@ -612,6 +640,9 @@ fn run_game_ws(
                     Ok(ServerMsg::BagSlotChanged(changed)) => {
                         let _ = tx.send(GameNetEvent::BagSlotChanged(changed));
                     }
+                    Ok(ServerMsg::EquipmentSnapshot(snapshot)) => {
+                        let _ = tx.send(GameNetEvent::EquipmentSnapshot(snapshot));
+                    }
                     Ok(ServerMsg::BankSnapshot(snapshot)) => {
                         let _ = tx.send(GameNetEvent::BankSnapshot(snapshot));
                     }
@@ -771,11 +802,15 @@ pub fn pump_game_net_results(
                 if status.player_id == Some(player_id) {
                     match state {
                         ActionState::Queued | ActionState::MovingToRange | ActionState::Active => {
+                            status.action_event_in_flight = true;
                             if let InteractionTarget::Tile(tile) = target {
                                 status.action_marker_target = Some(tile);
                             }
                         }
-                        ActionState::Cancelled | ActionState::Complete | ActionState::Rejected => {
+                        // All terminal states mean the same thing to the client now:
+                        // the server-driven harvest loop has ended, so stop animating.
+                        ActionState::Complete | ActionState::Cancelled | ActionState::Rejected => {
+                            status.action_event_in_flight = false;
                             status.server_action = None;
                             status.action_marker_target = None;
                         }
@@ -799,6 +834,15 @@ pub fn pump_game_net_results(
                         result.node_id,
                         result.charges_remaining
                     ),
+                }
+                // Right-side "+N item" drop for a successful harvest that yielded loot.
+                if result.success {
+                    if let Some(item_id) = result.item_id.as_ref() {
+                        status.feedback_drops.push(super::status::FeedbackDrop::Item {
+                            item_id: item_id.clone(),
+                            quantity: result.quantity,
+                        });
+                    }
                 }
             }
             GameNetEvent::HarvestNodeEvent(event) => {
@@ -948,6 +992,17 @@ pub fn pump_game_net_results(
                     status.bag_slots_dirty = true;
                 }
             }
+            GameNetEvent::EquipmentSnapshot(snapshot) => {
+                info!(
+                    "game net equipment snapshot character_id={} slots={}",
+                    snapshot.character_id,
+                    snapshot.slots.len()
+                );
+                if status.character_id == Some(snapshot.character_id) {
+                    status.equipment = snapshot.slots;
+                    status.equipment_dirty = true;
+                }
+            }
             GameNetEvent::BagSlotChanged(changed) => {
                 info!(
                     "game net bag slot changed character_id={} bag_slot={}",
@@ -1001,13 +1056,9 @@ pub fn pump_game_net_results(
                 status.skills_dirty = true;
 
                 if delta.xp_delta > 0 {
-                    status.xp_feedback_queue.push(super::status::SkillXpFeedbackEntry {
-                        skill_id: delta.skill_id,
-                        display_name: delta.display_name,
-                        xp_delta: delta.xp_delta,
-                        new_xp: delta.new_xp,
-                        new_level: delta.new_level,
-                        source: delta.source,
+                    status.feedback_drops.push(super::status::FeedbackDrop::Xp {
+                        skill_display: delta.display_name,
+                        amount: delta.xp_delta,
                     });
                 }
             }
@@ -1071,7 +1122,7 @@ pub fn pump_game_net_results(
                 status.bag_slots_dirty = true;
                 status.skill_entries.clear();
                 status.skills_dirty = true;
-                status.xp_feedback_queue.clear();
+                status.feedback_drops.clear();
                 status.action_marker_target = None;
                 status.remote_player_count = 0;
                 status.pending_server_path = None;

@@ -25,6 +25,14 @@ impl HarvestSkill {
         }
     }
 
+    /// Tool category required to harvest nodes of this skill (matches an
+    /// item's `tool.kind` / `ToolKind` id).
+    pub fn required_tool_kind(self) -> &'static str {
+        match self {
+            HarvestSkill::Woodcutting => "axe",
+        }
+    }
+
     fn from_content_id(id: &str) -> Option<Self> {
         match id {
             "woodcutting" => Some(HarvestSkill::Woodcutting),

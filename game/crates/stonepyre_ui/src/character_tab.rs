@@ -32,6 +32,21 @@ pub(crate) struct CharacterTabSlotLabel {
     slot_id: &'static str,
 }
 
+/// Clickable worn-equipment slot in the character paper-doll. Clicking an
+/// occupied slot unequips the item back into the inventory.
+#[derive(Component)]
+pub(crate) struct CharacterEquipSlotButton {
+    slot_id: &'static str,
+}
+
+/// Unequip requests produced by clicking occupied equipment slots. Drained by
+/// the app, which sends an UnequipItem to the server. Slot ids are the protocol
+/// form (e.g. "main_hand").
+#[derive(Resource, Default)]
+pub struct CharacterEquipActionQueue {
+    pub unequip_slots: Vec<String>,
+}
+
 pub(crate) fn character_tab_panel_sync_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -45,6 +60,8 @@ pub(crate) fn character_tab_panel_sync_system(
     mut slot_label_q: Query<(&CharacterTabSlotLabel, &mut Text)>,
     mut bag_btn_q: Query<(&BagSlotButton, &mut BackgroundColor, &Interaction), With<Button>>,
     interaction_q: Query<(&BagSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    equip_interaction_q: Query<(&CharacterEquipSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    mut equip_action_queue: ResMut<CharacterEquipActionQueue>,
 ) {
     blocker.0 = blocker.0 || (state.open && cursor_over_character_panel(&windows));
 
@@ -65,6 +82,19 @@ pub(crate) fn character_tab_panel_sync_system(
 
     for (label, mut text) in slot_label_q.iter_mut() {
         text.0 = equipment_slot_text(equip, label.slot_id);
+    }
+
+    // Click an occupied equipment slot → unequip it back into the inventory.
+    for (slot_btn, interaction) in equip_interaction_q.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        if character_slot_item(equip, slot_btn.slot_id).is_none() {
+            continue; // empty slot — nothing to unequip
+        }
+        if let Some(protocol_id) = character_slot_protocol_id(slot_btn.slot_id) {
+            equip_action_queue.unequip_slots.push(protocol_id.to_string());
+        }
     }
 
     // Handle bag slot button clicks — only open if a bag is actually equipped.
@@ -354,7 +384,7 @@ fn spawn_character_tab_panel(
     let rows: [[Option<&'static str>; 5]; 6] = [
         [None, None, Some("Helm"), None, None],
         [None, Some("Shoulders"), None, Some("Neck"), None],
-        [None, Some("Chest"), None, Some("Back"), None],
+        [Some("MainHand"), Some("Chest"), None, Some("Back"), None],
         [Some("Gloves"), None, Some("Waist"), None, Some("Wrist")],
         [None, Some("Ring1"), Some("Pants"), Some("Ring2"), None],
         [None, None, Some("Boots"), None, None],
@@ -461,6 +491,7 @@ fn spawn_character_tab_panel(
 fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &'static str) -> Entity {
     let slot = commands
         .spawn((
+            Button,
             Node {
                 width: Val::Px(SLOT_SIZE),
                 height: Val::Px(SLOT_SIZE),
@@ -472,6 +503,7 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
                 ..default()
             },
             BackgroundColor(Color::srgba(0.070, 0.058, 0.047, 0.96)),
+            CharacterEquipSlotButton { slot_id },
             Name::new(format!("character_slot_{slot_id}")),
         ))
         .id();
@@ -507,8 +539,9 @@ fn spawn_slot_spacer(commands: &mut Commands) -> Entity {
         .id()
 }
 
-fn equipment_slot_text(equip: &Equipment, slot_id: &str) -> String {
-    let item = match slot_id {
+/// The item currently in a paper-doll slot (slot_id in PascalCase form), if any.
+fn character_slot_item<'a>(equip: &'a Equipment, slot_id: &str) -> Option<&'a String> {
+    match slot_id {
         "Helm" => equip.helm.as_ref(),
         "Neck" => equip.neck.as_ref(),
         "Back" => equip.back.as_ref(),
@@ -521,10 +554,34 @@ fn equipment_slot_text(equip: &Equipment, slot_id: &str) -> String {
         "Boots" => equip.boots.as_ref(),
         "Ring1" => equip.ring1.as_ref(),
         "Ring2" => equip.ring2.as_ref(),
+        "MainHand" => equip.main_hand.as_ref(),
         _ => None,
-    };
+    }
+}
 
-    item.map(|id| compact_item_label(id.as_str()))
+/// Maps a paper-doll slot id (PascalCase) to the protocol/DB slot id (snake_case).
+fn character_slot_protocol_id(slot_id: &str) -> Option<&'static str> {
+    Some(match slot_id {
+        "Helm" => "helm",
+        "Shoulders" => "shoulders",
+        "Neck" => "neck",
+        "Chest" => "chest",
+        "Wrist" => "wrist",
+        "Gloves" => "gloves",
+        "Waist" => "waist",
+        "Pants" => "pants",
+        "Boots" => "boots",
+        "Ring1" => "ring1",
+        "Ring2" => "ring2",
+        "Back" => "back",
+        "MainHand" => "main_hand",
+        _ => return None,
+    })
+}
+
+fn equipment_slot_text(equip: &Equipment, slot_id: &str) -> String {
+    character_slot_item(equip, slot_id)
+        .map(|id| compact_item_label(id.as_str()))
         .unwrap_or_else(|| slot_label(slot_id).to_string())
 }
 
@@ -546,6 +603,7 @@ fn slot_label(slot_id: &str) -> &'static str {
         "Boots" => "Boots",
         "Ring1" => "Ring",
         "Ring2" => "Ring",
+        "MainHand" => "Weapon",
         _ => "Slot",
     }
 }

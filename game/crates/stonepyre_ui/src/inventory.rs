@@ -52,6 +52,8 @@ pub struct InventoryItemActionRequest {
 pub enum InventoryItemAction {
     Drop,
     EquipBag { bag_slot: u8 },
+    /// Equip a worn item (axe, armour, …); the server derives the slot.
+    Equip,
     /// Swap two main-inventory slots (drag-and-drop rearrange).
     MoveToSlot { to_slot: usize },
 }
@@ -95,6 +97,7 @@ pub(crate) enum InventoryContextOption {
     Use,
     Drop,
     Examine,
+    Wield,
     EquipToBag0,
     EquipToBag1,
 }
@@ -241,6 +244,16 @@ pub(crate) fn inventory_item_context_menu_system(
             }
             InventoryContextOption::Examine => {
                 state.status_message = examine_text(&item.item_id);
+                close_context_menu(&mut commands, &mut state);
+            }
+            InventoryContextOption::Wield => {
+                action_queue.actions.push(InventoryItemActionRequest {
+                    action: InventoryItemAction::Equip,
+                    slot_idx: item.slot_idx,
+                    item_id: item.item_id.clone(),
+                    quantity: 1,
+                });
+                state.status_message = format!("Wielding {}...", item.display_name);
                 close_context_menu(&mut commands, &mut state);
             }
             InventoryContextOption::EquipToBag0 => {
@@ -459,13 +472,16 @@ fn open_context_menu(
         .id();
     commands.entity(menu).add_child(title);
 
-    let defs = default_item_defs();
-    let tags: &[String] = defs
-        .get(&item.item_id)
-        .map(|d| d.tags.as_slice())
-        .unwrap_or_default();
+    // Use the full content db (bootstrap + JSON overlay) so JSON-only items such
+    // as the tiered axes are recognised as equippable.
+    let content = stonepyre_content::default_content_db();
+    let item_def = content.items.get(&item.item_id);
+    let tags: &[String] = item_def.map(|d| d.tags.as_slice()).unwrap_or_default();
     let is_bag_general = tags.iter().any(|t| t == "bag_general");
     let is_bag_typed = tags.iter().any(|t| t == "bag_typed");
+    // Worn equipment (axe, armour) — items with an equipment def, but not bags
+    // (bags use their own dedicated bag-slot equip options).
+    let is_wieldable = item_def.map(|d| d.equipment.is_some()).unwrap_or(false);
 
     let mut options: Vec<(&'static str, InventoryContextOption)> = vec![
         ("Use", InventoryContextOption::Use),
@@ -473,6 +489,9 @@ fn open_context_menu(
         ("Examine", InventoryContextOption::Examine),
     ];
 
+    if is_wieldable {
+        options.push(("Wield", InventoryContextOption::Wield));
+    }
     if is_bag_general {
         options.push(("Equip (Slot 1 - General)", InventoryContextOption::EquipToBag0));
     }

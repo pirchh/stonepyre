@@ -31,6 +31,7 @@ pub fn default_item_defs() -> ItemDefs {
             equipment: None,
             bag_upgrade: None,
             bag: None,
+            tool: None,
             tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
         },
     );
@@ -51,6 +52,7 @@ pub fn default_item_defs() -> ItemDefs {
             equipment: None,
             bag_upgrade: None,
             bag: None,
+            tool: None,
             tags: vec!["material".to_string(), "wood".to_string(), "log".to_string()],
         },
     );
@@ -73,6 +75,7 @@ pub fn default_item_defs() -> ItemDefs {
             bag: Some(BagDef {
                 container_def_id: "wooden_backpack".to_string(),
             }),
+            tool: None,
             tags: vec!["bag".to_string(), "bag_general".to_string()],
         },
     );
@@ -95,6 +98,7 @@ pub fn default_item_defs() -> ItemDefs {
             bag: Some(BagDef {
                 container_def_id: "woodcutting_sack".to_string(),
             }),
+            tool: None,
             tags: vec!["bag".to_string(), "bag_typed".to_string()],
         },
     );
@@ -115,6 +119,7 @@ pub fn default_item_defs() -> ItemDefs {
             equipment: None,
             bag_upgrade: Some(BagUpgradeDef { extra_slots: 2 }),
             bag: None,
+            tool: None,
             tags: vec!["bag_upgrade".to_string()],
         },
     );
@@ -168,6 +173,7 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 4,
             respawn_seconds: 20.0,
             loot_table: "woodcutting_oak_tree".to_string(),
+            required_tool: Some("axe".to_string()),
             blocks_movement: true,
             available_model: "world/harvest_objects/woodcutting/oak/oak_tree.glb".to_string(),
             depleted_model: "world/harvest_objects/woodcutting/oak/oak_stump.glb".to_string(),
@@ -189,6 +195,7 @@ pub fn default_harvest_defs() -> HarvestDefs {
             charges: 5,
             respawn_seconds: 30.0,
             loot_table: "woodcutting_willow_tree".to_string(),
+            required_tool: Some("axe".to_string()),
             blocks_movement: true,
             available_model: "world/harvest_objects/woodcutting/willow/willow_tree.glb".to_string(),
             depleted_model: "world/harvest_objects/woodcutting/willow/willow_stump.glb".to_string(),

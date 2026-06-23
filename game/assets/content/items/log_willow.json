@@ -1,6 +1,7 @@
 {
   "id": "log_willow",
   "name": "Willow Log",
+  "inventory_icon": "inventory/items/log_willow.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,

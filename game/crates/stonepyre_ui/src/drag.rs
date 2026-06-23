@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use stonepyre_content::default_item_defs;
-use stonepyre_engine::plugins::inventory::{Inventory, PlayerBagSlots};
+use stonepyre_engine::plugins::inventory::{Inventory, ItemDb, PlayerBagSlots};
 
 use crate::bag::{bag_slot_idx_at_cursor, BagItemAction, BagItemActionQueue, BagUiState};
 use crate::inventory::{
@@ -226,6 +226,7 @@ pub(crate) fn drag_end_system(
     mut inv_action_queue: ResMut<InventoryItemActionQueue>,
     mut bag_action_queue: ResMut<BagItemActionQueue>,
     mut drag_state: ResMut<DragState>,
+    item_db: Res<ItemDb>,
 ) {
     if !mouse.just_released(MouseButton::Left) {
         return;
@@ -315,11 +316,11 @@ pub(crate) fn drag_end_system(
         // ── Click (primary action) ─────────────────────────────────────────
         match &drag.source {
             DragSource::Inventory { slot_idx } => {
-                let defs = default_item_defs();
-                let tags: &[String] = defs
-                    .get(drag.item_id.as_str())
-                    .map(|d| d.tags.as_slice())
-                    .unwrap_or_default();
+                let def = item_db.get(drag.item_id.as_str());
+                let tags: &[String] = def.map(|d| d.tags.as_slice()).unwrap_or_default();
+                // Worn equipment (axe, armour) — has an equipment def. Bags are
+                // not equippable this way; they use the bag-slot branches below.
+                let is_wieldable = def.map(|d| d.equipment.is_some()).unwrap_or(false);
 
                 if tags.iter().any(|t| t == "bag_general") {
                     inv_action_queue.actions.push(crate::inventory::InventoryItemActionRequest {
@@ -335,10 +336,17 @@ pub(crate) fn drag_end_system(
                         item_id: drag.item_id.clone(),
                         quantity: 1,
                     });
+                } else if is_wieldable {
+                    // Default left-click action for tools/gear is Wield.
+                    inv_action_queue.actions.push(crate::inventory::InventoryItemActionRequest {
+                        action: InventoryItemAction::Equip,
+                        slot_idx: *slot_idx,
+                        item_id: drag.item_id.clone(),
+                        quantity: 1,
+                    });
                 } else {
                     // Generic item: "Use X ->" (select for use-on-another).
-                    let display_name = defs
-                        .get(drag.item_id.as_str())
+                    let display_name = def
                         .map(|d| d.name.clone())
                         .unwrap_or_else(|| drag.item_id.clone());
 

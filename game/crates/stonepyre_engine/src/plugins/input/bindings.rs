@@ -14,6 +14,9 @@ pub struct InputBindings {
     // Interaction
     pub interact: KeyCode,
 
+    /// Context-sensitive action (attack/harvest/use) — Project Zomboid style.
+    pub action: KeyCode,
+
     // UI
     pub inventory_toggle: KeyCode,
 }
@@ -26,6 +29,7 @@ impl Default for InputBindings {
             move_left: KeyCode::KeyA,
             move_right: KeyCode::KeyD,
             interact: KeyCode::KeyE,
+            action: KeyCode::Space,
             inventory_toggle: KeyCode::KeyI,
         }
     }

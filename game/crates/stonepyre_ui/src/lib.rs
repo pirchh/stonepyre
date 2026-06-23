@@ -92,6 +92,7 @@ impl Plugin for StonepyreUiPlugin {
 
             // Character panel (render-only; HUD controls open/close)
             .insert_resource(character_state::CharacterUiState::default())
+            .insert_resource(character_tab::CharacterEquipActionQueue::default())
             .add_systems(
                 Update,
                 (

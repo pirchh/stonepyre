@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use stonepyre_world::{tile_to_world3d, world3d_to_tile, TilePos, WorldGrid, TILE_SIZE};
 
 use crate::plugins::input::{ClickMsg, InputBindings};
-use crate::plugins::skills::{AnimClip, RequestedAnim};
+use crate::plugins::inventory::{ToolKind, Toolbelt};
+use crate::plugins::skills::{AnimClip, HarvestDb, HarvestNode, RequestedAnim};
 use crate::plugins::ui::{ContextMenuState, MenuSelectMsg};
 use crate::plugins::world::*;
 
@@ -88,6 +89,37 @@ pub struct ServerAuthoritativeInteractions(pub bool);
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct WorldInteractionBlocker(pub bool);
 
+/// True while the server is processing a ChopDown action (Queued/MovingToRange/Active).
+/// Written each frame by the app's action_visuals system; read by handle_action_key as a gate.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct ServerActionGate(pub bool);
+
+/// Client-side prediction of whether the player can harvest the currently-nearby
+/// node (has the required skill level AND a sufficient equipped tool). Written
+/// each frame by the app (which has the authoritative skill levels + equipment);
+/// read by handle_action_key so the swing animation never starts for a harvest
+/// the server would reject. The server still enforces the real gate — this only
+/// avoids the optimistic animation flash. Defaults to true (fail-open).
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct HarvestReadyGate(pub bool);
+
+impl Default for HarvestReadyGate {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+/// Inserted when the player starts a continuous skill action (Space on a tree).
+/// Marks that the player is in an auto-chop session. Removed when the player moves
+/// (animate_humanoid) or when the server ends the action (action_visuals).
+///
+/// The loop itself is server-driven: the server keeps the ChopDown action Active and
+/// emits a grant each swing, so the client never re-sends the intent per swing.
+#[derive(Component)]
+pub struct AutoChopActive {
+    pub target_entity: Entity,
+}
+
 // cadence knobs
 const CHOP_PERIOD_SECS: f32 = 0.75; // time between chops
 const GROUND_ITEM_CLICK_SIZE: f32 = TILE_SIZE * 0.36;
@@ -129,35 +161,16 @@ pub fn handle_clicks_build_candidates(
 
         let clicked_tile = ev.tile;
 
-        let mut cands: Vec<InteractionCandidate> = vec![InteractionCandidate {
-            verb: Verb::WalkHere,
-            target: Target::Tile(clicked_tile),
-            priority: 0,
-            range: 0,
-            menu_label: Some("Walk here".to_string()),
-        }];
+        // Movement is WASD-only. WalkHere is not offered via left-click.
+        let mut cands: Vec<InteractionCandidate> = vec![];
 
         for (ent, gp, kind, transform) in interactables.iter() {
             if gp.0 != clicked_tile {
                 continue;
             }
             match kind {
-                InteractableKind::Tree => {
-                    cands.push(InteractionCandidate {
-                        verb: Verb::ChopDown,
-                        target: Target::Entity(ent),
-                        priority: 100,
-                        range: 1,
-                        menu_label: Some("Chop down".to_string()),
-                    });
-                    cands.push(InteractionCandidate {
-                        verb: Verb::Examine,
-                        target: Target::Entity(ent),
-                        priority: -10,
-                        range: 1,
-                        menu_label: Some("Examine".to_string()),
-                    });
-                }
+                // Trees are proximity + Space only. No click candidates.
+                InteractableKind::Tree => {}
                 InteractableKind::Npc => {
                     cands.push(InteractionCandidate {
                         verb: Verb::TalkTo,
@@ -299,7 +312,8 @@ pub fn plan_intents_to_actions(
         // not resolve non-movement interactions locally because that would produce client-only effects.
         if server_authoritative && !matches!(intent.verb, Verb::WalkHere | Verb::UseBank) {
             commands.entity(player_ent).remove::<CurrentAction>();
-            commands.entity(player_ent).remove::<RequestedAnim>();
+            // Do NOT remove RequestedAnim here — it is now owned by handle_action_key
+            // (inserted on Space press) and managed by consume_requested_anim (timer).
             continue;
         }
 
@@ -404,7 +418,7 @@ pub fn plan_intents_to_actions(
                     *facing = facing_toward(start_tile, goal_tile, *facing);
                 }
 
-                let looping = intent.verb == Verb::ChopDown;
+                let looping = false; // all skills are one-shot per input press
 
                 // cadence timer: ready immediately for first impact
                 let mut cooldown = Timer::from_seconds(
@@ -690,7 +704,7 @@ pub fn handle_interact_key(
     let verb = match kind {
         InteractableKind::BankBooth         => Verb::UseBank,
         InteractableKind::Npc               => Verb::TalkTo,
-        InteractableKind::Tree              => Verb::ChopDown,
+        InteractableKind::Tree              => return, // Space handles trees
         InteractableKind::GroundItem { .. } => Verb::Take,
     };
 
@@ -700,6 +714,103 @@ pub fn handle_interact_key(
             verb,
             target: Target::Entity(target_ent),
             range: 1,
+        },
+    });
+}
+
+/// Spacebar context-sensitive action — auto-chop style.
+///
+/// Press Space near a tree to start continuous woodcutting:
+/// - Animation starts immediately (looping) and `AutoChopActive` is inserted.
+/// - One ChopDown request is fired. The server then drives the loop, staying Active
+///   and granting each swing until the node depletes, the player moves, or the
+///   inventory fills — the client never re-sends the intent per swing.
+/// - Gate: ServerActionGate blocks while the server is processing (Queued/Active/etc.).
+pub fn handle_action_key(
+    keyboard:             Res<ButtonInput<KeyCode>>,
+    bindings:             Res<InputBindings>,
+    nearby:               Res<NearbyInteractable>,
+    server_gate:          Res<ServerActionGate>,
+    harvest_ready_gate:   Res<HarvestReadyGate>,
+    server_authoritative: Option<Res<ServerAuthoritativeInteractions>>,
+    harvest_db:           Option<Res<HarvestDb>>,
+    item_db:              Option<Res<crate::plugins::inventory::ItemDb>>,
+    anim_graph_res:       Option<Res<crate::plugins::animation::PlayerAnimGraph>>,
+    anim_clips:           Option<Res<Assets<AnimationClip>>>,
+    player_q:             Query<(Entity, Option<&Toolbelt>, &crate::plugins::inventory::Inventory), With<Player>>,
+    harvest_q:            Query<&HarvestNode>,
+    mut commands:         Commands,
+    mut intent_writer:    MessageWriter<IntentMsg>,
+) {
+    if !keyboard.just_pressed(bindings.action) { return; }
+
+    let Some(target_ent) = nearby.entity else { return };
+    let Some(ref kind)   = nearby.kind   else { return };
+    let Ok((player_ent, toolbelt, inventory)) = player_q.single() else { return };
+
+    if !matches!(kind, InteractableKind::Tree) { return; }
+
+    // Gate: block while the server is processing (Queued / MovingToRange / Active).
+    if server_gate.0 { return; }
+
+    // Predictive gate: don't even start the swing animation if the player can't
+    // harvest this tree (no/insufficient axe, or skill level too low). The server
+    // still enforces the real check; this just avoids the optimistic-animation
+    // flash on a harvest that would immediately be rejected.
+    if !harvest_ready_gate.0 { return; }
+
+    let server_auth = server_authoritative.as_ref().map(|r| r.0).unwrap_or(false);
+
+    if !server_auth {
+        // Offline mode: validate locally via HarvestNode component.
+        let Ok(node) = harvest_q.get(target_ent) else { return };
+        if node.is_depleted() { return; }
+
+        if let Some(db) = harvest_db.as_ref() {
+            if let Some(def) = db.get(node.def_id) {
+                if let Some(required) = &def.required_tool {
+                    let has_in_toolbelt = toolbelt.and_then(|tb| ToolKind::from_id(required).map(|k| tb.get(k).is_some())).unwrap_or(false);
+                    let has_in_inventory = item_db.as_ref().map(|idb| {
+                        inventory.container.slots.iter().any(|slot| {
+                            slot.as_ref().map(|stack| {
+                                idb.get(&stack.id)
+                                    .map(|def| def.tags.iter().any(|tag| tag == required))
+                                    .unwrap_or(false)
+                            }).unwrap_or(false)
+                        })
+                    }).unwrap_or(false);
+                    if !has_in_toolbelt && !has_in_inventory { return; }
+                }
+            }
+        }
+    }
+
+    // Look up the actual woodcutting clip duration so the OneShot timer matches
+    // the animation exactly. Falls back to 1.2s if the clip isn't loaded yet.
+    let clip_secs = anim_graph_res
+        .as_ref()
+        .and_then(|ag| ag.woodcutting_clip.as_ref())
+        .and_then(|h| anim_clips.as_ref().and_then(|clips| clips.get(h)))
+        .map(|c| c.duration())
+        .unwrap_or(1.2);
+
+    info!("handle_action_key: inserting RequestedAnim clip_secs={:.3}", clip_secs);
+    commands.entity(player_ent).insert(crate::plugins::skills::RequestedAnim {
+        clip: crate::plugins::skills::AnimClip::Woodcutting,
+        mode: crate::plugins::skills::RequestedAnimMode::Loop {
+            timer: Timer::from_seconds(clip_secs, TimerMode::Once),
+        },
+    });
+    // Mark that we're in auto-chop mode for this target.
+    commands.entity(player_ent).insert(AutoChopActive { target_entity: target_ent });
+
+    // Fire the server request in parallel. Server validates and responds independently.
+    intent_writer.write(IntentMsg {
+        actor: player_ent,
+        intent: Intent {
+            verb:   Verb::ChopDown,
+            target: Target::Entity(target_ent),
+            range:  1,
         },
     });
 }

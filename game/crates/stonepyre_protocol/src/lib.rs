@@ -36,6 +36,17 @@ pub enum ClientMsg {
     UnequipBag {
         bag_slot: u8,
     },
+    /// Equip a worn item (axe, armour, …) from the main inventory. The server
+    /// derives the destination slot from the item's equipment def and swaps any
+    /// item already in that slot back into the freed inventory slot.
+    EquipItem {
+        inventory_slot_idx: usize,
+    },
+    /// Unequip the item in the given worn slot back into the main inventory.
+    UnequipItem {
+        /// Slot id, e.g. "main_hand" (matches EquipmentSlotSnapshot.slot).
+        slot: String,
+    },
     /// Move an item from the main inventory into an equipped bag.
     BagPutItem {
         bag_slot: u8,
@@ -184,6 +195,9 @@ pub enum ServerMsg {
 
     /// A bag slot changed (equipped, unequipped, or item moved in/out).
     BagSlotChanged(BagSlotChanged),
+
+    /// Full worn-equipment state sent on join and after any equip/unequip.
+    EquipmentSnapshot(EquipmentSnapshot),
 
     /// Full bank state sent on UseBank interaction and after any bank mutation.
     BankSnapshot(BankSnapshot),
@@ -401,6 +415,22 @@ pub struct BagItemSnapshot {
 pub struct BagSlotChanged {
     pub character_id: Uuid,
     pub slot: BagSlotSnapshot,
+}
+
+/// State of one worn equipment slot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquipmentSlotSnapshot {
+    /// Slot id, e.g. "main_hand", "helm". Matches EquipSlot serialized lowercase.
+    pub slot: String,
+    pub item_id: String,
+}
+
+/// Full snapshot of a character's worn equipment. Sent on JoinWorld and after
+/// every equip/unequip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquipmentSnapshot {
+    pub character_id: Uuid,
+    pub slots: Vec<EquipmentSlotSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
