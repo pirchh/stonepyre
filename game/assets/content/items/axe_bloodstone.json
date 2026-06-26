@@ -1,6 +1,7 @@
 {
-  "id": "axe_crystal",
-  "name": "Crystal Axe",
+  "id": "axe_bloodstone",
+  "name": "Bloodstone Axe",
+  "inventory_icon": "inventory/items/axe_bloodstone.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -15,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 9,
-    "harvest_level": 99
+    "tier": 7,
+    "harvest_level": 68
   },
   "tags": ["tool", "axe"]
 }

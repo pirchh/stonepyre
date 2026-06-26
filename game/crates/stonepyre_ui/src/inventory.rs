@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
+use stonepyre_content::all_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Inventory, PlayerBagSlots};
 
@@ -663,20 +663,20 @@ fn inventory_slot_at_cursor(windows: &Query<&Window, With<PrimaryWindow>>) -> Op
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {
-    default_item_defs()
+    all_item_defs()
         .get(item_id)
         .and_then(|def| def.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {
-    default_item_defs()
+    all_item_defs()
         .get(item_id)
         .map(|def| def.name.clone())
         .unwrap_or_else(|| item_id.to_string())
 }
 
 fn examine_text(item_id: &str) -> String {
-    let defs = default_item_defs();
+    let defs = all_item_defs();
     let Some(def) = defs.get(item_id) else {
         return format!("You see {}.", item_id);
     };

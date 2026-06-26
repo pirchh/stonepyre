@@ -16,7 +16,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
+use stonepyre_content::all_item_defs;
 use stonepyre_engine::plugins::inventory::{Inventory, ItemDb, PlayerBagSlots};
 
 use crate::bag::{bag_slot_idx_at_cursor, BagItemAction, BagItemActionQueue, BagUiState};
@@ -88,7 +88,7 @@ pub(crate) fn drag_begin_system(
         if let Some(slot_idx) = inv_slot_idx_at_cursor(&windows) {
             let Ok(inv) = inv_q.single() else { return; };
             if let Some(stk) = inv.container.slots.get(slot_idx).and_then(|s| s.as_ref()) {
-                let icon_path = default_item_defs()
+                let icon_path = all_item_defs()
                     .get(stk.id.as_str())
                     .and_then(|d| d.inventory_icon.clone());
                 drag_state.active = Some(ActiveDrag {
@@ -115,7 +115,7 @@ pub(crate) fn drag_begin_system(
                 .cloned();
 
             if let Some(item) = item_data {
-                let icon_path = default_item_defs()
+                let icon_path = all_item_defs()
                     .get(item.item_id.as_str())
                     .and_then(|d| d.inventory_icon.clone());
                 drag_state.active = Some(ActiveDrag {

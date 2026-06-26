@@ -1,6 +1,7 @@
 {
-  "id": "axe_mithril",
-  "name": "Mithril Axe",
+  "id": "axe_pyreglass",
+  "name": "Pyreglass Axe",
+  "inventory_icon": "inventory/items/axe_pyreglass.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -15,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 5,
-    "harvest_level": 59
+    "tier": 11,
+    "harvest_level": 92
   },
   "tags": ["tool", "axe"]
 }

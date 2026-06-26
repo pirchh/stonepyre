@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
+use stonepyre_content::all_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{Equipment, PlayerBagSlots};
 use stonepyre_engine::plugins::world::Player;
@@ -32,6 +32,13 @@ pub(crate) struct CharacterTabSlotLabel {
     slot_id: &'static str,
 }
 
+/// Icon image inside an equipment slot. Shown when an item with an inventory
+/// icon is equipped; hidden otherwise so the slot's placeholder label shows.
+#[derive(Component)]
+pub(crate) struct CharacterTabSlotIcon {
+    slot_id: &'static str,
+}
+
 /// Clickable worn-equipment slot in the character paper-doll. Clicking an
 /// occupied slot unequips the item back into the inventory.
 #[derive(Component)]
@@ -58,6 +65,7 @@ pub(crate) fn character_tab_panel_sync_system(
     bag_slots: Res<PlayerBagSlots>,
     children_q: Query<&Children>,
     mut slot_label_q: Query<(&CharacterTabSlotLabel, &mut Text)>,
+    mut slot_icon_q: Query<(Entity, &CharacterTabSlotIcon, &mut Visibility)>,
     mut bag_btn_q: Query<(&BagSlotButton, &mut BackgroundColor, &Interaction), With<Button>>,
     interaction_q: Query<(&BagSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
     equip_interaction_q: Query<(&CharacterEquipSlotButton, &Interaction), (Changed<Interaction>, With<Button>)>,
@@ -80,8 +88,31 @@ pub(crate) fn character_tab_panel_sync_system(
         state.needs_rebuild = false;
     }
 
+    // Equipment slot icons: show the equipped item's inventory icon, or hide it
+    // so the placeholder label is visible.
+    for (icon_e, icon, mut vis) in slot_icon_q.iter_mut() {
+        match character_slot_item(equip, icon.slot_id).and_then(|id| item_icon_path(id)) {
+            Some(path) => {
+                commands.entity(icon_e).insert(ImageNode::new(asset_server.load(path)));
+                *vis = Visibility::Visible;
+            }
+            None => {
+                *vis = Visibility::Hidden;
+            }
+        }
+    }
+
+    // Labels: blank when an icon is shown; otherwise the item name (no icon) or
+    // the slot's placeholder text.
     for (label, mut text) in slot_label_q.iter_mut() {
-        text.0 = equipment_slot_text(equip, label.slot_id);
+        let has_icon = character_slot_item(equip, label.slot_id)
+            .and_then(|id| item_icon_path(id))
+            .is_some();
+        text.0 = if has_icon {
+            String::new()
+        } else {
+            equipment_slot_text(equip, label.slot_id)
+        };
     }
 
     // Click an occupied equipment slot → unequip it back into the inventory.
@@ -418,7 +449,7 @@ fn spawn_character_tab_panel(
 
     // Bag slot 0 (general) — top-left of the panel.
     // Bag slot 1 (skill)   — top-right of the panel.
-    let defs = default_item_defs();
+    let defs = all_item_defs();
     let bag_configs: [(u8, Val, Val, &str, &str); 2] = [
         (0, Val::Px(PANEL_PADDING), Val::Auto, "Gen\nBag", "character_bag_slot_0"),
         (1, Val::Auto, Val::Px(PANEL_PADDING), "Skill\nBag", "character_bag_slot_1"),
@@ -508,6 +539,25 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
         ))
         .id();
 
+    // Icon overlay (absolute so it doesn't disturb the centered label); hidden
+    // until an item with an inventory icon is equipped.
+    let icon = commands
+        .spawn((
+            ImageNode::new(Handle::<Image>::default()),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(4.0),
+                left: Val::Px(4.0),
+                right: Val::Px(4.0),
+                bottom: Val::Px(4.0),
+                ..default()
+            },
+            Visibility::Hidden,
+            CharacterTabSlotIcon { slot_id },
+            Name::new(format!("character_slot_icon_{slot_id}")),
+        ))
+        .id();
+
     let label = commands
         .spawn((
             Text::new(slot_label(slot_id)),
@@ -522,6 +572,7 @@ fn spawn_equipment_slot(commands: &mut Commands, font: &Handle<Font>, slot_id: &
         ))
         .id();
 
+    commands.entity(slot).add_child(icon);
     commands.entity(slot).add_child(label);
     slot
 }
@@ -577,6 +628,11 @@ fn character_slot_protocol_id(slot_id: &str) -> Option<&'static str> {
         "MainHand" => "main_hand",
         _ => return None,
     })
+}
+
+/// Inventory-icon asset path for an item id, if it has one.
+fn item_icon_path(item_id: &str) -> Option<String> {
+    all_item_defs().get(item_id).and_then(|d| d.inventory_icon.clone())
 }
 
 fn equipment_slot_text(equip: &Equipment, slot_id: &str) -> String {

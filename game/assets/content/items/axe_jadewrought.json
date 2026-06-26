@@ -1,7 +1,7 @@
 {
-  "id": "axe_flint",
-  "name": "Flint Axe",
-  "inventory_icon": "inventory/items/axe_flint.png",
+  "id": "axe_jadewrought",
+  "name": "Jadewrought Axe",
+  "inventory_icon": "inventory/items/axe_jadewrought.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -16,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 0,
-    "harvest_level": 9
+    "tier": 8,
+    "harvest_level": 74
   },
   "tags": ["tool", "axe"]
 }

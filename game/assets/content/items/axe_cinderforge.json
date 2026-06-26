@@ -1,6 +1,7 @@
 {
-  "id": "axe_rune",
-  "name": "Rune Axe",
+  "id": "axe_cinderforge",
+  "name": "Cinderforge Axe",
+  "inventory_icon": "inventory/items/axe_cinderforge.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -15,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 7,
-    "harvest_level": 79
+    "tier": 6,
+    "harvest_level": 62
   },
   "tags": ["tool", "axe"]
 }
