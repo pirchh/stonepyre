@@ -23,7 +23,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
+use stonepyre_content::all_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::Inventory;
 use stonepyre_engine::plugins::world::Player;
@@ -1043,11 +1043,11 @@ fn aggregate_all_items(tabs: &[BankTabData]) -> Vec<BankItemData> {
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {
-    default_item_defs().get(item_id).and_then(|d| d.inventory_icon.clone())
+    all_item_defs().get(item_id).and_then(|d| d.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {
-    default_item_defs()
+    all_item_defs()
         .get(item_id)
         .map(|d| d.name.clone())
         .unwrap_or_else(|| item_id.to_string())

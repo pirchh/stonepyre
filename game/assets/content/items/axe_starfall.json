@@ -1,7 +1,7 @@
 {
-  "id": "axe_flint",
-  "name": "Flint Axe",
-  "inventory_icon": "inventory/items/axe_flint.png",
+  "id": "axe_starfall",
+  "name": "Starfall Axe",
+  "inventory_icon": "inventory/items/axe_starfall.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -16,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 0,
-    "harvest_level": 9
+    "tier": 10,
+    "harvest_level": 86
   },
   "tags": ["tool", "axe"]
 }

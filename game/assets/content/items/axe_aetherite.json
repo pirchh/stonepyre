@@ -1,6 +1,7 @@
 {
-  "id": "axe_dragon",
-  "name": "Dragon Axe",
+  "id": "axe_aetherite",
+  "name": "Aetherite Axe",
+  "inventory_icon": "inventory/items/axe_aetherite.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -15,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 8,
-    "harvest_level": 89
+    "tier": 12,
+    "harvest_level": 99
   },
   "tags": ["tool", "axe"]
 }

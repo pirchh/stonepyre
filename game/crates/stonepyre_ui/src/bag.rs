@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use stonepyre_content::default_item_defs;
+use stonepyre_content::all_item_defs;
 use stonepyre_engine::plugins::interaction::WorldInteractionBlocker;
 use stonepyre_engine::plugins::inventory::{PlayerBagSlotState, PlayerBagSlots};
 
@@ -294,7 +294,7 @@ fn spawn_bag_panel(
     let font = asset_server.load("fonts/ui.ttf");
 
     let bag_name = slot_data.equipped_item_id.as_deref()
-        .and_then(|id| default_item_defs().get(id).map(|d| d.name.clone()))
+        .and_then(|id| all_item_defs().get(id).map(|d| d.name.clone()))
         .unwrap_or_else(|| "Empty Bag Slot".to_string());
 
     let filter_suffix = slot_data.item_type_filter.as_deref()
@@ -633,11 +633,11 @@ pub(crate) fn bag_slot_idx_at_cursor(
 }
 
 fn inventory_icon_path(item_id: &str) -> Option<String> {
-    default_item_defs().get(item_id).and_then(|def| def.inventory_icon.clone())
+    all_item_defs().get(item_id).and_then(|def| def.inventory_icon.clone())
 }
 
 fn item_display_name(item_id: &str) -> String {
-    default_item_defs()
+    all_item_defs()
         .get(item_id)
         .map(|def| def.name.clone())
         .unwrap_or_else(|| item_id.to_string())

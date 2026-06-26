@@ -1,6 +1,7 @@
 {
-  "id": "axe_adamant",
-  "name": "Adamant Axe",
+  "id": "axe_obsidian",
+  "name": "Obsidian Axe",
+  "inventory_icon": "inventory/items/axe_obsidian.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
@@ -15,8 +16,8 @@
   "bag_upgrade": null,
   "tool": {
     "kind": "axe",
-    "tier": 6,
-    "harvest_level": 69
+    "tier": 5,
+    "harvest_level": 56
   },
   "tags": ["tool", "axe"]
 }

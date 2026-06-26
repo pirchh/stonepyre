@@ -1,6 +1,7 @@
 {
   "id": "axe_bronze",
   "name": "Bronze Axe",
+  "inventory_icon": "inventory/items/axe_bronze.png",
   "stack_policy": {
     "stack_in_inventory": false,
     "stack_in_bank": true,
