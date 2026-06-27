@@ -17,7 +17,11 @@
   "tool": {
     "kind": "axe",
     "tier": 3,
-    "harvest_level": 39
+    "harvest_level": 39,
+    "wield_level": 30
   },
-  "tags": ["tool", "axe"]
+  "tags": [
+    "tool",
+    "axe"
+  ]
 }

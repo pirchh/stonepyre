@@ -949,6 +949,9 @@ fn equip_error_message(e: crate::game::sim::equipment::EquipError) -> String {
     match e {
         EquipError::SlotEmpty { .. } => "that inventory slot is empty".to_string(),
         EquipError::NotEquippable { .. } => "that item can't be equipped".to_string(),
+        EquipError::LevelTooLow { required, skill_display } => {
+            format!("You need level {required} {skill_display} to wield this.")
+        }
         EquipError::InventoryFull => "your inventory is full".to_string(),
         EquipError::Db(_) => "failed to update equipment".to_string(),
     }

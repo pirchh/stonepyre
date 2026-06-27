@@ -653,7 +653,7 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
                     }
                     Ok(ServerMsg::Error { message }) => {
-                        let _ = tx.send(GameNetEvent::Error(message));
+                        let _ = tx.send(GameNetEvent::ServerNotice(message));
                     }
                     Err(e) => {
                         let _ = tx.send(GameNetEvent::Error(format!(
@@ -1099,6 +1099,15 @@ pub fn pump_game_net_results(
                     tiles.len()
                 );
                 status.pending_server_path = Some((goal, tiles));
+            }
+            GameNetEvent::ServerNotice(msg) => {
+                // Player-facing server message (wield-gate/equip/bank rejection,
+                // inventory full, etc.): surface it as a right-side red drop.
+                status.last_error = Some(msg.clone());
+                status
+                    .feedback_drops
+                    .push(super::status::FeedbackDrop::Message { text: msg.clone() });
+                warn!("game net notice: {}", msg);
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());

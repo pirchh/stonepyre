@@ -18,6 +18,8 @@ use crate::game::protocol::{EquipmentSlotSnapshot, EquipmentSnapshot};
 pub enum EquipError {
     SlotEmpty { slot_idx: usize },
     NotEquippable { item_id: String },
+    /// The character's skill level is too low to wield this tool.
+    LevelTooLow { required: u32, skill_display: String },
     InventoryFull,
     Db(sqlx::Error),
 }
@@ -47,6 +49,18 @@ pub fn equip_slot_id(slot: EquipSlot) -> &'static str {
     }
 }
 
+/// Skill that gates *wielding* a tool of the given `kind`, as
+/// `(skill_id, display_name)`. Inverse of the harvest side's skill->tool map.
+fn wield_skill_for_tool(kind: &str) -> Option<(&'static str, &'static str)> {
+    match kind {
+        "axe" => Some((
+            crate::game::sim::skills::WOODCUTTING_SKILL_ID,
+            crate::game::sim::skills::WOODCUTTING_DISPLAY_NAME,
+        )),
+        _ => None,
+    }
+}
+
 /// Equip a worn item from the main inventory. The destination slot is derived
 /// from the item's equipment def; any item already in that slot is swapped back
 /// into the freed inventory slot. Returns the full equipment snapshot.
@@ -57,6 +71,28 @@ pub async fn equip_item(
     item_id: &str,
 ) -> Result<EquipmentSnapshot, EquipError> {
     let content = stonepyre_content::default_content_db();
+
+    // Wield-level gate (fail fast, before locking): tools such as axes require a
+    // minimum skill level to equip. Keyed off the client-sent item_id; the
+    // find-by-id below still confirms the item is actually in the inventory.
+    if let Some(tool) = content.items.get(item_id).and_then(|i| i.tool.as_ref()) {
+        if tool.wield_level > 0 {
+            if let Some((skill_id, skill_display)) = wield_skill_for_tool(&tool.kind) {
+                let progress = crate::game::sim::skills::load_character_skill_progress(
+                    pool,
+                    character_id,
+                    skill_id,
+                )
+                .await?;
+                if progress.level < tool.wield_level {
+                    return Err(EquipError::LevelTooLow {
+                        required: tool.wield_level,
+                        skill_display: skill_display.to_string(),
+                    });
+                }
+            }
+        }
+    }
 
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;

@@ -184,9 +184,9 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     )),
                                     Ok(game::sim::equipment::HarvestGate::ToolMissing {
                                         required_tool_name,
-                                    }) => {
-                                        Some(format!("You need a {required_tool_name} or better equipped."))
-                                    }
+                                    }) => Some(format!(
+                                        "This trunk is too hard for your axe - you need a {required_tool_name} or better."
+                                    )),
                                     Err(e) => {
                                         warn!(
                                             "harvest gate check failed character_id={} error={:?}",
@@ -197,17 +197,20 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 };
 
                                 if let Some(message) = reject_message {
+                                    // The client mirrors this gate locally and shows the
+                                    // reason as a right-side drop, so we only broadcast the
+                                    // authoritative action-Rejected state — no extra
+                                    // ServerMsg::Error, which would double the message.
                                     if let Some(msg) = {
                                         let mut sim = game.sim.write().await;
                                         sim.reject_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
-                                            message.clone(),
+                                            message,
                                         )
                                     } {
                                         game.hub.broadcast(msg);
                                     }
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
                                     continue;
                                 }
                             }
