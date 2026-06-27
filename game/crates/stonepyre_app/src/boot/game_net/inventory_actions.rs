@@ -52,7 +52,7 @@ pub fn send_inventory_item_actions_to_server(
                 }
             }
             InventoryItemAction::Equip => {
-                let sent = send_equip_item_to_server(&game_net, request.slot_idx);
+                let sent = send_equip_item_to_server(&game_net, request.slot_idx, request.item_id.clone());
                 if !sent {
                     warn!(
                         "equip item action dropped; websocket is not ready slot_idx={} item_id={}",

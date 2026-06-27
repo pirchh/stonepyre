@@ -358,14 +358,14 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         };
                         handle_unequip_bag(&state, cid, bag_slot, &out_tx).await;
                     }
-                    ClientMsg::EquipItem { inventory_slot_idx } => {
+                    ClientMsg::EquipItem { inventory_slot_idx, item_id } => {
                         let Some(cid) = character_id else {
                             let _ = out_tx.send(ServerMsg::Error {
                                 message: "join the world before equipping items".to_string(),
                             });
                             continue;
                         };
-                        handle_equip_item(&state, cid, inventory_slot_idx, &out_tx).await;
+                        handle_equip_item(&state, cid, inventory_slot_idx, &item_id, &out_tx).await;
                     }
                     ClientMsg::UnequipItem { slot } => {
                         let Some(cid) = character_id else {
@@ -909,9 +909,10 @@ async fn handle_equip_item(
     state: &AppState,
     character_id: Uuid,
     inventory_slot_idx: usize,
+    item_id: &str,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
-    match crate::game::sim::equipment::equip_item(&state.db, character_id, inventory_slot_idx).await {
+    match crate::game::sim::equipment::equip_item(&state.db, character_id, inventory_slot_idx, item_id).await {
         Ok(snapshot) => {
             let _ = out_tx.send(ServerMsg::EquipmentSnapshot(snapshot));
             send_inventory_snapshot(state, character_id, out_tx).await;

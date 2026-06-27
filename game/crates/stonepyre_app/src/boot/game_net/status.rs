@@ -120,6 +120,7 @@ pub enum GameNetCommand {
     },
     EquipItem {
         inventory_slot_idx: usize,
+        item_id: String,
     },
     UnequipItem {
         slot: String,

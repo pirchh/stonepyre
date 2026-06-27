@@ -54,6 +54,7 @@ pub async fn equip_item(
     pool: &PgPool,
     character_id: Uuid,
     inventory_slot_idx: usize,
+    item_id: &str,
 ) -> Result<EquipmentSnapshot, EquipError> {
     let content = stonepyre_content::default_content_db();
 
@@ -61,22 +62,28 @@ pub async fn equip_item(
     lock_character_inventory(&mut tx, character_id).await?;
     let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
 
-    let inv_row: Option<(String, i64)> = sqlx::query_as(
+    // Resolve by item id, not the client's slot: rapid equips/swaps can shift the
+    // inventory under a click, so the slot index is only a hint. Use the lowest
+    // slot actually holding the item.
+    let inv_row: Option<(i32, String)> = sqlx::query_as(
         r#"
-        SELECT item_id, quantity
+        SELECT slot_idx, item_id
         FROM game.character_container_slots
-        WHERE container_id = $1::uuid AND slot_idx = $2::int
+        WHERE container_id = $1::uuid AND item_id = $2 AND quantity > 0
+        ORDER BY slot_idx ASC
+        LIMIT 1
         FOR UPDATE
         "#,
     )
     .bind(inv_container_id)
-    .bind(inventory_slot_idx as i32)
+    .bind(item_id)
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some((item_id, _qty)) = inv_row else {
+    let Some((slot_i32, item_id)) = inv_row else {
         return Err(EquipError::SlotEmpty { slot_idx: inventory_slot_idx });
     };
+    let inventory_slot_idx = slot_i32 as usize;
 
     let equip_def = content
         .items
