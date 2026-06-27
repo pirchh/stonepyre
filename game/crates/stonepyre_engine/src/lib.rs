@@ -74,6 +74,14 @@ impl Plugin for StonepyreEnginePlugin {
                 plugins::animation::setup_player_anim_graph,
                 plugins::animation::link_anim_player_to_player
                     .after(plugins::animation::setup_player_anim_graph),
+                // ---- Equipped main-hand model (axe) attach + swap-on-equip ----
+                plugins::equipped_visuals::link_right_hand_bone,
+                plugins::equipped_visuals::resolve_hand_bind_matrix
+                    .after(plugins::equipped_visuals::link_right_hand_bone),
+                plugins::equipped_visuals::sync_main_hand_model
+                    .after(plugins::equipped_visuals::link_right_hand_bone),
+                plugins::equipped_visuals::fit_main_hand_model
+                    .after(plugins::equipped_visuals::sync_main_hand_model),
                 // ---- Proximity detection ----
                 plugins::interaction::update_nearby_interactable,
                 // ---- Input + context menu + interaction intent planning ----
