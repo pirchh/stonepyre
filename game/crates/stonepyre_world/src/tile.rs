@@ -56,13 +56,29 @@ pub fn world3d_to_tile(world: Vec3) -> TilePos {
     world_pos_to_tile([world.x, world.z])
 }
 
+/// Half-extent of the player's collision footprint, in world units. The body is
+/// treated as a small box rather than a bare point so it can't clip into, or
+/// wiggle/corner-slip through, solid tiles. Keep it under `TILE_SIZE / 2` so a
+/// one-tile-wide gap stays passable.
+pub const COLLIDER_RADIUS: f32 = TILE_SIZE * 0.3;
+
 /// Deterministic collision-aware step: try the full move, then slide along X,
 /// then along Z, returning the furthest unblocked position. `is_blocked` is the
 /// caller's collision predicate (the server's `HashSet`, the client's
 /// `WorldGrid`). Shared so client prediction and server simulation produce
 /// identical results for the same input and blockers — the basis for replay.
+///
+/// The player is treated as a box of half-extent `COLLIDER_RADIUS` (not a point):
+/// a candidate position is blocked if any of the box's four corners lands in a
+/// solid tile. A point-only test let the rendered body overlap objects and slip
+/// past their corners while wiggling.
 pub fn slide_move(pos: [f32; 2], delta: [f32; 2], is_blocked: impl Fn(TilePos) -> bool) -> [f32; 2] {
-    let blocked = |p: [f32; 2]| is_blocked(world_pos_to_tile(p));
+    let blocked = |p: [f32; 2]| {
+        const R: f32 = COLLIDER_RADIUS;
+        [[-R, -R], [R, -R], [-R, R], [R, R]]
+            .iter()
+            .any(|o| is_blocked(world_pos_to_tile([p[0] + o[0], p[1] + o[1]])))
+    };
     let full = [pos[0] + delta[0], pos[1] + delta[1]];
     if !blocked(full) {
         return full;
