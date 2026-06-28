@@ -87,14 +87,15 @@ pub fn reconcile_local_player_to_server(
         return;
     }
 
-    // Below the soft threshold: trust the prediction, do nothing (smooth).
-    // Genuine 1–3 tile gap: converge toward authority — but COLLISION-AWARE, so the
-    // correction slides *around* solids along a legal path instead of lerping
-    // straight through them. This is what stops the "jitter to the other side of
-    // the tree" and the lingering drift after a hard input-mash near a collision
-    // edge (where the 10Hz server and 60Hz client briefly take different paths).
-    if error > SOFT_CORRECT_THRESHOLD {
-        let step = (auth - local) * SOFT_CORRECT_RATE;
+    // Inside the deadzone: trust the prediction, do nothing (pure latency, smooth).
+    // Past it: converge toward authority at a rate that eases in with the gap, so a
+    // genuine offset (e.g. after a hard wiggle near a tree) heals gently rather than
+    // snapping at a hard edge or lingering just under it. COLLISION-AWARE — it
+    // slides *around* solids along a legal path rather than lerping through them.
+    if error > CORRECT_DEADZONE {
+        let ramp = ((error - CORRECT_DEADZONE) / CORRECT_RAMP).clamp(0.0, 1.0);
+        let rate = ramp * MAX_CORRECT_RATE;
+        let step = (auth - local) * rate;
         let out = match world.as_ref() {
             Some(w) => slide_move([local.x, local.y], [step.x, step.y], |t| w.is_blocked(t)),
             None => [local.x + step.x, local.y + step.y],
