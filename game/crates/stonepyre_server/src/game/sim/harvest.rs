@@ -365,10 +365,39 @@ impl HarvestCatalog {
         restored
     }
 
+    /// Per-swing success chance. Scales from a grindy floor (`base *
+    /// START_FACTOR`, the at-requirement rate) up toward a hard `MAX_CHANCE`
+    /// ceiling as the chopper outclasses the node in skill level and tool tier.
+    /// Deliberately OSRS-grindy: even fully maxed you never beat MAX_CHANCE, and
+    /// the hardest trees (whose level you can't out-margin) cap well below it.
+    fn effective_success_chance(
+        base: f32,
+        required_level: u32,
+        skill_level: u32,
+        tool_level: u32,
+    ) -> f32 {
+        // Tuning knobs.
+        const MAX_CHANCE: f32 = 0.60; // hard ceiling — ~40% of swings always miss.
+        const START_FACTOR: f32 = 0.60; // at-requirement start = base * this.
+        const RAMP: f32 = 60.0; // weighted margin over the node to reach MAX_CHANCE.
+        const LEVEL_WEIGHT: f32 = 0.55;
+        const TOOL_WEIGHT: f32 = 0.45;
+
+        let level_margin = (skill_level.saturating_sub(required_level)) as f32;
+        let tool_margin = (tool_level.saturating_sub(required_level)) as f32;
+        let margin = LEVEL_WEIGHT * level_margin + TOOL_WEIGHT * tool_margin;
+        let progress = (margin / RAMP).clamp(0.0, 1.0);
+
+        let start = (base * START_FACTOR).min(MAX_CHANCE);
+        (start + (MAX_CHANCE - start) * progress).clamp(0.0, MAX_CHANCE)
+    }
+
     pub fn roll_harvest(
         &mut self,
         tile: TilePos,
         roll: f32,
+        skill_level: u32,
+        tool_level: u32,
         current_tick: u64,
         ticks_per_second: u64,
     ) -> Result<HarvestRollOutcome, String> {
@@ -393,7 +422,12 @@ impl HarvestCatalog {
             return Err(format!("missing harvest node def {def_id}"));
         };
 
-        let chance = def.base_success_chance.clamp(0.0, 1.0);
+        let chance = Self::effective_success_chance(
+            def.base_success_chance,
+            def.required_level,
+            skill_level,
+            tool_level,
+        );
         let success = roll < chance;
 
         let loot_preview = if success {

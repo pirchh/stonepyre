@@ -261,7 +261,9 @@ pub async fn load_character_equipment(
 
 /// Outcome of checking whether a character may harvest a node.
 pub enum HarvestGate {
-    Ok,
+    /// Allowed. Carries the inputs the per-swing success scaling needs: the
+    /// character's level in the node's skill and the equipped tool's tier.
+    Ok { skill_level: u32, tool_level: u32 },
     LevelTooLow { required: u32, skill_display: String },
     ToolMissing { required_tool_name: String },
 }
@@ -291,20 +293,23 @@ pub async fn check_harvest_gate(
     // 2) Equipped main-hand tool of the right kind, covering the node level.
     let content = stonepyre_content::default_content_db();
     let equipped = equipped_item_in_slot(pool, character_id, "main_hand").await?;
-    let tool_ok = equipped
+    let tool_level = equipped
         .as_ref()
         .and_then(|id| content.items.get(id))
         .and_then(|item| item.tool.as_ref())
-        .map(|tool| tool.kind == required_tool_kind && tool.harvest_level >= required_level)
-        .unwrap_or(false);
+        .filter(|tool| tool.kind == required_tool_kind && tool.harvest_level >= required_level)
+        .map(|tool| tool.harvest_level);
 
-    if !tool_ok {
+    let Some(tool_level) = tool_level else {
         return Ok(HarvestGate::ToolMissing {
             required_tool_name: min_tool_name_for_level(&content, required_tool_kind, required_level),
         });
-    }
+    };
 
-    Ok(HarvestGate::Ok)
+    Ok(HarvestGate::Ok {
+        skill_level: progress.level,
+        tool_level,
+    })
 }
 
 /// Display name of the lowest-tier tool of `kind` that can harvest `required_level`

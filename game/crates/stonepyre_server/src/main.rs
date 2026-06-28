@@ -164,6 +164,9 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
 
                             // Server-authoritative harvest lock: require the skill
                             // level AND an equipped tool whose tier covers the node.
+                            // On success, capture the character's level and axe tier
+                            // to seed the per-swing success scaling.
+                            let mut harvest_power: (u32, u32) = (0, 0);
                             if let Some((req_level, skill_id, skill_display, tool_kind)) = requirements {
                                 let reject_message = match game::sim::equipment::check_harvest_gate(
                                     &db,
@@ -175,7 +178,10 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 )
                                 .await
                                 {
-                                    Ok(game::sim::equipment::HarvestGate::Ok) => None,
+                                    Ok(game::sim::equipment::HarvestGate::Ok { skill_level, tool_level }) => {
+                                        harvest_power = (skill_level, tool_level);
+                                        None
+                                    }
                                     Ok(game::sim::equipment::HarvestGate::LevelTooLow {
                                         required,
                                         skill_display,
@@ -229,6 +235,8 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         sim.approve_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
+                                            harvest_power.0,
+                                            harvest_power.1,
                                         )
                                     } {
                                         game.hub.broadcast(msg);

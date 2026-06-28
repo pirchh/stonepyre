@@ -351,6 +351,12 @@ pub struct ServerAction {
     /// True while the server has asked the async DB layer whether expected
     /// harvest loot can fit before allowing this action to become Active.
     pub pending_harvest_capacity_check: bool,
+
+    /// Cached at capacity-check approval: the character's level in the node's
+    /// skill and the equipped tool's `harvest_level`. Drive the per-swing
+    /// success scaling so a higher level / better axe = fewer dud swings.
+    pub harvest_skill_level: u32,
+    pub harvest_tool_level: u32,
 }
 
 impl ServerAction {
