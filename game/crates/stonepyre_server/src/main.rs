@@ -107,10 +107,28 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Interest-management (AOI) window radius in tiles — Chebyshev, i.e. a square
+/// around the viewer matching the rectangular viewport. Deliberately generous: it
+/// only bounds per-client snapshot size, so erring large just means fewer savings,
+/// never visible pop-in at the screen edge. At the current map size every entity is
+/// within range, so AOI is effectively a no-op — the mechanism exists for when the
+/// world grows. #8 interest management.
+const AOI_TILES: i32 = 48;
+
+/// Whether tile `b` falls inside the AOI square centered on viewer tile `a`.
+fn in_aoi(a: stonepyre_world::TilePos, b: stonepyre_world::TilePos) -> bool {
+    (a.x - b.x).abs() <= AOI_TILES && (a.y - b.y).abs() <= AOI_TILES
+}
+
 fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_hz: u32) {
+    // One independent tick + snapshot loop per zone (#9 sharding). Today there is a
+    // single zone, so this spawns exactly one of each; the structure is the seam
+    // that lets zones simulate in parallel once more exist.
+    for zone in game.zones.all() {
     tokio::spawn({
         let game = game.clone();
         let db = db.clone();
+        let zone_sim = zone.sim.clone();
         async move {
             let dt = std::time::Duration::from_millis((1000 / tick_hz.max(1)) as u64);
             let mut interval = tokio::time::interval(dt);
@@ -118,10 +136,23 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
             loop {
                 interval.tick().await;
                 let events = {
-                    let mut sim = game.sim.write().await;
+                    let mut sim = zone_sim.write().await;
                     sim.step()
                 };
 
+                if events.is_empty() {
+                    continue;
+                }
+
+                // Persist + broadcast OFF the sim tick: a slow DB must never stall
+                // step() for everyone. One task per event batch — events within a
+                // batch stay ordered (one task); independent batches run concurrently,
+                // which is correct (a player's own effects are all in one batch;
+                // cross-player writes hit independent rows).
+                let game = game.clone();
+                let db = db.clone();
+                let zone_sim = zone_sim.clone();
+                tokio::spawn(async move {
                 for event in events {
                     match event {
                         game::sim::GameSimEvent::Server(msg) => {
@@ -129,7 +160,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                         }
                         game::sim::GameSimEvent::HarvestCapacityCheck(check) => {
                             let (loot_preview, requirements) = {
-                                let sim = game.sim.read().await;
+                                let sim = zone_sim.read().await;
                                 match check.target.clone() {
                                     crate::game::protocol::InteractionTarget::Tile(tile) => {
                                         let loot = sim.world.harvest_loot_preview_at(tile);
@@ -149,7 +180,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             let Some(loot) = loot_preview else {
                                 let message = "No harvest loot available".to_string();
                                 if let Some(msg) = {
-                                    let mut sim = game.sim.write().await;
+                                    let mut sim = zone_sim.write().await;
                                     sim.reject_harvest_capacity_check(
                                         check.player_id,
                                         check.target.clone(),
@@ -211,7 +242,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     // authoritative action-Rejected state — no extra
                                     // ServerMsg::Error, which would double the message.
                                     if let Some(msg) = {
-                                        let mut sim = game.sim.write().await;
+                                        let mut sim = zone_sim.write().await;
                                         sim.reject_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
@@ -234,7 +265,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                             {
                                 Ok(result) if result.can_accept => {
                                     if let Some(msg) = {
-                                        let mut sim = game.sim.write().await;
+                                        let mut sim = zone_sim.write().await;
                                         sim.approve_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
@@ -258,7 +289,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
 
                                     let message = "Inventory full".to_string();
                                     if let Some(msg) = {
-                                        let mut sim = game.sim.write().await;
+                                        let mut sim = zone_sim.write().await;
                                         sim.reject_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
@@ -282,7 +313,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
 
                                     let message = "failed to check inventory capacity".to_string();
                                     if let Some(msg) = {
-                                        let mut sim = game.sim.write().await;
+                                        let mut sim = zone_sim.write().await;
                                         sim.reject_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
@@ -410,7 +441,7 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     // Stop the server-driven harvest loop — otherwise it
                                     // would keep rolling and failing every swing.
                                     if let Some(msg) = {
-                                        let mut sim = game.sim.write().await;
+                                        let mut sim = zone_sim.write().await;
                                         sim.cancel_player_action(grant.player_id, "Inventory full")
                                     } {
                                         game.hub.broadcast(msg);
@@ -445,24 +476,62 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                         }
                     }
                 }
+                });
             }
         }
     });
 
     tokio::spawn({
         let game = game.clone();
+        let zone_sim = zone.sim.clone();
         async move {
             let dt = std::time::Duration::from_millis((1000 / snapshot_hz.max(1)) as u64);
             let mut interval = tokio::time::interval(dt);
 
             loop {
                 interval.tick().await;
-                let sim = game.sim.read().await;
-                let snap = sim.snapshot();
-                game.hub.broadcast(crate::game::protocol::ServerMsg::Snapshot(snap));
+                let snap = {
+                    let sim = zone_sim.read().await;
+                    sim.snapshot()
+                };
+
+                // Interest management (#8): rather than broadcasting one full
+                // snapshot to everyone, send each player only what's inside its AOI
+                // window — itself always, plus players and harvest nodes within
+                // AOI_TILES. At low player counts every entity is in range so this is
+                // a near-no-op; it bounds per-client snapshot size as the world and
+                // population grow. O(players × (players + nodes)) per tick — fine at
+                // this scale; a spatial grid is the optimization once counts get
+                // large. (Lock released above — filtering/sends never hold the sim.)
+                for viewer in &snap.players {
+                    let players: Vec<_> = snap
+                        .players
+                        .iter()
+                        .filter(|p| p.player_id == viewer.player_id || in_aoi(viewer.tile, p.tile))
+                        .cloned()
+                        .collect();
+                    let harvest_nodes: Vec<_> = snap
+                        .harvest_nodes
+                        .iter()
+                        .filter(|n| in_aoi(viewer.tile, n.tile))
+                        .cloned()
+                        .collect();
+
+                    game.hub.send_to(
+                        viewer.player_id,
+                        crate::game::protocol::ServerMsg::Snapshot(
+                            crate::game::protocol::WorldSnapshot {
+                                server_tick: snap.server_tick,
+                                players,
+                                harvest_nodes,
+                            },
+                        ),
+                    );
+                }
             }
         }
     });
+    }
 }
 
 async fn shutdown_signal() {

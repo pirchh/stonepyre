@@ -44,6 +44,11 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 
     let mut player_id: Option<Uuid> = None;
     let mut character_id: Option<Uuid> = None;
+    // The zone this connection's player occupies. Single-zone today, so it's the
+    // default; a handoff (#9) would update it so later commands route to the new
+    // zone. `sim_lock` is the routed handle to that zone's sim.
+    let zone_id = crate::game::zone::DEFAULT_ZONE;
+    let sim_lock = state.game.sim_for(zone_id);
 
     let write_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
@@ -136,12 +141,22 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         }
 
                         {
-                            let mut sim = state.game.sim.write().await;
+                            let mut sim = sim_lock.write().await;
                             sim.add_player(requested_player_id, requested_character_id);
                         }
 
                         player_id = Some(requested_player_id);
                         character_id = Some(requested_character_id);
+
+                        // Register this connection for per-client (AOI-filtered)
+                        // snapshot delivery (#8 interest management).
+                        state
+                            .game
+                            .hub
+                            .register_client(requested_player_id, out_tx.clone());
+
+                        // Record which zone the player joined into (#9 routing).
+                        state.game.zones.assign(requested_player_id, zone_id).await;
 
                         let tick_hz: u32 = std::env::var("GAME_TICK_HZ")
                             .ok()
@@ -180,7 +195,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         }
 
                         let ground_items = {
-                            let sim = state.game.sim.read().await;
+                            let sim = sim_lock.read().await;
                             sim.ground_item_snapshots()
                         };
                         let _ = out_tx.send(ServerMsg::GroundItemsSnapshot(GroundItemsSnapshot {
@@ -251,7 +266,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                         // replays against exactly the tiles the server simulates.
                         {
                             let blocked: Vec<stonepyre_world::TilePos> = {
-                                let sim = state.game.sim.read().await;
+                                let sim = sim_lock.read().await;
                                 sim.world.blocked.iter().copied().collect()
                             };
                             let _ = out_tx.send(ServerMsg::WorldCollision { blocked });
@@ -268,7 +283,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                                 [0.0, 0.0]
                             };
                             let cancelled = {
-                                let mut sim = state.game.sim.write().await;
+                                let mut sim = sim_lock.write().await;
                                 sim.set_move_dir(pid, dir, seq)
                             };
                             if let Some(event) = cancelled {
@@ -279,7 +294,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                     ClientMsg::MoveTo { tile } => {
                         if let Some(pid) = player_id {
                             let (cancelled_event, path_confirmed) = {
-                                let mut sim = state.game.sim.write().await;
+                                let mut sim = sim_lock.write().await;
                                 let cancelled = sim.set_move_target(pid, tile);
                                 let path_msg = sim
                                     .player_path_and_goal(pid)
@@ -310,7 +325,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
 
-                        handle_interaction(&state, pid, cid, action, target, &out_tx).await;
+                        handle_interaction(&state, pid, cid, zone_id, action, target, &out_tx).await;
                     }
                     ClientMsg::DropItem {
                         slot_idx,
@@ -331,7 +346,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
 
-                        handle_drop_item(&state, pid, cid, slot_idx, item_id, quantity, &out_tx).await;
+                        handle_drop_item(&state, pid, cid, zone_id, slot_idx, item_id, quantity, &out_tx).await;
                     }
                     ClientMsg::PickupGroundItem { ground_item_id } => {
                         let Some(pid) = player_id else {
@@ -348,7 +363,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             continue;
                         };
 
-                        handle_pickup_ground_item(&state, pid, cid, ground_item_id, &out_tx).await;
+                        handle_pickup_ground_item(&state, pid, cid, zone_id, ground_item_id, &out_tx).await;
                     }
                     ClientMsg::EquipBag { inventory_slot_idx, bag_slot } => {
                         let Some(cid) = character_id else {
@@ -503,9 +518,12 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
 
     if let Some(pid) = player_id {
         {
-            let mut sim = state.game.sim.write().await;
+            let mut sim = sim_lock.write().await;
             sim.remove_player(pid);
         }
+
+        state.game.hub.unregister_client(pid);
+        state.game.zones.forget(pid).await;
 
         {
             let mut sessions = state.game.sessions.write().await;
@@ -530,14 +548,16 @@ async fn handle_interaction(
     state: &AppState,
     player_id: Uuid,
     character_id: Uuid,
+    zone_id: crate::game::zone::ZoneId,
     action: InteractionAction,
     target: InteractionTarget,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
+    let sim_lock = state.game.sim_for(zone_id);
     match (action, target.clone()) {
         (InteractionAction::WalkHere, InteractionTarget::Tile(tile)) => {
             let event = {
-                let mut sim = state.game.sim.write().await;
+                let mut sim = sim_lock.write().await;
                 sim.set_move_target(player_id, tile)
             };
 
@@ -555,7 +575,7 @@ async fn handle_interaction(
         (InteractionAction::UseBank, InteractionTarget::Tile(booth_tile)) => {
             // Proximity check: the player must be adjacent (Chebyshev ≤ 1) to the booth.
             let player_tile = {
-                let sim = state.game.sim.read().await;
+                let sim = sim_lock.read().await;
                 sim.player_tile(player_id)
             };
 
@@ -595,7 +615,7 @@ async fn handle_interaction(
         }
         (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
             let skill_requirement = {
-                let sim = state.game.sim.read().await;
+                let sim = sim_lock.read().await;
                 sim.world.harvest_node_def_at(tile).map(|def| {
                     (
                         def.skill.id().to_string(),
@@ -644,7 +664,7 @@ async fn handle_interaction(
             };
 
             let validation = {
-                let mut sim = state.game.sim.write().await;
+                let mut sim = sim_lock.write().await;
                 sim.queue_chop_down(player_id, tile, skill_level)
             };
 
@@ -690,11 +710,13 @@ async fn handle_drop_item(
     state: &AppState,
     player_id: Uuid,
     character_id: Uuid,
+    zone_id: crate::game::zone::ZoneId,
     slot_idx: usize,
     item_id: String,
     quantity: u32,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
+    let sim_lock = state.game.sim_for(zone_id);
     match crate::game::sim::inventory::remove_character_item_from_slot(
         &state.db,
         character_id,
@@ -711,7 +733,7 @@ async fn handle_drop_item(
             );
 
             let event = {
-                let mut sim = state.game.sim.write().await;
+                let mut sim = sim_lock.write().await;
                 sim.spawn_ground_item_for_player(
                     player_id,
                     result.item_id.clone(),
@@ -797,11 +819,13 @@ async fn handle_pickup_ground_item(
     state: &AppState,
     player_id: Uuid,
     character_id: Uuid,
+    zone_id: crate::game::zone::ZoneId,
     ground_item_id: Uuid,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) {
+    let sim_lock = state.game.sim_for(zone_id);
     let ground_item = {
-        let mut sim = state.game.sim.write().await;
+        let mut sim = sim_lock.write().await;
         sim.take_ground_item_for_player(player_id, character_id, ground_item_id)
     };
 
@@ -832,7 +856,7 @@ async fn handle_pickup_ground_item(
         }
         Err(crate::game::sim::inventory::InventoryGrantError::InventoryFull { .. }) => {
             {
-                let mut sim = state.game.sim.write().await;
+                let mut sim = sim_lock.write().await;
                 sim.restore_ground_item(ground_item);
             }
             let _ = out_tx.send(ServerMsg::Error {
@@ -845,7 +869,7 @@ async fn handle_pickup_ground_item(
                 character_id, ground_item_id, e
             );
             {
-                let mut sim = state.game.sim.write().await;
+                let mut sim = sim_lock.write().await;
                 sim.restore_ground_item(ground_item);
             }
             let _ = out_tx.send(ServerMsg::Error {
