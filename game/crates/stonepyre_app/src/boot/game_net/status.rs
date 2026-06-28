@@ -262,6 +262,10 @@ pub struct GameNetStatus {
     pub action_marker_target: Option<TilePos>,
     pub last_error: Option<String>,
     pub correction_count: u64,
+    /// The latest input `seq` the client has sent (set by send_wasd_movement).
+    /// The reconciler compares it to the server's echoed `last_input_seq` to tell
+    /// whether the authoritative position already reflects our newest direction.
+    pub last_sent_input_seq: u32,
     pub remote_player_count: usize,
     /// True after the first authoritative position has been applied.
     /// Suppresses the hard-snap warning on initial load.
@@ -311,6 +315,7 @@ impl Default for GameNetStatus {
             action_marker_target: None,
             last_error: None,
             correction_count: 0,
+            last_sent_input_seq: 0,
             remote_player_count: 0,
             initial_sync_done: false,
         }

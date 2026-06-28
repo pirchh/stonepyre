@@ -1,97 +1,131 @@
 use bevy::prelude::*;
 
 use stonepyre_engine::plugins::input::InputBindings;
-use stonepyre_engine::plugins::world::{LogicalPos2d, Player};
-use stonepyre_world::TILE_SIZE;
+use stonepyre_engine::plugins::world::{LogicalPos2d, MoveSpeed, Player};
+use stonepyre_world::{slide_move, world3d_to_tile, WorldGrid, TILE_SIZE};
 
 use super::status::GameNetStatus;
 
-/// 3 tiles — any error beyond this snaps immediately (genuine desync / wall-phasing).
+/// Beyond this the local view snaps instantly (genuine desync / teleport).
 const HARD_SNAP_THRESHOLD: f32 = TILE_SIZE * 3.0;
 
-/// Lerp factor per frame while idle correction is active.
-/// 0.05 at 60fps closes a 1-tile gap in ~0.3s — slow enough to be invisible.
-const IDLE_LERP_FACTOR: f32 = 0.05;
+/// How far behind "now" the server's authoritative position is, roughly: one
+/// snapshot interval plus transit. We project the authoritative position forward
+/// by the held input over this window so we reconcile against where the server
+/// *will* be, not where it was — otherwise pure latency reads as error and the
+/// player rubber-bands. Tunable; ~0.12s suits a 10Hz snapshot rate on LAN.
+const SERVER_LAG_SECS: f32 = 0.12;
 
-/// Seconds the player must be fully idle before correction kicks in.
-/// Gives the server time to process the stop command and stabilise its position
-/// before we try to reconcile against it.
-/// 10hz tick (100ms) + ~50ms RTT + margin = ~0.35s.
-const IDLE_SETTLE_SECS: f32 = 0.35;
+/// Ignore errors smaller than this — avoids visible jitter and lets the player
+/// rest anywhere within ~a fifth of a tile of the server's resting point.
+const CORRECT_DEADZONE: f32 = TILE_SIZE * 0.2;
 
-/// Dead zone: don't apply any idle correction for errors smaller than this.
-/// Tick-rate lag alone causes ~10wu of drift at 1.6 tiles/sec — well under this
-/// threshold. This means small sub-tile positional differences are simply
-/// accepted, so the player can stand on tile edges/corners without being
-/// nudged toward the server's resting position.
-const IDLE_CORRECT_MIN_ERROR: f32 = TILE_SIZE * 0.5; // 32wu — half a tile
+/// Per-frame lerp toward the reconciled target: gentle while moving (a small
+/// error vanishes over a few frames, invisibly), a touch firmer while idle to
+/// settle onto the authoritative resting position.
+const MOVING_CORRECT_RATE: f32 = 0.15;
+const IDLE_CORRECT_RATE: f32 = 0.30;
 
-/// Reconcile the local player position against the server's authoritative position.
+/// Reconcile the locally-predicted player against the server's authoritative
+/// position by replaying the held input forward.
 ///
-/// Three-mode strategy:
+/// The client predicts movement locally every frame (engine `wasd_movement`).
+/// Each tick the server sends its authoritative position plus `last_input_seq`
+/// (the last input it applied). Every frame, here:
 ///
-/// **While moving** — client is ground truth. No correction at all. The server
-/// is always 100ms+ behind due to tick rate; correcting during movement creates
-/// visible jitter.
+/// 1. Take the authoritative position and — when the server is current on our
+///    input — re-integrate the held direction forward through the shared,
+///    collision-aware `slide_move` for `SERVER_LAG_SECS`. For this held-direction
+///    model, "replay the unacknowledged input" *is* this forward integration: the
+///    server is mid-applying that direction, so we project it to ~now. If the
+///    server hasn't applied our latest turn yet (its echoed seq is behind), its
+///    position still reflects the old direction, so we skip the feed-forward.
+/// 2. Continuously, gently lerp the rendered position toward that target — while
+///    moving *and* idle. Genuine error (a wall we mispredicted, a server clamp)
+///    converges away smoothly; pure latency contributes ~nothing because the
+///    feed-forward already accounts for it. This runs *before* `wasd_movement`,
+///    which then applies this frame's input on top (and re-clamps collisions).
+/// 3. Hard-snap only on a multi-tile gap (real desync / teleport).
 ///
-/// **Just stopped (< IDLE_SETTLE_SECS)** — do nothing. The server is still
-/// processing the stop and its position hasn't stabilised yet. Correcting now
-/// would snap the player back before the server arrives.
-///
-/// **Settled idle (>= IDLE_SETTLE_SECS)** — gently lerp toward server at
-/// IDLE_LERP_FACTOR. Corrects any accumulated tick-rate drift (typically
-/// 0.5–2 tiles) without visible artifact. No cap on error — larger drifts
-/// converge more slowly but always converge.
-///
-/// **Hard snap** — fires in all modes when error exceeds 3 tiles (genuine desync).
+/// Replaces the old "client is ground truth while moving; settle-then-lerp when
+/// idle; snap at 3 tiles" heuristic, which let error accumulate invisibly and
+/// then teleport the player on stop.
 pub fn reconcile_local_player_to_server(
-    time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     bindings: Res<InputBindings>,
-    mut idle_secs: Local<f32>,
+    world: Option<Res<WorldGrid>>,
     mut status: ResMut<GameNetStatus>,
-    mut player_q: Query<(&mut Transform, &mut LogicalPos2d), With<Player>>,
+    mut player_q: Query<(&mut Transform, &mut LogicalPos2d, &MoveSpeed), With<Player>>,
 ) {
     let Some(server_pos) = status.server_pos else {
         return;
     };
 
-    let Ok((mut xform, mut logical)) = player_q.single_mut() else {
+    let Ok((mut xform, mut logical, speed)) = player_q.single_mut() else {
         status.local_tile = None;
         status.drift_tiles = None;
         return;
     };
 
-    let local = logical.0;
-    let target = Vec2::new(server_pos[0], server_pos[1]);
-    let error = (target - local).length();
+    let auth = Vec2::new(server_pos[0], server_pos[1]);
 
-    status.drift_tiles = Some((error / TILE_SIZE).round() as i32);
-    status.local_tile = Some(stonepyre_world::world3d_to_tile(xform.translation));
-
-    // Wait for a real server position before committing. The server sends
-    // (0, 0) for the first several snapshots while it loads the character from
-    // the database. We treat any position within 1wu of origin as "not yet
-    // loaded" and skip reconciliation entirely until the real position arrives.
+    // Wait for a real authoritative position before committing — the server sends
+    // (0, 0) for the first few snapshots while it loads the character from the DB.
     if !status.initial_sync_done {
-        if target.length_squared() < 1.0 {
-            // Server hasn't loaded the character yet — don't move the player.
+        if auth.length_squared() < 1.0 {
             return;
         }
-        // Real position received — snap silently. No warning; this is expected.
-        logical.0 = target;
-        xform.translation.x = target.x;
-        xform.translation.z = target.y;
+        logical.0 = auth;
+        xform.translation.x = auth.x;
+        xform.translation.z = auth.y;
         status.initial_sync_done = true;
-        *idle_secs = 0.0;
-        info!(
-            "reconcile initial-sync: placed at ({:.1}, {:.1})",
-            target.x, target.y,
-        );
+        info!("reconcile initial-sync: placed at ({:.1}, {:.1})", auth.x, auth.y);
         return;
     }
 
-    // Hard snap fires for genuine desyncs regardless of movement state.
+    // Held input direction (same axes/convention as engine `wasd_movement`).
+    let mut dir = Vec2::ZERO;
+    if keyboard.pressed(bindings.move_forward) { dir.y -= 1.0; }
+    if keyboard.pressed(bindings.move_back)    { dir.y += 1.0; }
+    if keyboard.pressed(bindings.move_left)    { dir.x -= 1.0; }
+    if keyboard.pressed(bindings.move_right)   { dir.x += 1.0; }
+    let moving = dir != Vec2::ZERO;
+
+    // Has the server applied our latest input? Find our own player in the latest
+    // snapshot; if its echoed seq is behind, its position still reflects the
+    // previous direction, so skip the feed-forward for ~one RTT after a turn.
+    let server_current = {
+        let pid = status.player_id;
+        let acked = pid
+            .and_then(|pid| status.latest_players.iter().find(|p| p.player_id == pid))
+            .map(|p| p.last_input_seq);
+        match acked {
+            Some(seq) => seq >= status.last_sent_input_seq,
+            None => true,
+        }
+    };
+
+    // Feed-forward: project the authoritative position forward by the held input
+    // to ~now, collision-aware, so we reconcile against the server's *current*
+    // position rather than its ~one-tick-stale snapshot.
+    let target = if moving && server_current {
+        let d = dir.normalize();
+        let delta = [d.x * speed.0 * SERVER_LAG_SECS, d.y * speed.0 * SERVER_LAG_SECS];
+        let out = match world.as_ref() {
+            Some(w) => slide_move([auth.x, auth.y], delta, |t| w.is_blocked(t)),
+            None => [auth.x + delta[0], auth.y + delta[1]],
+        };
+        Vec2::new(out[0], out[1])
+    } else {
+        auth
+    };
+
+    let local = logical.0;
+    let error = (target - local).length();
+    status.drift_tiles = Some((error / TILE_SIZE).round() as i32);
+    status.local_tile = Some(world3d_to_tile(xform.translation));
+
+    // Hard snap for genuine desyncs / teleports, regardless of movement state.
     if error > HARD_SNAP_THRESHOLD {
         logical.0 = target;
         xform.translation.x = target.x;
@@ -105,30 +139,10 @@ pub fn reconcile_local_player_to_server(
         return;
     }
 
-    let is_moving =
-        keyboard.pressed(bindings.move_forward) ||
-        keyboard.pressed(bindings.move_back)    ||
-        keyboard.pressed(bindings.move_left)    ||
-        keyboard.pressed(bindings.move_right);
-
-    if is_moving {
-        // Moving — trust the client completely, reset the settle timer.
-        *idle_secs = 0.0;
-        return;
-    }
-
-    // Accumulate idle time before applying any correction.
-    *idle_secs += time.delta_secs();
-    if *idle_secs < IDLE_SETTLE_SECS {
-        return;
-    }
-
-    // Settled idle — converge toward server position only if the drift is
-    // large enough to be meaningful. Sub-tile differences (< half a tile) are
-    // accepted as-is; the player can rest on any position inside a tile without
-    // being nudged toward the server's resting point.
-    if error > IDLE_CORRECT_MIN_ERROR {
-        let new_pos = local.lerp(target, IDLE_LERP_FACTOR);
+    // Continuous smooth correction toward the (feed-forward) authoritative target.
+    if error > CORRECT_DEADZONE {
+        let rate = if moving { MOVING_CORRECT_RATE } else { IDLE_CORRECT_RATE };
+        let new_pos = local.lerp(target, rate);
         logical.0 = new_pos;
         xform.translation.x = new_pos.x;
         xform.translation.z = new_pos.y;

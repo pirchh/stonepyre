@@ -1340,8 +1340,8 @@ pub fn process_pending_bank_open(
 pub fn send_wasd_movement_to_server(
     keyboard: Res<ButtonInput<KeyCode>>,
     game_net: Res<GameNetRuntime>,
+    mut status: ResMut<GameNetStatus>,
     mut last_sent: Local<[f32; 2]>,
-    mut seq: Local<u32>,
 ) {
     // Build float direction — same axes as the client movement system.
     // Vec2 convention: x = world-X, y = world-Z (LogicalPos2d).
@@ -1367,9 +1367,9 @@ pub fn send_wasd_movement_to_server(
 
     let guard = game_net.command_tx.lock().unwrap();
     if let Some(tx) = guard.as_ref() {
-        let next = seq.wrapping_add(1);
+        let next = status.last_sent_input_seq.wrapping_add(1);
         if tx.send(GameNetCommand::MoveDir { dx, dy, seq: next }).is_ok() {
-            *seq = next;
+            status.last_sent_input_seq = next;
             *last_sent = [dx, dy];
         }
     }
