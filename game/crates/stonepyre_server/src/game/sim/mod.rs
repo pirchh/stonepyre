@@ -89,6 +89,7 @@ impl GameSim {
                 character_id,
                 pos,
                 move_dir: [0.0, 0.0],
+                last_input_seq: 0,
                 tile: spawn,
                 goal: None,
                 path: Default::default(),
@@ -107,9 +108,10 @@ impl GameSim {
     /// interrupts your action immediately rather than waiting for the next roll's
     /// range check). Returns the `Cancelled` ActionState to broadcast, if an
     /// action was interrupted.
-    pub fn set_move_dir(&mut self, player_id: Uuid, dir: [f32; 2]) -> Option<ServerMsg> {
+    pub fn set_move_dir(&mut self, player_id: Uuid, dir: [f32; 2], seq: u32) -> Option<ServerMsg> {
         let p = self.world.players.get_mut(&player_id)?;
         p.move_dir = dir;
+        p.last_input_seq = seq;
 
         if dir[0] == 0.0 && dir[1] == 0.0 {
             return None;
@@ -517,6 +519,7 @@ impl GameSim {
                     character_id: p.character_id,
                     pos_x: p.pos[0],
                     pos_z: p.pos[1],
+                    last_input_seq: p.last_input_seq,
                     tile: p.tile,
                     next_tile: p.path.front().copied(),
                     goal: p.goal,

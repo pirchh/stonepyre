@@ -44,6 +44,8 @@ pub struct NetPlayerSnapshot {
     pub pos_x: f32,
     /// Continuous server-authoritative position (world Z).
     pub pos_z: f32,
+    /// Last `MoveDir` seq the server had applied (for client reconciliation).
+    pub last_input_seq: u32,
     pub tile: TilePos,
     pub next_tile: Option<TilePos>,
     pub goal: Option<TilePos>,

@@ -105,8 +105,9 @@ pub enum GameNetEvent {
 
 #[derive(Debug)]
 pub enum GameNetCommand {
-    /// Continuous WASD direction — sent on key change.
-    MoveDir { dx: f32, dy: f32 },
+    /// Continuous WASD direction — sent on key change. `seq` is the per-client
+    /// monotonic input counter (for server-reconciliation).
+    MoveDir { dx: f32, dy: f32, seq: u32 },
     MoveTo { tile: TilePos },
     Interact {
         action: InteractionAction,

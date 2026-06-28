@@ -370,6 +370,10 @@ pub struct PlayerState {
     /// `[0, 0]` means the player is standing still.
     pub move_dir: [f32; 2],
 
+    /// `seq` of the most recent `MoveDir` applied for this player. Echoed in
+    /// snapshots so the client can drop acknowledged inputs during reconciliation.
+    pub last_input_seq: u32,
+
     // ------------------------------------------------------------------
     // Tile-based state (derived from pos; used for interaction checks)
     // ------------------------------------------------------------------

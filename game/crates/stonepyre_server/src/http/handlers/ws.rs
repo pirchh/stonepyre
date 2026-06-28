@@ -257,7 +257,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             let _ = out_tx.send(ServerMsg::WorldCollision { blocked });
                         }
                     }
-                    ClientMsg::MoveDir { dx, dy } => {
+                    ClientMsg::MoveDir { dx, dy, seq } => {
                         if let Some(pid) = player_id {
                             // Normalise on the server as a safety measure — reject
                             // any inflated magnitude the client might send.
@@ -269,7 +269,7 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                             };
                             let cancelled = {
                                 let mut sim = state.game.sim.write().await;
-                                sim.set_move_dir(pid, dir)
+                                sim.set_move_dir(pid, dir, seq)
                             };
                             if let Some(event) = cancelled {
                                 let _ = out_tx.send(event);

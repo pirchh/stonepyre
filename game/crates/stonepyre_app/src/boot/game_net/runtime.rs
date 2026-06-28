@@ -322,8 +322,8 @@ fn run_game_ws(
     loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                GameNetCommand::MoveDir { dx, dy } => {
-                    let msg = ClientMsg::MoveDir { dx, dy };
+                GameNetCommand::MoveDir { dx, dy, seq } => {
+                    let msg = ClientMsg::MoveDir { dx, dy, seq };
                     let json = serde_json::to_string(&msg)
                         .map_err(|e| format!("game ws move_dir serialize failed: {e}"))?;
                     socket
@@ -549,6 +549,7 @@ fn run_game_ws(
                                 character_id: p.character_id,
                                 pos_x: p.pos_x,
                                 pos_z: p.pos_z,
+                                last_input_seq: p.last_input_seq,
                                 tile: p.tile,
                                 next_tile: p.next_tile,
                                 goal: p.goal,
@@ -1340,6 +1341,7 @@ pub fn send_wasd_movement_to_server(
     keyboard: Res<ButtonInput<KeyCode>>,
     game_net: Res<GameNetRuntime>,
     mut last_sent: Local<[f32; 2]>,
+    mut seq: Local<u32>,
 ) {
     // Build float direction — same axes as the client movement system.
     // Vec2 convention: x = world-X, y = world-Z (LogicalPos2d).
@@ -1365,7 +1367,9 @@ pub fn send_wasd_movement_to_server(
 
     let guard = game_net.command_tx.lock().unwrap();
     if let Some(tx) = guard.as_ref() {
-        if tx.send(GameNetCommand::MoveDir { dx, dy }).is_ok() {
+        let next = seq.wrapping_add(1);
+        if tx.send(GameNetCommand::MoveDir { dx, dy, seq: next }).is_ok() {
+            *seq = next;
             *last_sent = [dx, dy];
         }
     }
