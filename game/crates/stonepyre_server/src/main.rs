@@ -164,6 +164,9 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
 
                             // Server-authoritative harvest lock: require the skill
                             // level AND an equipped tool whose tier covers the node.
+                            // On success, capture the character's level and axe tier
+                            // to seed the per-swing success scaling.
+                            let mut harvest_power: (u32, u32) = (0, 0);
                             if let Some((req_level, skill_id, skill_display, tool_kind)) = requirements {
                                 let reject_message = match game::sim::equipment::check_harvest_gate(
                                     &db,
@@ -175,7 +178,10 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 )
                                 .await
                                 {
-                                    Ok(game::sim::equipment::HarvestGate::Ok) => None,
+                                    Ok(game::sim::equipment::HarvestGate::Ok { skill_level, tool_level }) => {
+                                        harvest_power = (skill_level, tool_level);
+                                        None
+                                    }
                                     Ok(game::sim::equipment::HarvestGate::LevelTooLow {
                                         required,
                                         skill_display,
@@ -184,9 +190,9 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     )),
                                     Ok(game::sim::equipment::HarvestGate::ToolMissing {
                                         required_tool_name,
-                                    }) => {
-                                        Some(format!("You need a {required_tool_name} or better equipped."))
-                                    }
+                                    }) => Some(format!(
+                                        "This trunk is too hard for your axe - you need a {required_tool_name} or better."
+                                    )),
                                     Err(e) => {
                                         warn!(
                                             "harvest gate check failed character_id={} error={:?}",
@@ -197,17 +203,20 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 };
 
                                 if let Some(message) = reject_message {
+                                    // The client mirrors this gate locally and shows the
+                                    // reason as a right-side drop, so we only broadcast the
+                                    // authoritative action-Rejected state — no extra
+                                    // ServerMsg::Error, which would double the message.
                                     if let Some(msg) = {
                                         let mut sim = game.sim.write().await;
                                         sim.reject_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
-                                            message.clone(),
+                                            message,
                                         )
                                     } {
                                         game.hub.broadcast(msg);
                                     }
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
                                     continue;
                                 }
                             }
@@ -226,6 +235,8 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         sim.approve_harvest_capacity_check(
                                             check.player_id,
                                             check.target.clone(),
+                                            harvest_power.0,
+                                            harvest_power.1,
                                         )
                                     } {
                                         game.hub.broadcast(msg);

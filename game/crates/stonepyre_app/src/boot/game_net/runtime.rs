@@ -169,10 +169,10 @@ pub fn send_unequip_bag_to_server(game_net: &GameNetRuntime, bag_slot: u8) -> bo
     tx.send(GameNetCommand::UnequipBag { bag_slot }).is_ok()
 }
 
-pub fn send_equip_item_to_server(game_net: &GameNetRuntime, inventory_slot_idx: usize) -> bool {
+pub fn send_equip_item_to_server(game_net: &GameNetRuntime, inventory_slot_idx: usize, item_id: String) -> bool {
     let guard = game_net.command_tx.lock().unwrap();
     let Some(tx) = guard.as_ref() else { return false; };
-    tx.send(GameNetCommand::EquipItem { inventory_slot_idx }).is_ok()
+    tx.send(GameNetCommand::EquipItem { inventory_slot_idx, item_id }).is_ok()
 }
 
 pub fn send_unequip_item_to_server(game_net: &GameNetRuntime, slot: String) -> bool {
@@ -396,8 +396,8 @@ fn run_game_ws(
                         .send(Message::Text(json))
                         .map_err(|e| format!("game ws unequip bag send failed: {e}"))?;
                 }
-                GameNetCommand::EquipItem { inventory_slot_idx } => {
-                    let msg = ClientMsg::EquipItem { inventory_slot_idx };
+                GameNetCommand::EquipItem { inventory_slot_idx, item_id } => {
+                    let msg = ClientMsg::EquipItem { inventory_slot_idx, item_id };
                     let json = serde_json::to_string(&msg)
                         .map_err(|e| format!("game ws equip item serialize failed: {e}"))?;
                     socket
@@ -653,7 +653,7 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
                     }
                     Ok(ServerMsg::Error { message }) => {
-                        let _ = tx.send(GameNetEvent::Error(message));
+                        let _ = tx.send(GameNetEvent::ServerNotice(message));
                     }
                     Err(e) => {
                         let _ = tx.send(GameNetEvent::Error(format!(
@@ -1099,6 +1099,15 @@ pub fn pump_game_net_results(
                     tiles.len()
                 );
                 status.pending_server_path = Some((goal, tiles));
+            }
+            GameNetEvent::ServerNotice(msg) => {
+                // Player-facing server message (wield-gate/equip/bank rejection,
+                // inventory full, etc.): surface it as a right-side red drop.
+                status.last_error = Some(msg.clone());
+                status
+                    .feedback_drops
+                    .push(super::status::FeedbackDrop::Message { text: msg.clone() });
+                warn!("game net notice: {}", msg);
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());

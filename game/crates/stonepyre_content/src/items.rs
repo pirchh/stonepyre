@@ -121,6 +121,11 @@ pub struct ToolDef {
     pub kind: String,
     pub tier: u32,
     pub harvest_level: u32,
+    /// Minimum skill level required to *wield* this tool — separate from
+    /// `harvest_level` (the highest node level it can harvest). 0 = no
+    /// requirement. Enforced server-side in `equip_item`.
+    #[serde(default)]
+    pub wield_level: u32,
 }
 
 /// Core item definition (content-only).

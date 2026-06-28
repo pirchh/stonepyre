@@ -18,6 +18,8 @@ use crate::game::protocol::{EquipmentSlotSnapshot, EquipmentSnapshot};
 pub enum EquipError {
     SlotEmpty { slot_idx: usize },
     NotEquippable { item_id: String },
+    /// The character's skill level is too low to wield this tool.
+    LevelTooLow { required: u32, skill_display: String },
     InventoryFull,
     Db(sqlx::Error),
 }
@@ -47,6 +49,18 @@ pub fn equip_slot_id(slot: EquipSlot) -> &'static str {
     }
 }
 
+/// Skill that gates *wielding* a tool of the given `kind`, as
+/// `(skill_id, display_name)`. Inverse of the harvest side's skill->tool map.
+fn wield_skill_for_tool(kind: &str) -> Option<(&'static str, &'static str)> {
+    match kind {
+        "axe" => Some((
+            crate::game::sim::skills::WOODCUTTING_SKILL_ID,
+            crate::game::sim::skills::WOODCUTTING_DISPLAY_NAME,
+        )),
+        _ => None,
+    }
+}
+
 /// Equip a worn item from the main inventory. The destination slot is derived
 /// from the item's equipment def; any item already in that slot is swapped back
 /// into the freed inventory slot. Returns the full equipment snapshot.
@@ -54,29 +68,58 @@ pub async fn equip_item(
     pool: &PgPool,
     character_id: Uuid,
     inventory_slot_idx: usize,
+    item_id: &str,
 ) -> Result<EquipmentSnapshot, EquipError> {
     let content = stonepyre_content::default_content_db();
+
+    // Wield-level gate (fail fast, before locking): tools such as axes require a
+    // minimum skill level to equip. Keyed off the client-sent item_id; the
+    // find-by-id below still confirms the item is actually in the inventory.
+    if let Some(tool) = content.items.get(item_id).and_then(|i| i.tool.as_ref()) {
+        if tool.wield_level > 0 {
+            if let Some((skill_id, skill_display)) = wield_skill_for_tool(&tool.kind) {
+                let progress = crate::game::sim::skills::load_character_skill_progress(
+                    pool,
+                    character_id,
+                    skill_id,
+                )
+                .await?;
+                if progress.level < tool.wield_level {
+                    return Err(EquipError::LevelTooLow {
+                        required: tool.wield_level,
+                        skill_display: skill_display.to_string(),
+                    });
+                }
+            }
+        }
+    }
 
     let mut tx = pool.begin().await?;
     lock_character_inventory(&mut tx, character_id).await?;
     let inv_container_id = ensure_base_inventory_container(&mut tx, character_id).await?;
 
-    let inv_row: Option<(String, i64)> = sqlx::query_as(
+    // Resolve by item id, not the client's slot: rapid equips/swaps can shift the
+    // inventory under a click, so the slot index is only a hint. Use the lowest
+    // slot actually holding the item.
+    let inv_row: Option<(i32, String)> = sqlx::query_as(
         r#"
-        SELECT item_id, quantity
+        SELECT slot_idx, item_id
         FROM game.character_container_slots
-        WHERE container_id = $1::uuid AND slot_idx = $2::int
+        WHERE container_id = $1::uuid AND item_id = $2 AND quantity > 0
+        ORDER BY slot_idx ASC
+        LIMIT 1
         FOR UPDATE
         "#,
     )
     .bind(inv_container_id)
-    .bind(inventory_slot_idx as i32)
+    .bind(item_id)
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some((item_id, _qty)) = inv_row else {
+    let Some((slot_i32, item_id)) = inv_row else {
         return Err(EquipError::SlotEmpty { slot_idx: inventory_slot_idx });
     };
+    let inventory_slot_idx = slot_i32 as usize;
 
     let equip_def = content
         .items
@@ -218,7 +261,9 @@ pub async fn load_character_equipment(
 
 /// Outcome of checking whether a character may harvest a node.
 pub enum HarvestGate {
-    Ok,
+    /// Allowed. Carries the inputs the per-swing success scaling needs: the
+    /// character's level in the node's skill and the equipped tool's tier.
+    Ok { skill_level: u32, tool_level: u32 },
     LevelTooLow { required: u32, skill_display: String },
     ToolMissing { required_tool_name: String },
 }
@@ -248,20 +293,23 @@ pub async fn check_harvest_gate(
     // 2) Equipped main-hand tool of the right kind, covering the node level.
     let content = stonepyre_content::default_content_db();
     let equipped = equipped_item_in_slot(pool, character_id, "main_hand").await?;
-    let tool_ok = equipped
+    let tool_level = equipped
         .as_ref()
         .and_then(|id| content.items.get(id))
         .and_then(|item| item.tool.as_ref())
-        .map(|tool| tool.kind == required_tool_kind && tool.harvest_level >= required_level)
-        .unwrap_or(false);
+        .filter(|tool| tool.kind == required_tool_kind && tool.harvest_level >= required_level)
+        .map(|tool| tool.harvest_level);
 
-    if !tool_ok {
+    let Some(tool_level) = tool_level else {
         return Ok(HarvestGate::ToolMissing {
             required_tool_name: min_tool_name_for_level(&content, required_tool_kind, required_level),
         });
-    }
+    };
 
-    Ok(HarvestGate::Ok)
+    Ok(HarvestGate::Ok {
+        skill_level: progress.level,
+        tool_level,
+    })
 }
 
 /// Display name of the lowest-tier tool of `kind` that can harvest `required_level`

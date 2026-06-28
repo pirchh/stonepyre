@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod equipped_visuals;
 pub mod input;
 pub mod interaction;
 pub mod movement;

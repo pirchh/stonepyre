@@ -41,6 +41,9 @@ pub enum ClientMsg {
     /// item already in that slot back into the freed inventory slot.
     EquipItem {
         inventory_slot_idx: usize,
+        /// The item the client intends to equip. The server resolves the actual
+        /// inventory slot by id, so a stale slot index still works.
+        item_id: String,
     },
     /// Unequip the item in the given worn slot back into the main inventory.
     UnequipItem {

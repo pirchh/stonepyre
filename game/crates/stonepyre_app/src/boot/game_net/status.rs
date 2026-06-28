@@ -91,6 +91,10 @@ pub enum GameNetEvent {
         tiles: Vec<TilePos>,
     },
     Error(String),
+    /// A player-facing notice from the server (action rejected, gate failed,
+    /// inventory full, etc.) — surfaced as a right-side feedback drop. Distinct
+    /// from `Error`, which is for transport/parse failures and is logged only.
+    ServerNotice(String),
     Disconnected,
 }
 
@@ -120,6 +124,7 @@ pub enum GameNetCommand {
     },
     EquipItem {
         inventory_slot_idx: usize,
+        item_id: String,
     },
     UnequipItem {
         slot: String,

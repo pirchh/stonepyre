@@ -49,7 +49,9 @@ pub fn update_harvest_ready_gate(
             Harvestability::LevelTooLow { required, skill_display } => {
                 Some(format!("Need level {required} {skill_display}"))
             }
-            Harvestability::NeedTool { tool_name } => Some(format!("Need a {tool_name}")),
+            Harvestability::NeedTool { tool_name } => {
+                Some(format!("Trunk too hard - need a {tool_name}"))
+            }
             Harvestability::Ok | Harvestability::NotApplicable => None,
         };
         if let Some(text) = message {

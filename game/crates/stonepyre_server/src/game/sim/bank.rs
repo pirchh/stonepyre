@@ -689,26 +689,27 @@ pub async fn bank_withdraw_item(
         tab_row.ok_or(BankError::TabNotFound { tab_idx })?;
     let tag_filters = tag_filters.unwrap_or_default();
 
-    // Read the bank slot.
-    let bank_row: Option<(String, i64)> = sqlx::query_as(
+    // Locate the item by id, not by slot: the client's `slot_idx` is unreliable
+    // (the "All" view renumbers slots for display), so we identify the item by
+    // `expected_item_id` and drain across however many slots hold it.
+    let matching: Vec<(i32, i64)> = sqlx::query_as(
         r#"
-        SELECT item_id, quantity
+        SELECT slot_idx, quantity
         FROM game.character_container_slots
-        WHERE container_id = $1::uuid AND slot_idx = $2::int
+        WHERE container_id = $1::uuid AND item_id = $2 AND quantity > 0
+        ORDER BY slot_idx ASC
         FOR UPDATE
         "#,
     )
     .bind(bank_container_id)
-    .bind(slot_idx as i32)
-    .fetch_optional(&mut *tx)
+    .bind(expected_item_id)
+    .fetch_all(&mut *tx)
     .await?;
 
-    let Some((actual_item_id, bank_qty)) = bank_row else {
-        return Err(BankError::SlotEmpty { tab_idx, slot_idx });
-    };
-    if actual_item_id != expected_item_id {
-        return Err(BankError::SlotItemMismatch);
+    if matching.is_empty() {
+        return Err(BankError::ItemNotInBank { item_id: expected_item_id.to_string() });
     }
+    let total_available: i64 = matching.iter().map(|(_, q)| *q).sum();
 
     // Get inventory container and its current state.
     let inv_container_id: Uuid = sqlx::query_scalar(
@@ -731,38 +732,46 @@ pub async fn bank_withdraw_item(
         &content,
         &inv_rows,
         inv_slots_total,
-        &actual_item_id,
-        quantity.min(bank_qty),
+        expected_item_id,
+        quantity.min(total_available),
     );
 
     if withdraw_qty <= 0 {
         return Err(BankError::InventoryFull);
     }
 
-    // Deduct from bank.
-    let remaining_bank = bank_qty - withdraw_qty;
-    if remaining_bank == 0 {
-        sqlx::query(
-            r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
-        )
-        .bind(bank_container_id)
-        .bind(slot_idx as i32)
-        .execute(&mut *tx)
-        .await?;
-    } else {
-        sqlx::query(
-            r#"UPDATE game.character_container_slots SET quantity = $3::bigint, updated_at = now()
-               WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
-        )
-        .bind(bank_container_id)
-        .bind(slot_idx as i32)
-        .bind(remaining_bank)
-        .execute(&mut *tx)
-        .await?;
+    // Deduct from the bank, draining matching slots lowest-first.
+    let mut remaining = withdraw_qty;
+    for (slot, slot_qty) in &matching {
+        if remaining <= 0 {
+            break;
+        }
+        let take = remaining.min(*slot_qty);
+        let new_qty = *slot_qty - take;
+        if new_qty == 0 {
+            sqlx::query(
+                r#"DELETE FROM game.character_container_slots WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+            )
+            .bind(bank_container_id)
+            .bind(*slot)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                r#"UPDATE game.character_container_slots SET quantity = $3::bigint, updated_at = now()
+                   WHERE container_id = $1::uuid AND slot_idx = $2::int"#,
+            )
+            .bind(bank_container_id)
+            .bind(*slot)
+            .bind(new_qty)
+            .execute(&mut *tx)
+            .await?;
+        }
+        remaining -= take;
     }
 
-    // Grant to inventory.
-    grant_to_inventory(&mut tx, &content, inv_container_id, &inv_rows, inv_slots_total, &actual_item_id, withdraw_qty).await?;
+    // Grant to inventory (next free slot; the clamp above guaranteed room).
+    grant_to_inventory(&mut tx, &content, inv_container_id, &inv_rows, inv_slots_total, expected_item_id, withdraw_qty).await?;
 
     let bank_snapshot = load_tab_snapshot(&mut tx, character_id, bank_container_id, tab_idx, &display_name, &tag_filters).await?;
     let inv_snapshot = load_inv_snapshot_in_tx(&mut tx, character_id, inv_container_id, inv_slots_total).await?;

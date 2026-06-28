@@ -277,6 +277,8 @@ impl GameSim {
                     state: ActionState::Queued,
                     next_harvest_tick: None,
                     pending_harvest_capacity_check: false,
+                    harvest_skill_level: 0,
+                    harvest_tool_level: 0,
                 });
             }
 
@@ -309,6 +311,8 @@ impl GameSim {
                 state: ActionState::MovingToRange,
                 next_harvest_tick: None,
                 pending_harvest_capacity_check: false,
+                harvest_skill_level: 0,
+                harvest_tool_level: 0,
             });
         }
 
@@ -325,6 +329,8 @@ impl GameSim {
         &mut self,
         player_id: Uuid,
         target: InteractionTarget,
+        harvest_skill_level: u32,
+        harvest_tool_level: u32,
     ) -> Option<ServerMsg> {
         let p = self.world.players.get_mut(&player_id)?;
         let action = p.action.as_mut()?;
@@ -351,6 +357,8 @@ impl GameSim {
         action.state = ActionState::Active;
         action.next_harvest_tick = Some(self.tick + self.harvest_roll_ticks);
         action.pending_harvest_capacity_check = false;
+        action.harvest_skill_level = harvest_skill_level;
+        action.harvest_tool_level = harvest_tool_level;
 
         Some(ServerMsg::ActionState {
             player_id,
@@ -557,10 +565,10 @@ impl GameSim {
             .collect();
 
         for player_id in ready_players {
-            let Some((target, player_tile, character_id)) = self.world.players.get(&player_id).and_then(|p| {
+            let Some((target, player_tile, character_id, skill_level, tool_level)) = self.world.players.get(&player_id).and_then(|p| {
                 let action = p.action.as_ref()?;
                 let InteractionTarget::Tile(target) = action.target.clone();
-                Some((target, p.tile, p.character_id))
+                Some((target, p.tile, p.character_id, action.harvest_skill_level, action.harvest_tool_level))
             }) else {
                 continue;
             };
@@ -577,7 +585,10 @@ impl GameSim {
             }
 
             let roll = rand::random::<f32>();
-            let result = self.world.harvest.roll_harvest(target, roll, self.tick, self.ticks_per_second);
+            let result =
+                self.world
+                    .harvest
+                    .roll_harvest(target, roll, skill_level, tool_level, self.tick, self.ticks_per_second);
 
             match result {
                 Ok(outcome) => {
