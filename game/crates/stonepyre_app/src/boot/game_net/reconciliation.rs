@@ -1,30 +1,26 @@
 use bevy::prelude::*;
 
 use stonepyre_engine::plugins::world::{LogicalPos2d, Player};
-use stonepyre_world::{world3d_to_tile, TILE_SIZE};
+use stonepyre_world::{slide_move, world3d_to_tile, WorldGrid, TILE_SIZE};
 
 use super::status::GameNetStatus;
 
 /// Beyond this the local view snaps instantly (genuine desync / teleport).
 const HARD_SNAP_THRESHOLD: f32 = TILE_SIZE * 3.0;
 
-/// Below this gap we fully **trust the local prediction** and apply no correction
-/// at all — that's what keeps movement smooth.
-///
-/// With the deterministic shared integrator (A.1), server-authoritative collision
-/// (A.2), and matched speed, the client's prediction matches the server; the only
-/// residual is latency — the server is ~one tick behind us along the *same* path,
-/// so the gap is real-but-correct and the server converges back to us (no drift
-/// accumulation, no stop-teleport, walls already clamped identically). Pulling the
-/// 60fps render toward the 10Hz-stale snapshot every frame just causes a sawtooth
-/// tug (worst right after a turn, when the snapshot still reflects the old
-/// direction). So we don't. Only a *sustained* gap past this threshold is a
-/// genuine mispredict (e.g. recovering from dropped packets) worth converging.
-const SOFT_CORRECT_THRESHOLD: f32 = TILE_SIZE * 1.0;
+/// Inside this gap we trust the prediction and apply NO correction — it's pure
+/// latency (we render ~one tick ahead of the authoritative position, which is
+/// correct and keeps input responsive). The deadzone is what keeps the 10Hz
+/// snapshot from sawtoothing the 60fps render in normal play.
+const CORRECT_DEADZONE: f32 = TILE_SIZE * 0.2;
 
-/// Gentle per-frame blend toward authority while a genuine (1–3 tile) gap exists.
-/// Only runs in that rare band, so it never affects normal smooth movement.
-const SOFT_CORRECT_RATE: f32 = 0.20;
+/// Past the deadzone we converge toward authority at a rate that EASES IN with the
+/// size of the gap (0 at the deadzone, ramping to `MAX_CORRECT_RATE` once this much
+/// past it). The smooth ramp is the key: a genuine offset — e.g. after a hard
+/// wiggle near a tree — heals gently instead of snapping at a hard threshold or
+/// lingering just under one.
+const CORRECT_RAMP: f32 = TILE_SIZE * 1.0;
+const MAX_CORRECT_RATE: f32 = 0.25;
 
 /// Reconcile the locally-predicted player against the server's authoritative
 /// position.
@@ -42,6 +38,7 @@ const SOFT_CORRECT_RATE: f32 = 0.20;
 /// 10Hz sawtooth jank. The deterministic foundation (A.1/A.2/B) is what lets the
 /// reconciler stay this light.
 pub fn reconcile_local_player_to_server(
+    world: Option<Res<WorldGrid>>,
     mut status: ResMut<GameNetStatus>,
     mut player_q: Query<(&mut Transform, &mut LogicalPos2d), With<Player>>,
 ) {
@@ -91,9 +88,18 @@ pub fn reconcile_local_player_to_server(
     }
 
     // Below the soft threshold: trust the prediction, do nothing (smooth).
-    // Genuine 1–3 tile gap: blend gently toward authority.
+    // Genuine 1–3 tile gap: converge toward authority — but COLLISION-AWARE, so the
+    // correction slides *around* solids along a legal path instead of lerping
+    // straight through them. This is what stops the "jitter to the other side of
+    // the tree" and the lingering drift after a hard input-mash near a collision
+    // edge (where the 10Hz server and 60Hz client briefly take different paths).
     if error > SOFT_CORRECT_THRESHOLD {
-        let new_pos = local.lerp(auth, SOFT_CORRECT_RATE);
+        let step = (auth - local) * SOFT_CORRECT_RATE;
+        let out = match world.as_ref() {
+            Some(w) => slide_move([local.x, local.y], [step.x, step.y], |t| w.is_blocked(t)),
+            None => [local.x + step.x, local.y + step.y],
+        };
+        let new_pos = Vec2::new(out[0], out[1]);
         logical.0 = new_pos;
         xform.translation.x = new_pos.x;
         xform.translation.z = new_pos.y;
