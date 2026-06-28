@@ -158,7 +158,10 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                 } {
                                     game.hub.broadcast(msg);
                                 }
-                                game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                game.hub.broadcast(crate::game::protocol::ServerMsg::Notice {
+                                    player_id: check.player_id,
+                                    message,
+                                });
                                 continue;
                             };
 
@@ -264,7 +267,10 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     } {
                                         game.hub.broadcast(msg);
                                     }
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Notice {
+                                        player_id: check.player_id,
+                                        message,
+                                    });
                                 }
                                 Err(e) => {
                                     warn!(
@@ -285,7 +291,10 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                     } {
                                         game.hub.broadcast(msg);
                                     }
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error { message });
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Notice {
+                                        player_id: check.player_id,
+                                        message,
+                                    });
                                 }
                             }
                         }
@@ -393,7 +402,8 @@ fn start_game_loops(game: game::GameRuntime, db: PgPool, tick_hz: u32, snapshot_
                                         },
                                     ));
 
-                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Error {
+                                    game.hub.broadcast(crate::game::protocol::ServerMsg::Notice {
+                                        player_id: grant.player_id,
                                         message: "Inventory full".to_string(),
                                     });
 

@@ -94,7 +94,9 @@ pub enum GameNetEvent {
     /// A player-facing notice from the server (action rejected, gate failed,
     /// inventory full, etc.) — surfaced as a right-side feedback drop. Distinct
     /// from `Error`, which is for transport/parse failures and is logged only.
-    ServerNotice(String),
+    /// `player_id`: `None` = arrived on our own connection (always ours);
+    /// `Some` = broadcast for a specific player, shown only if it's us.
+    ServerNotice { player_id: Option<Uuid>, message: String },
     Disconnected,
 }
 

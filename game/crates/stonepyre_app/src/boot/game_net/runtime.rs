@@ -653,7 +653,13 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
                     }
                     Ok(ServerMsg::Error { message }) => {
-                        let _ = tx.send(GameNetEvent::ServerNotice(message));
+                        let _ = tx.send(GameNetEvent::ServerNotice { player_id: None, message });
+                    }
+                    Ok(ServerMsg::Notice { player_id, message }) => {
+                        let _ = tx.send(GameNetEvent::ServerNotice {
+                            player_id: Some(player_id),
+                            message,
+                        });
                     }
                     Err(e) => {
                         let _ = tx.send(GameNetEvent::Error(format!(
@@ -1100,14 +1106,19 @@ pub fn pump_game_net_results(
                 );
                 status.pending_server_path = Some((goal, tiles));
             }
-            GameNetEvent::ServerNotice(msg) => {
+            GameNetEvent::ServerNotice { player_id, message } => {
                 // Player-facing server message (wield-gate/equip/bank rejection,
                 // inventory full, etc.): surface it as a right-side red drop.
-                status.last_error = Some(msg.clone());
-                status
-                    .feedback_drops
-                    .push(super::status::FeedbackDrop::Message { text: msg.clone() });
-                warn!("game net notice: {}", msg);
+                // `None` = targeted to our connection; `Some` = broadcast for a
+                // specific player, so only that player shows it (no leak).
+                let for_me = player_id.map_or(true, |pid| status.player_id == Some(pid));
+                if for_me {
+                    status.last_error = Some(message.clone());
+                    status
+                        .feedback_drops
+                        .push(super::status::FeedbackDrop::Message { text: message.clone() });
+                }
+                warn!("game net notice: {}", message);
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());

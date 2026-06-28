@@ -222,6 +222,15 @@ pub enum ServerMsg {
     Error {
         message: String,
     },
+
+    /// Player-facing notice produced in the tick loop (which only has the
+    /// broadcast hub, not a per-connection sender). It rides the broadcast bus
+    /// but is meant for one player: clients surface it only when `player_id`
+    /// matches the local player, so it never leaks to everyone like `Error`.
+    Notice {
+        player_id: Uuid,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
