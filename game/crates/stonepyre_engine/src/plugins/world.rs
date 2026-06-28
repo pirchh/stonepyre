@@ -386,11 +386,29 @@ pub fn camera_zoom_and_pitch(
 // World grid sync (unchanged)
 // ---------------------------------------------------------------------------
 
+/// Server-authoritative collision set, when networked. Populated by the app from
+/// the server's `WorldCollision` message. When `Some`, `sync_world_grid_blocked`
+/// applies it verbatim instead of deriving blockers from local entities, so the
+/// client collides against exactly the tiles the server simulates (required for
+/// deterministic prediction/replay). `None` standalone / before the first sync.
+#[derive(Resource, Default)]
+pub struct ServerBlockedTiles(pub Option<HashSet<TilePos>>);
+
 pub fn sync_world_grid_blocked(
     world: Option<ResMut<WorldGrid>>,
+    server_blocked: Option<Res<ServerBlockedTiles>>,
     blockers: Query<&GridPos, With<BlocksMovement>>,
 ) {
     let Some(mut world) = world else { return; };
+
+    // Server-authoritative when networked: collide against exactly the server's
+    // tiles, or prediction/replay diverges at walls.
+    if let Some(set) = server_blocked.as_ref().and_then(|sb| sb.0.as_ref()) {
+        world.set_blocked(set.clone());
+        return;
+    }
+
+    // Standalone / pre-sync: derive blockers from local entities.
     let blocked: HashSet<TilePos> = blockers.iter().map(|gp| gp.0).collect();
     world.set_blocked(blocked);
 }

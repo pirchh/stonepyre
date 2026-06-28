@@ -231,6 +231,13 @@ pub enum ServerMsg {
         player_id: Uuid,
         message: String,
     },
+
+    /// Authoritative set of unwalkable tiles, sent once on join. The client
+    /// applies these to its WorldGrid so prediction and replay collide against
+    /// exactly the tiles the server simulates.
+    WorldCollision {
+        blocked: Vec<TilePos>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

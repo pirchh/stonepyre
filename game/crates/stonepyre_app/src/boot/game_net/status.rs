@@ -97,6 +97,9 @@ pub enum GameNetEvent {
     /// `player_id`: `None` = arrived on our own connection (always ours);
     /// `Some` = broadcast for a specific player, shown only if it's us.
     ServerNotice { player_id: Option<Uuid>, message: String },
+    /// Authoritative blocked-tile set from the server, applied to WorldGrid so
+    /// client prediction/replay collide against exactly what the server sims.
+    WorldCollision(Vec<TilePos>),
     Disconnected,
 }
 

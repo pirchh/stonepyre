@@ -246,6 +246,16 @@ async fn handle_socket(state: AppState, ctx: AuthContext, socket: WebSocket) {
                                 });
                             }
                         }
+
+                        // Authoritative collision set so the client predicts and
+                        // replays against exactly the tiles the server simulates.
+                        {
+                            let blocked: Vec<stonepyre_world::TilePos> = {
+                                let sim = state.game.sim.read().await;
+                                sim.world.blocked.iter().copied().collect()
+                            };
+                            let _ = out_tx.send(ServerMsg::WorldCollision { blocked });
+                        }
                     }
                     ClientMsg::MoveDir { dx, dy } => {
                         if let Some(pid) = player_id {

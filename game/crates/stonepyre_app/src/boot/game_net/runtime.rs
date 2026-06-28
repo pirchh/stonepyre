@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
 use stonepyre_engine::plugins::movement::StepTo;
-use stonepyre_engine::plugins::world::{GridPos, Player, TilePath};
+use stonepyre_engine::plugins::world::{GridPos, Player, ServerBlockedTiles, TilePath};
 use stonepyre_world::TilePos;
 
 use super::protocol::{
@@ -661,6 +661,9 @@ fn run_game_ws(
                             message,
                         });
                     }
+                    Ok(ServerMsg::WorldCollision { blocked }) => {
+                        let _ = tx.send(GameNetEvent::WorldCollision(blocked));
+                    }
                     Err(e) => {
                         let _ = tx.send(GameNetEvent::Error(format!(
                             "game ws message parse failed: {e}"
@@ -690,6 +693,7 @@ fn ws_url_from_base(base: &str) -> String {
 pub fn pump_game_net_results(
     game_net: Res<GameNetRuntime>,
     mut status: ResMut<GameNetStatus>,
+    mut server_blocked: ResMut<ServerBlockedTiles>,
 ) {
     loop {
         let msg = {
@@ -706,6 +710,11 @@ pub fn pump_game_net_results(
                 status.character_id = Some(character_id);
                 status.last_error = None;
                 info!("game net connecting url={} character_id={}", url, character_id);
+            }
+            GameNetEvent::WorldCollision(blocked) => {
+                let set: std::collections::HashSet<_> = blocked.into_iter().collect();
+                info!("game net world collision: {} blocked tiles", set.len());
+                server_blocked.0 = Some(set);
             }
             GameNetEvent::Connected => {
                 status.connecting = false;
