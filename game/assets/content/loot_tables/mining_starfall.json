@@ -1,0 +1,4 @@
+{
+  "id": "mining_starfall",
+  "entries": [ { "item_id": "starfall_ore", "min": 1, "max": 1, "weight": 100 } ]
+}

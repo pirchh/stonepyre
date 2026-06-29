@@ -1,0 +1,9 @@
+{
+  "id": "sapphire",
+  "name": "Sapphire",
+  "inventory_icon": "inventory/items/sapphire.png",
+  "stack_policy": { "stack_in_inventory": false, "stack_in_bank": true, "stack_in_containers": false, "max_stack": 99999 },
+  "equipment": null,
+  "bag_upgrade": null,
+  "tags": ["material", "gem"]
+}
