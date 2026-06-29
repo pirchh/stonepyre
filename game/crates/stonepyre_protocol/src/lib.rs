@@ -8,11 +8,13 @@ pub enum ClientMsg {
     Ping,
     JoinWorld { character_id: Uuid },
     MoveTo { tile: TilePos },
-    /// Continuous WASD movement input.
+    /// Continuous WASD movement input, sequence-stamped.
     /// `dx` = world-X axis, `dy` = world-Z axis (Vec2 convention used by the client).
     /// Send a normalised non-zero vec while keys are held; send `{0,0}` on key release.
     /// The server applies its own speed cap, so the magnitude is advisory only.
-    MoveDir { dx: f32, dy: f32 },
+    /// `seq` is a per-client monotonic counter; the server echoes the last applied
+    /// `seq` in PlayerSnapshot so the client can reconcile its local prediction.
+    MoveDir { dx: f32, dy: f32, seq: u32 },
     Interact {
         action: InteractionAction,
         target: InteractionTarget,
@@ -222,6 +224,22 @@ pub enum ServerMsg {
     Error {
         message: String,
     },
+
+    /// Player-facing notice produced in the tick loop (which only has the
+    /// broadcast hub, not a per-connection sender). It rides the broadcast bus
+    /// but is meant for one player: clients surface it only when `player_id`
+    /// matches the local player, so it never leaks to everyone like `Error`.
+    Notice {
+        player_id: Uuid,
+        message: String,
+    },
+
+    /// Authoritative set of unwalkable tiles, sent once on join. The client
+    /// applies these to its WorldGrid so prediction and replay collide against
+    /// exactly the tiles the server simulates.
+    WorldCollision {
+        blocked: Vec<TilePos>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +260,10 @@ pub struct PlayerSnapshot {
 
     /// Server-authoritative continuous world position (Z axis).
     pub pos_z: f32,
+
+    /// The `seq` of the last `MoveDir` the server had applied for this player when
+    /// this snapshot was taken — the client reconciles its prediction against it.
+    pub last_input_seq: u32,
 
     /// Last fully-authoritative tile — derived from pos each tick.
     /// Still used by harvest/bank/pickup distance checks.

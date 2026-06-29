@@ -1,18 +1,27 @@
 pub mod protocol;
 pub mod sim;
 pub mod hub;
+pub mod zone;
 
 use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use self::{hub::GameHub, sim::GameSim};
+use self::{
+    hub::GameHub,
+    sim::GameSim,
+    zone::{ZoneId, ZoneManager},
+};
 
 #[derive(Clone)]
 pub struct GameRuntime {
     pub hub: GameHub,
-    pub sim: Arc<RwLock<GameSim>>,
+
+    /// The world's zones (#9 sharding). One zone today; see [`zone`]. All sim
+    /// access routes through here — the per-zone tick/snapshot loops via
+    /// [`zone::ZoneManager::all`], command handlers via [`GameRuntime::sim_for`].
+    pub zones: ZoneManager,
 
     /// In-memory active world sessions.
     ///
@@ -24,14 +33,21 @@ pub struct GameRuntime {
 impl GameRuntime {
     pub fn new(tick_hz: u32) -> Self {
         let hub = GameHub::new();
-        let sim = Arc::new(RwLock::new(GameSim::new(tick_hz)));
+        let zones = ZoneManager::single(tick_hz);
         let sessions = Arc::new(RwLock::new(ActiveCharacterSessions::default()));
 
         Self {
             hub,
-            sim,
+            zones,
             sessions,
         }
+    }
+
+    /// The sim for a specific zone — route a player's commands through the zone
+    /// they currently occupy. Single-zone today (always [`DEFAULT_ZONE`]); the
+    /// routing mechanism is in place for when sharding is wired further.
+    pub fn sim_for(&self, zone: ZoneId) -> Arc<RwLock<GameSim>> {
+        self.zones.sim(zone)
     }
 }
 

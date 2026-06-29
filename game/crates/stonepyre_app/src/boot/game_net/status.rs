@@ -94,14 +94,20 @@ pub enum GameNetEvent {
     /// A player-facing notice from the server (action rejected, gate failed,
     /// inventory full, etc.) — surfaced as a right-side feedback drop. Distinct
     /// from `Error`, which is for transport/parse failures and is logged only.
-    ServerNotice(String),
+    /// `player_id`: `None` = arrived on our own connection (always ours);
+    /// `Some` = broadcast for a specific player, shown only if it's us.
+    ServerNotice { player_id: Option<Uuid>, message: String },
+    /// Authoritative blocked-tile set from the server, applied to WorldGrid so
+    /// client prediction/replay collide against exactly what the server sims.
+    WorldCollision(Vec<TilePos>),
     Disconnected,
 }
 
 #[derive(Debug)]
 pub enum GameNetCommand {
-    /// Continuous WASD direction — sent on key change.
-    MoveDir { dx: f32, dy: f32 },
+    /// Continuous WASD direction — sent on key change. `seq` is the per-client
+    /// monotonic input counter (for server-reconciliation).
+    MoveDir { dx: f32, dy: f32, seq: u32 },
     MoveTo { tile: TilePos },
     Interact {
         action: InteractionAction,
@@ -256,6 +262,10 @@ pub struct GameNetStatus {
     pub action_marker_target: Option<TilePos>,
     pub last_error: Option<String>,
     pub correction_count: u64,
+    /// The latest input `seq` the client has sent (set by send_wasd_movement).
+    /// The reconciler compares it to the server's echoed `last_input_seq` to tell
+    /// whether the authoritative position already reflects our newest direction.
+    pub last_sent_input_seq: u32,
     pub remote_player_count: usize,
     /// True after the first authoritative position has been applied.
     /// Suppresses the hard-snap warning on initial load.
@@ -305,6 +315,7 @@ impl Default for GameNetStatus {
             action_marker_target: None,
             last_error: None,
             correction_count: 0,
+            last_sent_input_seq: 0,
             remote_player_count: 0,
             initial_sync_done: false,
         }

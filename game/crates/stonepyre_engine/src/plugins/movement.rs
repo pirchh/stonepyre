@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use stonepyre_world::{world3d_to_tile, WorldGrid};
+use stonepyre_world::WorldGrid;
 
 use crate::plugins::input::InputBindings;
 use crate::plugins::world::{Facing, LogicalPos2d, MoveSpeed, Player};
@@ -76,25 +76,16 @@ pub fn wasd_movement(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Try the full move, then slide along X, then Z on collision.
+/// Try the full move, then slide along X, then Z on collision. Delegates to the
+/// shared `stonepyre_world::slide_move` so the client predictor integrates
+/// movement identically to the server simulation (required for replay).
 fn try_move(pos: Vec2, delta: Vec2, world: &WorldGrid) -> Vec2 {
-    let full = pos + delta;
-    if !tile_blocked(full, world) {
-        return full;
-    }
-    let slide_x = Vec2::new(pos.x + delta.x, pos.y);
-    if !tile_blocked(slide_x, world) {
-        return slide_x;
-    }
-    let slide_z = Vec2::new(pos.x, pos.y + delta.y);
-    if !tile_blocked(slide_z, world) {
-        return slide_z;
-    }
-    pos
-}
-
-fn tile_blocked(pos: Vec2, world: &WorldGrid) -> bool {
-    world.is_blocked(world3d_to_tile(Vec3::new(pos.x, 0.0, pos.y)))
+    let out = stonepyre_world::slide_move(
+        [pos.x, pos.y],
+        [delta.x, delta.y],
+        |t| world.is_blocked(t),
+    );
+    Vec2::new(out[0], out[1])
 }
 
 pub fn facing_from_dir(dir: Vec2) -> Facing {

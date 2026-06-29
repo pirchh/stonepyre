@@ -50,26 +50,11 @@ pub fn tile_to_pos(tile: TilePos) -> [f32; 2] {
     [tile.x as f32 * TILE_SIZE, -(tile.y as f32 * TILE_SIZE)]
 }
 
-/// Try to move from `pos` by `delta`, sliding along walls.
-/// Returns the furthest unblocked position.
+/// Try to move from `pos` by `delta`, sliding along walls. Delegates to the
+/// shared `stonepyre_world::slide_move` so the server simulation, the client
+/// predictor, and client replay all integrate movement identically.
 pub fn try_move_continuous(pos: [f32; 2], delta: [f32; 2], blocked: &HashSet<TilePos>) -> [f32; 2] {
-    let full = [pos[0] + delta[0], pos[1] + delta[1]];
-    if !pos_blocked(full, blocked) {
-        return full;
-    }
-    let slide_x = [pos[0] + delta[0], pos[1]];
-    if !pos_blocked(slide_x, blocked) {
-        return slide_x;
-    }
-    let slide_z = [pos[0], pos[1] + delta[1]];
-    if !pos_blocked(slide_z, blocked) {
-        return slide_z;
-    }
-    pos
-}
-
-fn pos_blocked(pos: [f32; 2], blocked: &HashSet<TilePos>) -> bool {
-    blocked.contains(&pos_to_tile(pos))
+    stonepyre_world::slide_move(pos, delta, |t| blocked.contains(&t))
 }
 
 pub const GROUND_ITEM_DESPAWN_TICKS: u64 = 300;
@@ -384,6 +369,10 @@ pub struct PlayerState {
     /// Normalised movement direction received from the client this tick.
     /// `[0, 0]` means the player is standing still.
     pub move_dir: [f32; 2],
+
+    /// `seq` of the most recent `MoveDir` applied for this player. Echoed in
+    /// snapshots so the client can drop acknowledged inputs during reconciliation.
+    pub last_input_seq: u32,
 
     // ------------------------------------------------------------------
     // Tile-based state (derived from pos; used for interaction checks)

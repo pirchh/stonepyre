@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use stonepyre_engine::plugins::interaction::{IntentMsg, Target, Verb};
 use stonepyre_engine::plugins::movement::StepTo;
-use stonepyre_engine::plugins::world::{GridPos, Player, TilePath};
+use stonepyre_engine::plugins::world::{GridPos, Player, ServerBlockedTiles, TilePath};
 use stonepyre_world::TilePos;
 
 use super::protocol::{
@@ -322,8 +322,8 @@ fn run_game_ws(
     loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                GameNetCommand::MoveDir { dx, dy } => {
-                    let msg = ClientMsg::MoveDir { dx, dy };
+                GameNetCommand::MoveDir { dx, dy, seq } => {
+                    let msg = ClientMsg::MoveDir { dx, dy, seq };
                     let json = serde_json::to_string(&msg)
                         .map_err(|e| format!("game ws move_dir serialize failed: {e}"))?;
                     socket
@@ -549,6 +549,7 @@ fn run_game_ws(
                                 character_id: p.character_id,
                                 pos_x: p.pos_x,
                                 pos_z: p.pos_z,
+                                last_input_seq: p.last_input_seq,
                                 tile: p.tile,
                                 next_tile: p.next_tile,
                                 goal: p.goal,
@@ -653,7 +654,16 @@ fn run_game_ws(
                         let _ = tx.send(GameNetEvent::PathConfirmed { goal, tiles });
                     }
                     Ok(ServerMsg::Error { message }) => {
-                        let _ = tx.send(GameNetEvent::ServerNotice(message));
+                        let _ = tx.send(GameNetEvent::ServerNotice { player_id: None, message });
+                    }
+                    Ok(ServerMsg::Notice { player_id, message }) => {
+                        let _ = tx.send(GameNetEvent::ServerNotice {
+                            player_id: Some(player_id),
+                            message,
+                        });
+                    }
+                    Ok(ServerMsg::WorldCollision { blocked }) => {
+                        let _ = tx.send(GameNetEvent::WorldCollision(blocked));
                     }
                     Err(e) => {
                         let _ = tx.send(GameNetEvent::Error(format!(
@@ -684,6 +694,7 @@ fn ws_url_from_base(base: &str) -> String {
 pub fn pump_game_net_results(
     game_net: Res<GameNetRuntime>,
     mut status: ResMut<GameNetStatus>,
+    mut server_blocked: ResMut<ServerBlockedTiles>,
 ) {
     loop {
         let msg = {
@@ -700,6 +711,11 @@ pub fn pump_game_net_results(
                 status.character_id = Some(character_id);
                 status.last_error = None;
                 info!("game net connecting url={} character_id={}", url, character_id);
+            }
+            GameNetEvent::WorldCollision(blocked) => {
+                let set: std::collections::HashSet<_> = blocked.into_iter().collect();
+                info!("game net world collision: {} blocked tiles", set.len());
+                server_blocked.0 = Some(set);
             }
             GameNetEvent::Connected => {
                 status.connecting = false;
@@ -1100,14 +1116,19 @@ pub fn pump_game_net_results(
                 );
                 status.pending_server_path = Some((goal, tiles));
             }
-            GameNetEvent::ServerNotice(msg) => {
+            GameNetEvent::ServerNotice { player_id, message } => {
                 // Player-facing server message (wield-gate/equip/bank rejection,
                 // inventory full, etc.): surface it as a right-side red drop.
-                status.last_error = Some(msg.clone());
-                status
-                    .feedback_drops
-                    .push(super::status::FeedbackDrop::Message { text: msg.clone() });
-                warn!("game net notice: {}", msg);
+                // `None` = targeted to our connection; `Some` = broadcast for a
+                // specific player, so only that player shows it (no leak).
+                let for_me = player_id.map_or(true, |pid| status.player_id == Some(pid));
+                if for_me {
+                    status.last_error = Some(message.clone());
+                    status
+                        .feedback_drops
+                        .push(super::status::FeedbackDrop::Message { text: message.clone() });
+                }
+                warn!("game net notice: {}", message);
             }
             GameNetEvent::Error(msg) => {
                 status.last_error = Some(msg.clone());
@@ -1319,6 +1340,7 @@ pub fn process_pending_bank_open(
 pub fn send_wasd_movement_to_server(
     keyboard: Res<ButtonInput<KeyCode>>,
     game_net: Res<GameNetRuntime>,
+    mut status: ResMut<GameNetStatus>,
     mut last_sent: Local<[f32; 2]>,
 ) {
     // Build float direction — same axes as the client movement system.
@@ -1345,7 +1367,9 @@ pub fn send_wasd_movement_to_server(
 
     let guard = game_net.command_tx.lock().unwrap();
     if let Some(tx) = guard.as_ref() {
-        if tx.send(GameNetCommand::MoveDir { dx, dy }).is_ok() {
+        let next = status.last_sent_input_seq.wrapping_add(1);
+        if tx.send(GameNetCommand::MoveDir { dx, dy, seq: next }).is_ok() {
+            status.last_sent_input_seq = next;
             *last_sent = [dx, dy];
         }
     }

@@ -31,6 +31,7 @@ impl Plugin for StonepyreEnginePlugin {
                 64,
                 Box::new(stonepyre_world::FlatWorldSource::new(1337, 0)),
             ))
+            .insert_resource(plugins::world::ServerBlockedTiles::default())
             // ✅ Input bindings (configurable later via settings)
             .insert_resource(plugins::input::InputBindings::default())
             // ✅ Camera rig — zoom and pitch, updated by scroll wheel

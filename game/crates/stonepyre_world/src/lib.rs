@@ -5,7 +5,7 @@ pub mod chunk;
 pub mod source;
 pub mod files;
 
-pub use tile::{neighbors_4, tile_to_world3d, tile_to_world_center, world3d_to_tile, world_to_tile, TilePos, TILE_HEIGHT, TILE_SIZE};
+pub use tile::{neighbors_4, slide_move, tile_to_world3d, tile_to_world_center, world3d_to_tile, world_pos_to_tile, world_to_tile, TilePos, TILE_HEIGHT, TILE_SIZE};
 pub use world::WorldGrid;
 
 pub use objects::{
