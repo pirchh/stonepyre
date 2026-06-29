@@ -12,7 +12,7 @@ use super::status::GameNetStatus;
 
 /// Drives the woodcutting animation against the server-authoritative action state.
 ///
-/// The server owns the continuous-chop loop: once a ChopDown goes Active it stays
+/// The server owns the continuous-chop loop: once a Harvest goes Active it stays
 /// Active and emits a grant every swing, ending the action only when the node
 /// depletes, the player moves out of range, or the inventory fills. So the client
 /// is simple:
@@ -56,7 +56,7 @@ pub fn play_server_authoritative_action_visuals(
     // facing the tree) until the server's cancel arrives.
     let is_active = !is_walking.0
         && status.server_action.as_ref().map_or(false, |a| {
-            a.action == InteractionAction::ChopDown && a.state == ActionState::Active
+            a.action == InteractionAction::Harvest && a.state == ActionState::Active
         });
 
     if is_active {

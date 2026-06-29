@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 const MAX_BFS_ITERS: usize = 50_000;
 const REPATH_COOLDOWN_TICKS: u64 = 3;
-/// Seconds between harvest rolls while a ChopDown action is Active. This is the
+/// Seconds between harvest rolls while a Harvest action is Active. This is the
 /// server-authoritative swing cadence: a grant is emitted once per interval and
 /// the action stays Active (server-driven loop) until the node depletes, the
 /// player moves out of range, or the inventory fills.
@@ -227,7 +227,7 @@ impl GameSim {
         cancelled
     }
 
-    /// Queue a server-authoritative ChopDown request.
+    /// Queue a server-authoritative Harvest request.
     ///
     /// Distance is not a final rejection. If the target is a valid woodcutting
     /// harvest node and reachable, the server moves the player to an adjacent
@@ -274,7 +274,7 @@ impl GameSim {
                 p.path.clear();
                 p.move_progress_tiles = 0.0;
                 p.action = Some(ServerAction {
-                    action: InteractionAction::ChopDown,
+                    action: InteractionAction::Harvest,
                     target: InteractionTarget::Tile(target),
                     state: ActionState::Queued,
                     next_harvest_tick: None,
@@ -287,19 +287,19 @@ impl GameSim {
             return Ok((
                 ActionState::Queued,
                 format!(
-                    "ChopDown queued on {} ({}) at {},{}",
+                    "Harvest queued on {} ({}) at {},{}",
                     target_name, target_def_id, target.x, target.y
                 ),
             ));
         }
 
         let Some(goal) = self.world.pick_best_adjacent_unblocked(start_tile, target, 1) else {
-            return Err("no reachable adjacent tile for ChopDown".to_string());
+            return Err("no reachable adjacent tile for Harvest".to_string());
         };
 
         let path = self.world.find_path_bfs(start_tile, goal, MAX_BFS_ITERS);
         if path.is_empty() && start_tile != goal {
-            return Err("no path to ChopDown target".to_string());
+            return Err("no path to Harvest target".to_string());
         }
 
         if let Some(p) = self.world.players.get_mut(&player_id) {
@@ -308,7 +308,7 @@ impl GameSim {
             p.last_repath_tick = self.tick;
             p.move_progress_tiles = 0.0;
             p.action = Some(ServerAction {
-                action: InteractionAction::ChopDown,
+                action: InteractionAction::Harvest,
                 target: InteractionTarget::Tile(target),
                 state: ActionState::MovingToRange,
                 next_harvest_tick: None,
@@ -321,7 +321,7 @@ impl GameSim {
         Ok((
             ActionState::MovingToRange,
             format!(
-                "ChopDown queued on {} ({}); walking to {},{} for target {},{}",
+                "Harvest queued on {} ({}); walking to {},{} for target {},{}",
                 target_name, target_def_id, goal.x, goal.y, target.x, target.y
             ),
         ))
@@ -337,7 +337,7 @@ impl GameSim {
         let p = self.world.players.get_mut(&player_id)?;
         let action = p.action.as_mut()?;
 
-        if action.action != InteractionAction::ChopDown
+        if action.action != InteractionAction::Harvest
             || !action.pending_harvest_capacity_check
             || !same_interaction_target(&action.target, &target)
         {
@@ -380,7 +380,7 @@ impl GameSim {
         let p = self.world.players.get_mut(&player_id)?;
         let action = p.action.as_ref()?;
 
-        if action.action != InteractionAction::ChopDown
+        if action.action != InteractionAction::Harvest
             || !action.pending_harvest_capacity_check
             || !same_interaction_target(&action.target, &target)
         {
@@ -423,7 +423,7 @@ impl GameSim {
             // When WASD is active we apply collision-aware delta movement and
             // then `continue` so tile-walk never runs in the same tick.
             // set_move_dir already clears the goal on key-down, but a
-            // MoveTo/ChopDown command can arrive between set_move_dir and the
+            // MoveTo/Harvest command can arrive between set_move_dir and the
             // next tick via the async message queue, leaving both move_dir and
             // goal set simultaneously.  The explicit `continue` here ensures
             // tile-walk can never override the collision-clamped pos and
@@ -558,7 +558,7 @@ impl GameSim {
             .iter()
             .filter_map(|(player_id, p)| {
                 let action = p.action.as_ref()?;
-                if action.action != InteractionAction::ChopDown || action.state != ActionState::Active {
+                if action.action != InteractionAction::Harvest || action.state != ActionState::Active {
                     return None;
                 }
 
@@ -602,7 +602,7 @@ impl GameSim {
                             skill_id: outcome.skill.id().to_string(),
                             display_name: outcome.skill.display_name().to_string(),
                             xp_delta: outcome.xp_gained,
-                            action: InteractionAction::ChopDown,
+                            action: InteractionAction::Harvest,
                             target: InteractionTarget::Tile(target),
                             node_id: outcome.node_id.to_string(),
                             harvest_display_name: outcome.display_name.to_string(),
@@ -620,7 +620,7 @@ impl GameSim {
                             character_id,
                             item_id: loot.item_id.to_string(),
                             quantity: loot.quantity,
-                            action: InteractionAction::ChopDown,
+                            action: InteractionAction::Harvest,
                             target: InteractionTarget::Tile(target),
                             display_name: outcome.display_name.to_string(),
                             node_id: outcome.node_id.to_string(),
@@ -630,7 +630,7 @@ impl GameSim {
                         events.push(ServerMsg::HarvestResult(HarvestResult {
                             player_id,
                             character_id,
-                            action: InteractionAction::ChopDown,
+                            action: InteractionAction::Harvest,
                             target: InteractionTarget::Tile(target),
                             node_id: outcome.node_id.to_string(),
                             display_name: outcome.display_name.to_string(),
@@ -649,10 +649,10 @@ impl GameSim {
 
                         events.push(ServerMsg::ActionState {
                             player_id,
-                            action: InteractionAction::ChopDown,
+                            action: InteractionAction::Harvest,
                             target: InteractionTarget::Tile(target),
                             state: ActionState::Complete,
-                            message: "ChopDown complete".to_string(),
+                            message: "Harvest complete".to_string(),
                         }.into());
 
                         if let Some(snapshot) = self.world.harvest.snapshot_at(target) {
@@ -680,7 +680,7 @@ impl GameSim {
 
                     events.push(ServerMsg::ActionState {
                         player_id,
-                        action: InteractionAction::ChopDown,
+                        action: InteractionAction::Harvest,
                         target: InteractionTarget::Tile(target),
                         state: ActionState::Complete,
                         message,
@@ -696,7 +696,7 @@ fn maybe_request_harvest_capacity_check(
     events: &mut Vec<GameSimEvent>,
 ) {
     let Some(action) = p.action.as_mut() else { return; };
-    if action.action != InteractionAction::ChopDown {
+    if action.action != InteractionAction::Harvest {
         return;
     }
     if action.state != ActionState::MovingToRange && action.state != ActionState::Queued {

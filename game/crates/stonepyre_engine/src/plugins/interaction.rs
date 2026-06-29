@@ -16,7 +16,7 @@ use crate::plugins::world::*;
 pub enum Verb {
     WalkHere,
     TalkTo,
-    ChopDown,
+    Harvest,
     Take,
     Examine,
     UseBank,
@@ -89,7 +89,7 @@ pub struct ServerAuthoritativeInteractions(pub bool);
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct WorldInteractionBlocker(pub bool);
 
-/// True while the server is processing a ChopDown action (Queued/MovingToRange/Active).
+/// True while the server is processing a Harvest action (Queued/MovingToRange/Active).
 /// Written each frame by the app's action_visuals system; read by handle_action_key as a gate.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct ServerActionGate(pub bool);
@@ -113,7 +113,7 @@ impl Default for HarvestReadyGate {
 /// Marks that the player is in an auto-chop session. Removed when the player moves
 /// (animate_humanoid) or when the server ends the action (action_visuals).
 ///
-/// The loop itself is server-driven: the server keeps the ChopDown action Active and
+/// The loop itself is server-driven: the server keeps the Harvest action Active and
 /// emits a grant each swing, so the client never re-sends the intent per swing.
 #[derive(Component)]
 pub struct AutoChopActive {
@@ -393,7 +393,7 @@ pub fn plan_intents_to_actions(
                 commands.entity(player_ent).remove::<RequestedAnim>();
             }
 
-            Verb::TalkTo | Verb::ChopDown | Verb::Take | Verb::Examine => {
+            Verb::TalkTo | Verb::Harvest | Verb::Take | Verb::Examine => {
                 let range = intent.range.max(1);
                 let Some(goal_tile) =
                     pick_best_adjacent_goal_unblocked(&world, start_tile, target_tile, range)
@@ -477,7 +477,7 @@ pub fn advance_action_to_impact_when_ready(
             };
 
             // Gate chopdown by depletion
-            if action.intent.verb == Verb::ChopDown {
+            if action.intent.verb == Verb::Harvest {
                 if let Ok(node) = harvest_q.get(e) {
                     if node.is_depleted() {
                         info!("[interaction] yo thats depleted.");
@@ -520,8 +520,8 @@ pub fn drive_action_clip_on_impact(
         return;
     }
 
-    // Only ChopDown uses a swing clip for now.
-    let verb_uses_clip = matches!(action.intent.verb, Verb::ChopDown);
+    // Only Harvest uses a swing clip for now.
+    let verb_uses_clip = matches!(action.intent.verb, Verb::Harvest);
     if !verb_uses_clip {
         return;
     }
@@ -584,7 +584,7 @@ pub fn resolve_actions_on_impact(
         return;
     }
 
-    let verb_uses_clip = matches!(action.intent.verb, Verb::ChopDown);
+    let verb_uses_clip = matches!(action.intent.verb, Verb::Harvest);
 
     if verb_uses_clip {
         // If clip never started, don't resolve.
@@ -612,7 +612,7 @@ pub fn resolve_actions_on_impact(
         intent: action.intent,
     });
 
-    // Looping actions (ChopDown) go back to Moving for the next cycle.
+    // Looping actions (Harvest) go back to Moving for the next cycle.
     if action.looping {
         action.phase = ActionPhase::Moving;
         action.impact_armed = false;
@@ -722,7 +722,7 @@ pub fn handle_interact_key(
 ///
 /// Press Space near a tree to start continuous woodcutting:
 /// - Animation starts immediately (looping) and `AutoChopActive` is inserted.
-/// - One ChopDown request is fired. The server then drives the loop, staying Active
+/// - One Harvest request is fired. The server then drives the loop, staying Active
 ///   and granting each swing until the node depletes, the player moves, or the
 ///   inventory fills — the client never re-sends the intent per swing.
 /// - Gate: ServerActionGate blocks while the server is processing (Queued/Active/etc.).
@@ -808,7 +808,7 @@ pub fn handle_action_key(
     intent_writer.write(IntentMsg {
         actor: player_ent,
         intent: Intent {
-            verb:   Verb::ChopDown,
+            verb:   Verb::Harvest,
             target: Target::Entity(target_ent),
             range:  1,
         },

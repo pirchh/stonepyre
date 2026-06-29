@@ -613,7 +613,7 @@ async fn handle_interaction(
                 }
             }
         }
-        (InteractionAction::ChopDown, InteractionTarget::Tile(tile)) => {
+        (InteractionAction::Harvest, InteractionTarget::Tile(tile)) => {
             let skill_requirement = {
                 let sim = sim_lock.read().await;
                 sim.world.harvest_node_def_at(tile).map(|def| {

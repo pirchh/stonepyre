@@ -15,7 +15,7 @@ pub fn on_action_resolved_apply_woodcutting(
     mut actor_action_q: Query<&mut CurrentAction>,
 ) {
     for ev in resolved.read() {
-        if ev.intent.verb != Verb::ChopDown {
+        if ev.intent.verb != Verb::Harvest {
             continue;
         }
 

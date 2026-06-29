@@ -792,7 +792,7 @@ pub fn pump_game_net_results(
                         action, target, message
                     );
 
-                    if action == InteractionAction::ChopDown {
+                    if action == InteractionAction::Harvest {
                         if let InteractionTarget::Tile(tile) = target {
                             status.action_marker_target = Some(tile);
                             status.last_error = None;
@@ -1199,7 +1199,7 @@ pub fn send_walk_intents_to_server_runtime(
                     status.pending_path_confirmations += 1;
                 }
             }
-            Verb::ChopDown => {
+            Verb::Harvest => {
                 let Some(tile) = intent_target_tile(ev.intent.target, &grid_pos_q) else {
                     warn!("game net chopdown target dropped; target tile could not be resolved");
                     continue;
@@ -1210,7 +1210,7 @@ pub fn send_walk_intents_to_server_runtime(
 
                 if !send_interaction_to_server(
                     &game_net,
-                    InteractionAction::ChopDown,
+                    InteractionAction::Harvest,
                     InteractionTarget::Tile(tile),
                 ) {
                     warn!("game net chopdown target dropped; websocket is not ready");

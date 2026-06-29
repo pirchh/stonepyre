@@ -217,7 +217,7 @@ pub struct GameNetStatus {
     /// Fractional progress (0.0–1.0) the server has made toward `server_next_tile`.
     pub server_move_progress: f32,
     pub server_action: Option<PlayerActionSnapshot>,
-    /// True while a ChopDown action is live on the server: set on the first
+    /// True while a Harvest action is live on the server: set on the first
     /// Queued/MovingToRange/Active event and cleared on the terminal state
     /// (Complete/Cancelled/Rejected). Because the loop is server-driven, the
     /// server keeps the action Active across every swing and only sends a

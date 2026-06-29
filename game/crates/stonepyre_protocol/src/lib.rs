@@ -502,7 +502,7 @@ pub enum SkillXpSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InteractionAction {
     WalkHere,
-    ChopDown,
+    Harvest,
     UseBank,
 }
 
