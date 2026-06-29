@@ -1,0 +1,24 @@
+{
+  "id": "pickaxe_aetherite",
+  "name": "Aetherite Pickaxe",
+  "inventory_icon": "inventory/items/pickaxe_aetherite.png",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "pickaxe",
+    "tier": 12,
+    "harvest_level": 99,
+    "wield_level": 93
+  },
+  "tags": ["tool", "pickaxe"]
+}

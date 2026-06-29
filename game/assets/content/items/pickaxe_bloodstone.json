@@ -1,0 +1,24 @@
+{
+  "id": "pickaxe_bloodstone",
+  "name": "Bloodstone Pickaxe",
+  "inventory_icon": "inventory/items/pickaxe_bloodstone.png",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "pickaxe",
+    "tier": 7,
+    "harvest_level": 68,
+    "wield_level": 63
+  },
+  "tags": ["tool", "pickaxe"]
+}

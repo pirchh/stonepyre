@@ -1,0 +1,24 @@
+{
+  "id": "pickaxe_cinderforge",
+  "name": "Cinderforge Pickaxe",
+  "inventory_icon": "inventory/items/pickaxe_cinderforge.png",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "pickaxe",
+    "tier": 6,
+    "harvest_level": 62,
+    "wield_level": 57
+  },
+  "tags": ["tool", "pickaxe"]
+}
