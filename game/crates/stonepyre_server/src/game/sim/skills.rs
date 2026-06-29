@@ -6,6 +6,9 @@ use crate::game::protocol::{SkillDelta, SkillSnapshot, SkillSnapshotEntry, Skill
 pub const WOODCUTTING_SKILL_ID: &str = "woodcutting";
 pub const WOODCUTTING_DISPLAY_NAME: &str = "Woodcutting";
 
+pub const MINING_SKILL_ID: &str = "mining";
+pub const MINING_DISPLAY_NAME: &str = "Mining";
+
 const MAX_SKILL_LEVEL: u32 = 99;
 
 #[derive(Clone, Debug)]

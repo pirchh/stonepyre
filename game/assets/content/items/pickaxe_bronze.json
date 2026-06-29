@@ -1,0 +1,24 @@
+{
+  "id": "pickaxe_bronze",
+  "name": "Bronze Pickaxe",
+  "inventory_icon": "inventory/items/pickaxe_bronze.png",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "pickaxe",
+    "tier": 2,
+    "harvest_level": 29,
+    "wield_level": 20
+  },
+  "tags": ["tool", "pickaxe"]
+}

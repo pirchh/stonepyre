@@ -2,28 +2,49 @@
   {
     "node_id": "demo_tree_2_0",
     "node_def_id": "oak_tree",
-    "tile": {
-      "x": 2,
-      "y": 0
-    },
+    "tile": { "x": 2, "y": 0 },
     "blocks_movement": true
   },
   {
     "node_id": "demo_tree_4_1",
     "node_def_id": "oak_tree",
-    "tile": {
-      "x": 4,
-      "y": 1
-    },
+    "tile": { "x": 4, "y": 1 },
     "blocks_movement": true
   },
   {
     "node_id": "demo_willow_6_1",
     "node_def_id": "willow_tree",
-    "tile": {
-      "x": 6,
-      "y": 1
-    },
+    "tile": { "x": 6, "y": 1 },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_copper_8_0",
+    "node_def_id": "copper_rock",
+    "tile": { "x": 8, "y": 0 },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_tin_8_1",
+    "node_def_id": "tin_rock",
+    "tile": { "x": 8, "y": 1 },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_iron_10_0",
+    "node_def_id": "iron_rock",
+    "tile": { "x": 10, "y": 0 },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_coal_10_1",
+    "node_def_id": "coal_rock",
+    "tile": { "x": 10, "y": 1 },
+    "blocks_movement": true
+  },
+  {
+    "node_id": "demo_gold_12_0",
+    "node_def_id": "gold_rock",
+    "tile": { "x": 12, "y": 0 },
     "blocks_movement": true
   }
 ]

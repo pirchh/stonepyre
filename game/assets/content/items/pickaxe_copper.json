@@ -1,0 +1,24 @@
+{
+  "id": "pickaxe_copper",
+  "name": "Copper Pickaxe",
+  "inventory_icon": "inventory/items/pickaxe_copper.png",
+  "stack_policy": {
+    "stack_in_inventory": false,
+    "stack_in_bank": true,
+    "stack_in_containers": false,
+    "max_stack": 1
+  },
+  "equipment": {
+    "slot": "MainHand",
+    "container_id": null,
+    "stats_tag": null
+  },
+  "bag_upgrade": null,
+  "tool": {
+    "kind": "pickaxe",
+    "tier": 1,
+    "harvest_level": 19,
+    "wield_level": 10
+  },
+  "tags": ["tool", "pickaxe"]
+}

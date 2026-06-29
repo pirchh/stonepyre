@@ -103,6 +103,29 @@ pub fn default_item_defs() -> ItemDefs {
         },
     );
 
+    // Mining Sack — equips into a character bag slot, 8 slots, ore only.
+    defs.items.insert(
+        "sack_mining".to_string(),
+        ItemDef {
+            id: "sack_mining".to_string(),
+            name: "Mining Sack".to_string(),
+            inventory_icon: Some("inventory/items/sack_mining.png".to_string()),
+            stack_policy: StackPolicy {
+                stack_in_inventory: false,
+                stack_in_bank: false,
+                stack_in_containers: false,
+                max_stack: 1,
+            },
+            equipment: None,
+            bag_upgrade: None,
+            bag: Some(BagDef {
+                container_def_id: "mining_sack".to_string(),
+            }),
+            tool: None,
+            tags: vec!["bag".to_string(), "bag_typed".to_string()],
+        },
+    );
+
     // Small Bag Upgrade (+2 slots), intended to be inserted into backpack sockets.
     defs.items.insert(
         "bag_small".to_string(),
@@ -149,6 +172,16 @@ pub fn default_container_defs() -> ContainerDefs {
             base_slots: 8,
             upgrade_sockets: 0,
             item_type_filter: Some("log".to_string()),
+        },
+    );
+
+    defs.containers.insert(
+        "mining_sack".to_string(),
+        ContainerDef {
+            id: "mining_sack".to_string(),
+            base_slots: 8,
+            upgrade_sockets: 0,
+            item_type_filter: Some("ore".to_string()),
         },
     );
 

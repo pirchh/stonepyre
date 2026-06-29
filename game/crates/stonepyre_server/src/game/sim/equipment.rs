@@ -57,6 +57,10 @@ fn wield_skill_for_tool(kind: &str) -> Option<(&'static str, &'static str)> {
             crate::game::sim::skills::WOODCUTTING_SKILL_ID,
             crate::game::sim::skills::WOODCUTTING_DISPLAY_NAME,
         )),
+        "pickaxe" => Some((
+            crate::game::sim::skills::MINING_SKILL_ID,
+            crate::game::sim::skills::MINING_DISPLAY_NAME,
+        )),
         _ => None,
     }
 }

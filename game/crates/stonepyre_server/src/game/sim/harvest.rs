@@ -10,18 +10,21 @@ use crate::game::protocol::HarvestNodeSnapshot;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HarvestSkill {
     Woodcutting,
+    Mining,
 }
 
 impl HarvestSkill {
     pub fn id(self) -> &'static str {
         match self {
             HarvestSkill::Woodcutting => "woodcutting",
+            HarvestSkill::Mining => "mining",
         }
     }
 
     pub fn display_name(self) -> &'static str {
         match self {
             HarvestSkill::Woodcutting => "Woodcutting",
+            HarvestSkill::Mining => "Mining",
         }
     }
 
@@ -30,12 +33,14 @@ impl HarvestSkill {
     pub fn required_tool_kind(self) -> &'static str {
         match self {
             HarvestSkill::Woodcutting => "axe",
+            HarvestSkill::Mining => "pickaxe",
         }
     }
 
     fn from_content_id(id: &str) -> Option<Self> {
         match id {
             "woodcutting" => Some(HarvestSkill::Woodcutting),
+            "mining" => Some(HarvestSkill::Mining),
             _ => None,
         }
     }
